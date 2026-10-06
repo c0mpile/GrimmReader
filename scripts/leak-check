@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Blocks private values from reaching tracked files.
+#   scripts/leak-check            scan the staged diff (added lines only)   [pre-commit]
+#   scripts/leak-check --tree     scan every tracked and untracked-unignored file
+# Forbidden strings come from the untracked .env (GRIMMREADER_* variables); nothing private lives here.
+# Any email address is a leak except *@users.noreply.github.com and example.com/org/net placeholders.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+mode="${1:---staged}"
+
+# Read KEY='value' pairs without sourcing the file (values may contain shell metacharacters).
+env_value() {
+  local key="$1" line
+  [[ -f .env ]] || return 0
+  line="$(grep -E "^${key}=" .env | tail -n1 || true)"
+  line="${line#*=}"
+  line="${line%\'}"; line="${line#\'}"
+  line="${line%\"}"; line="${line#\"}"
+  printf '%s' "$line"
+}
+
+patterns=()
+add() { [[ -n "${1:-}" ]] && patterns+=("$1"); return 0; }
+
+url="$(env_value GRIMMREADER_SERVER_URL)"
+if [[ -n "$url" ]]; then
+  host="${url#*://}"; host="${host%%/*}"; host="${host%%:*}"
+  add "$host"
+  add "$(awk -F. 'NF>=2 {print $(NF-1)"."$NF}' <<<"$host")"
+fi
+add "$(env_value GRIMMREADER_TEST_PASSWORD)"
+IFS='|' read -r -a extra <<<"$(env_value GRIMMREADER_FORBIDDEN)"
+for p in "${extra[@]:-}"; do add "$p"; done
+
+if [[ ${#patterns[@]} -eq 0 ]]; then
+  echo "leak-check: WARNING no .env forbidden strings found; only the email check is active" >&2
+fi
+
+case "$mode" in
+  --staged)
+    # Added lines only, prefixed with the file name.
+    content="$(git diff --cached -U0 --no-color --diff-filter=ACMR |
+      awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+\+\+ /{next} /^\+/{print f": "substr($0,2)}')" ;;
+  --tree)
+    content="$(git ls-files -co --exclude-standard -z |
+      xargs -0 -r grep -I -n -H '' 2>/dev/null || true)" ;;
+  *) echo "usage: scripts/leak-check [--staged|--tree]" >&2; exit 2 ;;
+esac
+
+fail=0
+report() { printf 'leak-check: %s\n' "$1" >&2; fail=1; }
+
+for p in "${patterns[@]:-}"; do
+  [[ -n "$p" ]] || continue
+  if grep -F -i -q -- "$p" <<<"$content"; then
+    report "forbidden string from .env found (value hidden): $(grep -F -i -c -- "$p" <<<"$content") line(s)"
+  fi
+done
+
+# Emails: allow GitHub noreply and RFC 2606 placeholders; skip Kotlin labels like this@Foo.bar.
+emails="$(grep -E -o -i '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' <<<"$content" |
+  grep -v -i -E '(^|[^A-Za-z0-9])(this|return|super|break|continue)@' |
+  grep -v -i -E '@users\.noreply\.github\.com$' |
+  grep -v -i -E '@([a-z0-9-]+\.)*example\.(com|org|net)$' | sort -u || true)"
+if [[ -n "$emails" ]]; then
+  report "email address(es) found:"
+  sed 's/^/  /' <<<"$emails" >&2
+fi
+
+if [[ $fail -ne 0 ]]; then
+  echo "leak-check: blocked. Remove the private value (use https://grimmory.example.com) and retry." >&2
+  exit 1
+fi
+[[ "$mode" == "--tree" ]] && echo "leak-check: tree clean"
+exit 0
