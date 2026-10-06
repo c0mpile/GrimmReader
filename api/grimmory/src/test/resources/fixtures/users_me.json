@@ -1,0 +1,1 @@
+{"id":11,"username":"reader","name":"Sample Reader","defaultPassword":false,"permissions":{"admin":false,"canUpload":false,"canDownload":true,"canEditMetadata":false,"canManageFonts":false,"canAccessOpds":true,"someFutureFlag":"maybe"},"theme":"grimmory","themeAccent":null}

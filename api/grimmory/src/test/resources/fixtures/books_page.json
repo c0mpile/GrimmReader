@@ -1,0 +1,4 @@
+{"content":[
+ {"id":101,"title":"Sample Ebook One","authors":["Ada Example"],"readStatus":"READING","seriesName":null,"libraryId":1,"addedOn":"2026-01-02T10:00:00Z","readProgress":12.5,"primaryFileId":501,"primaryFileType":"EPUB","primaryFileName":"sample-one.epub","coverUpdatedOn":"2026-01-02T10:00:00Z","pageCount":220,"newField":{"ignored":true}},
+ {"id":102,"title":"Sample Comic A","authors":[],"readStatus":"UNREAD","seriesName":"Sample Series","seriesNumber":3,"libraryId":2,"primaryFileId":502,"primaryFileType":"CBX","pageCount":25}
+],"page":0,"size":2,"totalElements":3,"totalPages":2,"hasNext":true,"hasPrevious":false}
