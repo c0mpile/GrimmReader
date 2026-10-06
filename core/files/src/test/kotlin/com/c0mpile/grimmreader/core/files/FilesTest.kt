@@ -111,4 +111,12 @@ class FilesTest {
         val file = File(tmp.root, "b").apply { writeBytes(bytes) }
         assertEquals(PartialMd5.compute(bytes), LocalFileStore.partialMd5(file))
     }
+
+    @Test fun oversizedEntriesAreSkippedNotLoaded() {
+        val bomb = ByteArray((ReadLimits.XML_BYTES + 1).toInt())
+        val comic = zip("big.cbz", "001.jpg" to png, "ComicInfo.xml" to bomb)
+        val meta = BookMetadataReader.read(comic, BookFormat.CBZ)
+        assertEquals(null, meta.title)
+        assertArrayEquals(png, meta.cover)
+    }
 }

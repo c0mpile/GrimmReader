@@ -37,7 +37,10 @@ class ZipComicArchive(
     override fun close() = zip.close()
 
     /** Raw bytes of ComicInfo.xml, if present. */
-    fun comicInfo(): ByteArray? = zip.getEntry("ComicInfo.xml")?.let { e -> zip.getInputStream(e).use { it.readBytes() } }
+    fun comicInfo(): ByteArray? =
+        zip.getEntry("ComicInfo.xml")?.let { e ->
+            zip.getInputStream(e).use { it.readBounded(ReadLimits.XML_BYTES) }
+        }
 
     companion object {
         private val IMAGE = setOf("jpg", "jpeg", "png", "webp", "gif", "avif", "bmp")
