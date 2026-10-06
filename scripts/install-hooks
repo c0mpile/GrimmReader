@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Installs the local git hooks (idempotent). Hooks live in .git/hooks and are never tracked.
+#   pre-commit : scripts/leak-check on the staged diff
+#   pre-push   : always blocks, unless GRIMMREADER_ALLOW_PUSH=1 is set
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+hooks="$(git -C "$root" rev-parse --git-path hooks)"
+[[ "$hooks" = /* ]] || hooks="$root/$hooks"
+mkdir -p "$hooks"
+
+install_hook() {
+  local name="$1" body="$2" target="$hooks/$1"
+  printf '%s\n' "$body" >"$target.tmp"
+  chmod +x "$target.tmp"
+  mv -f "$target.tmp" "$target"
+  echo "installed $name"
+}
+
+install_hook pre-commit '#!/usr/bin/env bash
+# managed by scripts/install-hooks
+root="$(git rev-parse --show-toplevel)"
+exec "$root/scripts/leak-check" --staged'
+
+install_hook pre-push '#!/usr/bin/env bash
+# managed by scripts/install-hooks
+if [[ "${GRIMMREADER_ALLOW_PUSH:-}" != "1" ]]; then
+  echo "pre-push: push blocked. Pushing is done by the repository owner only." >&2
+  echo "pre-push: if you are the owner, run: GRIMMREADER_ALLOW_PUSH=1 git push ..." >&2
+  exit 1
+fi
+exit 0'
