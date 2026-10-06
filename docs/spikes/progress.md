@@ -14,7 +14,11 @@ Read back:
 - Both writes are stored as sent, with a server-stamped `updatedAt` and `lastReadTime`.
 - The GET response has no `fileProgress` key at all; it only returns the per-format objects (`epubProgress`, `cbxProgress`, …) plus `readProgress` and `readStatus`. The app must read the per-format objects.
 
+## Server → web (owner check, 2026-10-06)
+- "comic sample A": the web reader resumed on page 42 of 373. Exact.
+- "ebook sample 1": the web reader showed 9 % and resumed in the same chapter, on a page whose first paragraph is `/4/60`; the CFI target is `/4/88`, 14 short paragraphs later. foliate's `goTo` shows the page that contains the range start, and page boundaries depend on viewport size (desktop vs phone emulator), so a different first paragraph is expected. Pass if `/4/88` is visible on that web page (owner to confirm).
+
 ## Pending
-1. Owner opens both samples in the web reader as the test account and reports where they resume (chapter and first words for the ebook; page number for the comic).
+1. Owner confirms the CFI target paragraph is visible on the resumed web page.
 2. Owner moves to a new spot in each, then the app reads that progress back and resumes; compare first words / page both ways.
 3. Point CFI without idref (KOReader-bridge style): resume already verified in the engine spike; repeat through the server if time allows.
