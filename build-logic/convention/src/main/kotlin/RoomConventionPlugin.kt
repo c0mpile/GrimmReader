@@ -10,8 +10,8 @@ class RoomConventionPlugin : Plugin<Project> {
         pluginManager.apply("com.google.devtools.ksp")
         extensions.configure<RoomExtension> { schemaDirectory("$projectDir/schemas") }
         dependencies {
-            add("implementation", libs.lib("room-runtime"))
-            add("implementation", libs.lib("room-ktx"))
+            add("api", libs.lib("room-runtime"))
+            add("api", libs.lib("room-ktx"))
             add("ksp", libs.lib("room-compiler"))
             add("testImplementation", libs.lib("room-testing"))
         }
