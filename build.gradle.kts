@@ -17,5 +17,6 @@ subprojects {
     extensions.configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
         buildUponDefaultConfig = true
         parallel = true
+        config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     }
 }
