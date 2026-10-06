@@ -38,7 +38,10 @@ object FormatSniffer {
 
     private fun sniffZip(file: File): BookFormat =
         ZipFile(file).use { zip ->
-            val mimetype = zip.getEntry("mimetype")?.let { e -> zip.getInputStream(e).use { it.readBytes().decodeToString().trim() } }
+            val mimetype =
+                zip.getEntry("mimetype")?.let { e ->
+                    zip.getInputStream(e).use { it.readBounded(ReadLimits.SNIFF_BYTES)?.decodeToString()?.trim() }
+                }
             when {
                 mimetype == "application/epub+zip" || zip.getEntry("META-INF/container.xml") != null -> BookFormat.EPUB
                 else -> BookFormat.CBZ

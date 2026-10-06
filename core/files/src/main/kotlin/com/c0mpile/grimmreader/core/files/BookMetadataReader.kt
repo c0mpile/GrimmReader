@@ -40,14 +40,17 @@ object BookMetadataReader {
             val parsed = parseOpf(opf.byteInputStream())
             val base = opfPath.substringBeforeLast('/', "")
             val coverHref = parsed.coverHref?.let { if (base.isEmpty()) it else "$base/$it" }
-            val cover = coverHref?.let { zip.getEntry(it.decodePercent()) }?.let { e -> zip.getInputStream(e).use { it.readBytes() } }
+            val cover =
+                coverHref?.let { zip.getEntry(it.decodePercent()) }?.let { e ->
+                    zip.getInputStream(e).use { it.readBounded(ReadLimits.IMAGE_BYTES) }
+                }
             LocalMetadata(title = parsed.title, authors = parsed.authors, cover = cover)
         }
 
     private fun cbz(file: File): LocalMetadata =
         ZipComicArchive(file).use { archive ->
             val info = archive.comicInfo()?.let { parseComicInfo(it.inputStream()) }
-            val cover = if (archive.pageCount > 0) archive.open(0).use { it.readBytes() } else null
+            val cover = if (archive.pageCount > 0) archive.open(0).use { it.readBounded(ReadLimits.IMAGE_BYTES) } else null
             (info ?: LocalMetadata(title = null)).copy(cover = cover)
         }
 
@@ -115,7 +118,8 @@ object BookMetadataReader {
         )
     }
 
-    private fun ZipFile.text(name: String): String? = getEntry(name)?.let { e -> getInputStream(e).use { it.readBytes().decodeToString() } }
+    private fun ZipFile.text(name: String): String? =
+        getEntry(name)?.let { e -> getInputStream(e).use { it.readBounded(ReadLimits.XML_BYTES)?.decodeToString() } }
 
     private fun attr(
         xml: String,
