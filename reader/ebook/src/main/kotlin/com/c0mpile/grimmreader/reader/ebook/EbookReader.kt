@@ -180,8 +180,9 @@ private class LocalOnlyClient(
     override fun shouldInterceptRequest(
         view: WebView,
         request: WebResourceRequest,
-    ): WebResourceResponse =
-        loader.shouldInterceptRequest(request.url) ?: WebResourceResponse("text/plain", "utf-8", HTTP_FORBIDDEN, "Forbidden", emptyMap(), null)
+    ): WebResourceResponse = loader.shouldInterceptRequest(request.url) ?: forbidden()
+
+    private fun forbidden() = WebResourceResponse("text/plain", "utf-8", HTTP_FORBIDDEN, "Forbidden", emptyMap(), null)
 
     override fun shouldOverrideUrlLoading(
         view: WebView,
