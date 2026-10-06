@@ -1,0 +1,96 @@
+package com.c0mpile.grimmreader.core.database
+
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.c0mpile.grimmreader.core.database.entity.BookEntity
+import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
+import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
+import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
+import com.c0mpile.grimmreader.core.database.entity.ServerEntity
+import com.c0mpile.grimmreader.core.model.BookFormat
+import com.c0mpile.grimmreader.core.model.BookSource
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class DatabaseTest {
+    private lateinit var db: GrimmDatabase
+
+    @Before fun open() {
+        db =
+            Room
+                .inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), GrimmDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+    }
+
+    @After fun close() = db.close()
+
+    private suspend fun serverBook(
+        serverId: Long,
+        bookServerId: Long,
+        title: String,
+    ) = db.bookDao().insert(
+        BookEntity(source = BookSource.SERVER, serverRowId = serverId, serverBookId = bookServerId, title = title),
+    )
+
+    @Test fun refreshKeepsDownloadedBooksOnly() =
+        runTest {
+            val server = db.serverDao().upsert(ServerEntity(baseUrl = "https://grimmory.example.com"))
+            val kept = serverBook(server, 1, "Sample one")
+            val downloaded = serverBook(server, 2, "Sample two")
+            serverBook(server, 3, "Sample three")
+            db.bookFileDao().upsert(BookFileEntity(bookId = downloaded, format = BookFormat.EPUB, localUri = "books/2/1.epub"))
+
+            db.bookDao().deleteServerBooksNotIn(server, keep = listOf(1))
+
+            val titles =
+                db
+                    .bookDao()
+                    .observeLibrary(null)
+                    .first()
+                    .map { it.book.title }
+            assertEquals(listOf("Sample one", "Sample two"), titles)
+            assertEquals(kept, db.bookDao().byServerId(server, 1)?.id)
+        }
+
+    @Test fun removingServerDetachesBooks() =
+        runTest {
+            val server = db.serverDao().upsert(ServerEntity(baseUrl = "https://grimmory.example.com"))
+            val book = serverBook(server, 7, "Sample")
+            db.bookDao().detachFromServer(server)
+            db.serverDao().delete(server)
+            val row = db.bookDao().get(book)!!.book
+            assertEquals(BookSource.LOCAL, row.source)
+            assertNull(row.serverRowId)
+            assertEquals(7L, row.serverBookId)
+        }
+
+    @Test fun markSyncedOnlyClearsTheVersionThatWasSent() =
+        runTest {
+            val book = db.bookDao().insert(BookEntity(source = BookSource.LOCAL, title = "Local"))
+            db.readingPositionDao().upsert(ReadingPositionEntity(book, "{}", 10f, localUpdatedAt = 1, dirty = true))
+            db.readingPositionDao().upsert(ReadingPositionEntity(book, "{}", 12f, localUpdatedAt = 2, dirty = true))
+            db.readingPositionDao().markSynced(book, serverSeenAt = 100, ifUpdatedAt = 1)
+            assertTrue(db.readingPositionDao().get(book)!!.dirty)
+            db.readingPositionDao().markSynced(book, serverSeenAt = 100, ifUpdatedAt = 2)
+            assertFalse(db.readingPositionDao().get(book)!!.dirty)
+        }
+
+    @Test fun outboxReplaceCoalescesProgress() =
+        runTest {
+            db.outboxDao().replace(OutboxOpEntity(kind = "progress", entityId = 5, payload = "a", createdAt = 1))
+            db.outboxDao().replace(OutboxOpEntity(kind = "progress", entityId = 5, payload = "b", createdAt = 2))
+            db.outboxDao().replace(OutboxOpEntity(kind = "progress", entityId = 6, payload = "c", createdAt = 3))
+            assertEquals(listOf("b", "c"), db.outboxDao().due(now = 10).map { it.payload })
+        }
+}

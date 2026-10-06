@@ -19,6 +19,15 @@ object DatabaseModule {
         @ApplicationContext context: Context,
     ): GrimmDatabase = Room.databaseBuilder(context, GrimmDatabase::class.java, "grimm.db").build()
 
-    @Provides
-    fun bookDao(db: GrimmDatabase) = db.bookDao()
+    @Provides fun serverDao(db: GrimmDatabase) = db.serverDao()
+
+    @Provides fun bookDao(db: GrimmDatabase) = db.bookDao()
+
+    @Provides fun bookFileDao(db: GrimmDatabase) = db.bookFileDao()
+
+    @Provides fun readingPositionDao(db: GrimmDatabase) = db.readingPositionDao()
+
+    @Provides fun outboxDao(db: GrimmDatabase) = db.outboxDao()
+
+    @Provides fun downloadDao(db: GrimmDatabase) = db.downloadDao()
 }

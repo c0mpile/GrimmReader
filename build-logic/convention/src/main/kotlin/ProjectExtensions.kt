@@ -3,6 +3,7 @@ import org.gradle.api.artifacts.MinimalExternalModuleDependency
 import org.gradle.api.artifacts.VersionCatalog
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.testing.Test
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
@@ -16,6 +17,11 @@ internal val Project.libs: VersionCatalog
     get() = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
 internal fun VersionCatalog.lib(alias: String): Provider<MinimalExternalModuleDependency> = findLibrary(alias).get()
+
+/** Robolectric's native SQLite and file descriptors need java.io opened and jdk.internal.access exported on JDK 17+. */
+internal fun Project.configureUnitTests() {
+    tasks.withType(Test::class.java).configureEach { jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+}
 
 internal fun Project.configureKotlinToolchain() {
     extensions.configure<KotlinProjectExtension> { jvmToolchain(JDK) }

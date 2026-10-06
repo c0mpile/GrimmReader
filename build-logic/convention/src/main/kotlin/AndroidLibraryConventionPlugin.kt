@@ -16,6 +16,7 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
             testOptions.unitTests.isIncludeAndroidResources = true
         }
         configureKotlinToolchain()
+        configureUnitTests()
         dependencies {
             add("testImplementation", libs.lib("junit"))
         }
