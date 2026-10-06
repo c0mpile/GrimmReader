@@ -3,7 +3,8 @@ style:
   MaxLineLength:
     maxLineLength: 140
   MagicNumber:
-    excludes: ['**/test/**', '**/androidTest/**', '**/*Theme.kt', '**/*Palette*.kt', '**/*Colors.kt']
+    # Visual constants are normal in Compose UI code.
+    excludes: ['**/test/**', '**/androidTest/**', '**/designsystem/**', '**/feature/**/ui/**', '**/reader/**/ui/**', '**/app/**/ui/**']
     ignorePropertyDeclaration: true
     ignoreCompanionObjectPropertyDeclaration: true
     ignoreAnnotation: true
