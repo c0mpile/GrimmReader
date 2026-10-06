@@ -3,11 +3,13 @@
 Question: can panels be found on-device, fast enough and accurately enough for guided view (PLAN §7, M4 target: ≥ 85 % recall, ≤ 300 ms/page p90), and what is the fallback?
 Result: **a clean-room, dependency-free Kotlin detector is fast enough (p90 88 ms on the emulator) and precise (0.92 on the exactly labelled pages), but recall (0.69 exact, 0.48 overall) is well short of the M4 target.** Guided view must ship with the full-page fallback and per-page "full page" memory from day one; recall needs more work in M4 (see Next).
 
+> **Caveat: these scores are in-sample and optimistic.** The detector was tuned through three versions against the same 36 pages it is scored on, and for 13 pages the ground-truth boxes were taken from v1's output after a visual check (so their IoU is close to 1 by construction). Treat the numbers as development figures, not as an estimate for unseen comics. The M4 acceptance test uses a separate held-out set, labelled from scratch and never used for tuning.
+
 ## Data set
 36 pages from six comics of the comic library (comic samples A–F, 6 pages each, read-only GETs through `scripts/live-smoke`, ≤ 1 req/s; kept in git-ignored `.local/spikes/panels/`, never committed). The set covers white gutters, black gutters inside a white page margin, very dark art with thin black gutters (sample B), strict 9-panel grids, panels separated only by thin border lines, splash pages, covers and cover galleries, 7 wide double-page spreads, one black-and-white page, slanted gutters, a tilted photo collage and overlapping panels on a spread.
 Gaps: **no manga and no right-to-left pages** (none in the libraries; public-domain samples still to be sourced), only one black-and-white page.
 
-Ground truth: 200 hand-labelled panel boxes in reading order, normalised coordinates, in `docs/spikes/panels-gt.json` (numbers and page refs only). 9 pages are marked `approx` (dark sample B pages, a dense spread, a collage, an overlapping spread) because their boundaries are ambiguous; scores are reported with and without them. Splash pages and covers are labelled as one panel; cover galleries as one panel per cover.
+Ground truth: 200 panel boxes (hand-labelled from 10 % grid overlays; on 13 pages v1's boxes were kept where they were visually correct) in reading order, normalised coordinates, in `docs/spikes/panels-gt.json` (numbers and page refs only). 9 pages are marked `approx` (dark sample B pages, a dense spread, a collage, an overlapping spread) because their boundaries are ambiguous; scores are reported with and without them. Splash pages and covers are labelled as one panel; cover galleries as one panel per cover.
 
 ## Detector (`spikes/panels/detector`, pure Kotlin, no dependencies)
 1. Area-average downscale (long side ≤ 1280; on Android the page is decoded with `inSampleSize = 2`, so 960).
@@ -53,5 +55,5 @@ To stay inside the time box only candidate 1 was built. The others, from documen
 - Keep the clean-room detector in `reader/comic` behind `PanelProvider`, cache results in Room keyed by partial-MD5 + size, page index and `GutterDetector.VERSION`; run it off the main thread ahead of the reader (prefetch next pages), so the cold first run is never on screen.
 - Guided view must treat the fallback as normal: full-page stop when unsure, a per-page "show full page" toggle that is remembered, and double-tap to escape.
 - Recall work, in order of expected gain: (1) thin dark border lines inside panels with art crossing them (split along long straight dark lines found by a projection on the panel interior), (2) slanted gutters (allow a small angle when testing gutter lines), (3) a dark-page mode for very dark art (edge-based instead of colour-based gutters), (4) cover galleries on textured backgrounds. Re-run `eval.py` after each.
-- Add public-domain manga / right-to-left and black-and-white pages to the set before M4 starts (sources and licences recorded, images never committed).
+- Build a held-out evaluation set before M4 starts (different comics, labelled from scratch without looking at detector output), including public-domain manga / right-to-left and black-and-white pages (sources and licences recorded, images never committed).
 - Measure on a real tablet with a release build.
