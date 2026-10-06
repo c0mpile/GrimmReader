@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Live-server helper for the restricted test account. Manual use only, never in CI.
+# Reads GRIMMREADER_* from the untracked .env. Prints no private values.
+#
+#   live-smoke get <api-path> [outfile]        read-only GET (stdout or file)
+#   live-smoke put-progress <book-id> <json>   write this account's own progress (PUT /app/books/{id}/progress)
+#   live-smoke sandbox-<op> ...                reserved for ebook sandbox mutations (not implemented yet)
+#
+# Rate limit: ~1 request per second, sequential. Token cached in .local/ (untracked).
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+set -a; source "$root/.env"; set +a
+: "${GRIMMREADER_SERVER_URL:?}" "${GRIMMREADER_TEST_USER:?}" "${GRIMMREADER_TEST_PASSWORD:?}"
+
+base="${GRIMMREADER_SERVER_URL%/}"
+state="$root/.local/live-smoke"
+mkdir -p "$state"
+chmod 700 "$state"
+stamp="$state/last-request"
+
+throttle() {
+  local now last
+  now=$(date +%s.%N)
+  last=$(cat "$stamp" 2>/dev/null || echo 0)
+  awk -v n="$now" -v l="$last" 'BEGIN{d=1.0-(n-l); if(d>0) system("sleep " d)}'
+  date +%s.%N >"$stamp"
+}
+
+login() {
+  local tok="$state/token.json"
+  if [[ -f "$tok" ]] && (( $(date +%s) - $(stat -c %Y "$tok") < 6600 )); then
+    jq -r .accessToken "$tok"; return
+  fi
+  throttle
+  jq -n --arg u "$GRIMMREADER_TEST_USER" --arg p "$GRIMMREADER_TEST_PASSWORD" '{username:$u,password:$p}' |
+    curl -sS --fail-with-body -m 30 -A 'GrimmReader-spike/0' -H 'Content-Type: application/json' \
+      -d @- "$base/api/v1/auth/login" >"$tok"
+  chmod 600 "$tok"
+  jq -r .accessToken "$tok"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  get)
+    path="${1:?api path}"; out="${2:-/dev/stdout}"
+    t=$(login); throttle
+    curl -sS --fail-with-body -m 120 -A 'GrimmReader-spike/0' -H "Authorization: Bearer $t" \
+      -o "$out" "$base$path"
+    ;;
+  put-progress)
+    id="${1:?book id}"; body="${2:?json}"
+    t=$(login); throttle
+    curl -sS --fail-with-body -m 30 -A 'GrimmReader-spike/0' -X PUT -H "Authorization: Bearer $t" \
+      -H 'Content-Type: application/json' -d "$body" "$base/api/v1/app/books/$id/progress"
+    ;;
+  *)
+    echo "usage: live-smoke get|put-progress ..." >&2; exit 2 ;;
+esac
