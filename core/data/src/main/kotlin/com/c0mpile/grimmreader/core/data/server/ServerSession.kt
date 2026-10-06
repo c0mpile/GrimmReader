@@ -45,7 +45,7 @@ import javax.inject.Singleton
 class ServerSession
     @Inject
     constructor(
-        private val serverDao: ServerDao,
+        serverDao: ServerDao,
         private val secrets: SecretStore,
         private val policy: NetworkPolicyImpl,
         private val guardedClient: Lazy<OkHttpClient>,
