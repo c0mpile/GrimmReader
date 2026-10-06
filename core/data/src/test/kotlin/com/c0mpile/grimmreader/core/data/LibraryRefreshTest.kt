@@ -93,6 +93,7 @@ class LibraryRefreshTest {
                     PlainCipher(),
                 )
             val serverId = db.serverDao().upsert(ServerEntity(baseUrl = server.url("/").toString().trimEnd('/'), allowCleartext = true))
+            secrets.put(ServerSession.key(serverId, "origin"), server.url("/").toString())
             secrets.put(ServerSession.key(serverId, "access"), "stale")
             secrets.put(ServerSession.key(serverId, "refresh"), "r1")
             val session = ServerSession(db.serverDao(), secrets, policy, Lazy { client }, backgroundScope)
@@ -117,6 +118,32 @@ class LibraryRefreshTest {
             assertEquals(listOf("Sample A", "Sample Comic"), books.map { it.title })
             assertEquals(11L, books[0].files.single().serverFileId)
             assertEquals("fresh", secrets.get(ServerSession.key(serverId, "access")))
+            backgroundScope.cancel()
+        }
+
+    @Test fun tokenIsNotReusedAfterTheServerUrlChanges() =
+        runBlocking {
+            val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val other = MockWebServer().apply { start() }
+            server.start()
+            other.enqueue(MockResponse.Builder().body("[]").build())
+            val policy = NetworkPolicyImpl()
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "t.preferences_pb") }
+            val secrets = SecretStore(store, PlainCipher())
+            // Token issued by `server`; then the same row is pointed at `other` (different port).
+            val id = db.serverDao().upsert(ServerEntity(baseUrl = server.url("/").toString().trimEnd('/'), allowCleartext = true))
+            secrets.put(ServerSession.key(id, "origin"), server.url("/").toString())
+            secrets.put(ServerSession.key(id, "access"), "token-for-first-server")
+            val session = ServerSession(db.serverDao(), secrets, policy, Lazy { GuardedHttpClient.create(policy, "test") }, backgroundScope)
+            db.serverDao().upsert(ServerEntity(id = id, baseUrl = other.url("/").toString().trimEnd('/'), allowCleartext = true))
+            withTimeout(5_000) { session.server.first { it?.baseUrl?.contains(":${other.port}") == true } }
+            while (!policy.isCleartextAllowed(other.hostName)) kotlinx.coroutines.delay(10)
+            kotlinx.coroutines.delay(200)
+
+            session.api()!!.libraries()
+
+            assertEquals(null, other.takeRequest().headers["Authorization"])
+            other.close()
             backgroundScope.cancel()
         }
 }

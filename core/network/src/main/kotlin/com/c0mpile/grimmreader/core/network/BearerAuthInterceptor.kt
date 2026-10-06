@@ -10,14 +10,22 @@ import okhttp3.Response
  * what keeps a token from following a redirect to another host or port.
  */
 class BearerAuthInterceptor(
-    private val origin: () -> HttpUrl?,
-    private val token: () -> String?,
+    private val credentials: () -> BearerCredentials?,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val server = origin()
-        val bearer = token()
-        if (server == null || bearer == null || !request.url.isSameOrigin(server)) return chain.proceed(request)
-        return chain.proceed(request.newBuilder().header("Authorization", "Bearer $bearer").build())
+        // One read: origin and token come from the same snapshot, so a token can never be paired with
+        // another server's origin while the configured server changes.
+        val current = credentials()
+        if (current == null || !request.url.isSameOrigin(current.origin)) return chain.proceed(request)
+        return chain.proceed(request.newBuilder().header("Authorization", "Bearer ${current.accessToken}").build())
     }
+}
+
+/** An access token together with the exact origin it was issued for. */
+data class BearerCredentials(
+    val origin: HttpUrl,
+    val accessToken: String,
+) {
+    override fun toString() = "BearerCredentials(origin=$origin, accessToken=***)"
 }

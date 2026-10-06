@@ -22,7 +22,7 @@ class RedirectCredentialTest {
         GuardedHttpClient
             .create(TestPolicy(setOf(server.hostName)), "test")
             .newBuilder()
-            .addInterceptor(BearerAuthInterceptor({ authOrigin }, { "secret-token" }))
+            .addInterceptor(BearerAuthInterceptor { authOrigin?.let { BearerCredentials(it, "secret-token") } })
             .build()
 
     @Test fun explicitAuthorizationIsDroppedWhenTheRedirectChangesPort() {
