@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Security invariant: exactly one guarded OkHttpClient (core/network GuardedHttpClient). Fails if any other
+# source constructs an HTTP client or opens a URL connection directly.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+allowed='core/network/src/main/kotlin/com/c0mpile/grimmreader/core/network/GuardedHttpClient.kt'
+pattern='OkHttpClient\(\)|OkHttpClient\.Builder\(|HttpURLConnection|HttpsURLConnection|\.openStream\(|\.openConnection\('
+hits=$(git ls-files -co --exclude-standard -- '*.kt' '*.java' ':!:spikes/**' |
+    grep -v -x "$allowed" | grep -v '/HttpClientInvariantTest.kt$' | xargs -r grep -nE "$pattern" || true)
+if [[ -n "$hits" ]]; then
+    echo "check-http-clients: direct HTTP client use outside $allowed:" >&2
+    echo "$hits" >&2
+    exit 1
+fi
+echo "check-http-clients: ok"
