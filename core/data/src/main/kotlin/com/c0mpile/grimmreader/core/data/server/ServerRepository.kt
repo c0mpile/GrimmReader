@@ -79,7 +79,7 @@ class ServerRepository
                         serverVersion = ok.version,
                     )
                 val id = serverDao.upsert(row).takeIf { it > 0 } ?: row.id
-                session.setAccessTokenForNewServer(id, token)
+                session.storeTokens(id, ok.baseUrl.toHttpUrl(), token)
                 policy.clearPending()
                 prefs.setSetupState(SetupState.SERVER)
                 refreshPermissions()

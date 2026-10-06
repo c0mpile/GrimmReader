@@ -10,6 +10,8 @@ import com.c0mpile.grimmreader.core.datastore.SecretStore
 import com.c0mpile.grimmreader.core.model.Permissions
 import com.c0mpile.grimmreader.core.model.ServerStatus
 import com.c0mpile.grimmreader.core.network.BearerAuthInterceptor
+import com.c0mpile.grimmreader.core.network.BearerCredentials
+import com.c0mpile.grimmreader.core.network.isSameOrigin
 import dagger.Lazy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,12 +31,15 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
 import retrofit2.HttpException
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * The signed-in Grimmory server: its row, tokens and an authenticated API. The guarded client is injected
- * lazily, so local mode never builds it. Tokens live only in [SecretStore] (Keystore-encrypted) and in memory.
+ * lazily, so local mode never builds it. Tokens live only in [SecretStore] (Keystore-encrypted) and in memory,
+ * always bound to the origin that issued them: the interceptor reads origin and token from one snapshot, so a
+ * token can never be sent to another server while the configured server changes.
  */
 @Singleton
 class ServerSession
@@ -64,17 +69,31 @@ class ServerSession
         private val _status = MutableStateFlow(ServerStatus.ONLINE)
         val status: StateFlow<ServerStatus> = _status.asStateFlow()
 
-        @Volatile private var accessToken: String? = null
+        private data class Session(
+            val serverId: Long,
+            val credentials: BearerCredentials,
+        )
+
+        @Volatile private var current: Session? = null
 
         @Volatile private var cached: Pair<HttpUrl, GrimmoryApi>? = null
 
         init {
-            server
-                .onEach { s ->
-                    policy.setConfigured(s?.let { mapOf(hostOf(it.baseUrl) to (it.allowCleartext to it.pinnedSpkiSha256)) }.orEmpty())
-                    accessToken = s?.let { secrets.get(key(it.id, ACCESS)) }
-                    cached = null
-                }.launchIn(scope)
+            server.onEach(::onServerChanged).launchIn(scope)
+        }
+
+        private suspend fun onServerChanged(s: ServerEntity?) {
+            val origin = s?.baseUrl?.toHttpUrlOrNull()
+            val session = current
+            // Credentials for anything but exactly this server and origin are dropped first.
+            if (session != null && (session.serverId != s?.id || session.credentials.origin != origin)) current = null
+            policy.setConfigured(s?.let { mapOf(hostOf(it.baseUrl) to (it.allowCleartext to it.pinnedSpkiSha256)) }.orEmpty())
+            cached = null
+            if (s == null || origin == null || current != null) return
+            // A token is only reused for the origin that issued it (never after the row's URL changed).
+            if (secrets.get(key(s.id, ORIGIN)) != origin.toString()) return
+            val token = secrets.get(key(s.id, ACCESS)) ?: return
+            if (server.value?.id == s.id && server.value?.baseUrl == s.baseUrl) current = Session(s.id, BearerCredentials(origin, token))
         }
 
         fun baseUrl(): HttpUrl? = server.value?.baseUrl?.toHttpUrlOrNull()
@@ -86,39 +105,34 @@ class ServerSession
             return GrimmoryApi.create(base, authedClient()).also { cached = base to it }
         }
 
-        /** Guarded client with the bearer token for the current server's origin (also used by Coil and downloads). */
+        /** Guarded client with the origin-bound bearer token (also used by Coil and downloads). */
         fun authedClient(): OkHttpClient =
             guardedClient
                 .get()
                 .newBuilder()
-                .addInterceptor(BearerAuthInterceptor({ baseUrl() }, { accessToken }))
+                .addInterceptor(BearerAuthInterceptor { current?.credentials })
                 .authenticator(TokenAuthenticator())
                 .build()
 
         /** Unauthenticated API against [base] (login, refresh, setup). */
         fun anonymousApi(base: HttpUrl): GrimmoryApi = GrimmoryApi.create(base, guardedClient.get())
 
+        /** Saves tokens issued by the server at [origin]; they are only ever sent back to that origin. */
         suspend fun storeTokens(
             serverId: Long,
+            origin: HttpUrl,
             token: TokenDto,
         ) {
+            secrets.put(key(serverId, ORIGIN), origin.toString())
             secrets.put(key(serverId, ACCESS), token.accessToken)
             secrets.put(key(serverId, REFRESH), token.refreshToken)
-            if (serverId == server.value?.id) accessToken = token.accessToken
+            current = Session(serverId, BearerCredentials(origin, token.accessToken))
             _status.value = ServerStatus.ONLINE
-        }
-
-        suspend fun setAccessTokenForNewServer(
-            serverId: Long,
-            token: TokenDto,
-        ) {
-            storeTokens(serverId, token)
-            accessToken = token.accessToken
         }
 
         suspend fun clearTokens(serverId: Long) {
             secrets.clear("server.$serverId.")
-            accessToken = null
+            if (current?.serverId == serverId) current = null
         }
 
         fun reportOffline(offline: Boolean) {
@@ -131,37 +145,36 @@ class ServerSession
                 route: Route?,
                 response: Response,
             ): Request? {
-                val base = baseUrl() ?: return null
-                val serverId = server.value?.id ?: return null
                 val sent = response.request.header("Authorization")?.removePrefix("Bearer ")
                 if (response.priorResponse != null || sent == null) return null
                 synchronized(this@ServerSession) {
-                    val current = accessToken
-                    if (current != null && current != sent) return response.request.withBearer(current)
-                    val refreshed = runBlocking { refresh(base, serverId) } ?: return null
+                    val session = current ?: return null
+                    if (!response.request.url.isSameOrigin(session.credentials.origin)) return null
+                    if (session.credentials.accessToken != sent) return response.request.withBearer(session.credentials.accessToken)
+                    val refreshed = runBlocking { refresh(session) } ?: return null
                     return response.request.withBearer(refreshed)
                 }
             }
         }
 
-        private suspend fun refresh(
-            base: HttpUrl,
-            serverId: Long,
-        ): String? {
-            val refreshToken = secrets.get(key(serverId, REFRESH)) ?: return expired()
+        private suspend fun refresh(session: Session): String? {
+            val origin = session.credentials.origin
+            val refreshToken = secrets.get(key(session.serverId, REFRESH)) ?: return expired(session)
             return try {
-                val token = anonymousApi(base).refresh(RefreshRequestDto(refreshToken))
-                storeTokens(serverId, token)
+                val token = anonymousApi(origin).refresh(RefreshRequestDto(refreshToken))
+                // The server may have changed while refreshing: keep the result only for the same session.
+                if (current != session) return null
+                storeTokens(session.serverId, origin, token)
                 token.accessToken
             } catch (e: HttpException) {
-                if (e.code() == HTTP_UNAUTHORIZED || e.code() == HTTP_FORBIDDEN) expired() else null
-            } catch (_: java.io.IOException) {
+                if (e.code() == HTTP_UNAUTHORIZED || e.code() == HTTP_FORBIDDEN) expired(session) else null
+            } catch (_: IOException) {
                 null
             }
         }
 
-        private fun expired(): String? {
-            accessToken = null
+        private fun expired(session: Session): String? {
+            if (current == session) current = null
             _status.value = ServerStatus.AUTH_EXPIRED
             return null
         }
@@ -171,6 +184,7 @@ class ServerSession
         companion object {
             private const val ACCESS = "access"
             private const val REFRESH = "refresh"
+            private const val ORIGIN = "origin"
             private const val HTTP_UNAUTHORIZED = 401
             private const val HTTP_FORBIDDEN = 403
 
