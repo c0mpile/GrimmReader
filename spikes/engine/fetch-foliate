@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Copies Grimmory's vendored foliate-js (AGPL-3.0 project; foliate-js itself is MIT) into the spike assets.
+# Usage: fetch-foliate <path to a Grimmory checkout at 54b5562>
+set -euo pipefail
+src="${1:?path to Grimmory checkout}/frontend/src/assets/foliate"
+dst="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/app/src/main/assets/foliate"
+rm -rf "$dst"; mkdir -p "$dst"
+cp -r "$src"/. "$dst"/

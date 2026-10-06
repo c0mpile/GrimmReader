@@ -54,3 +54,8 @@ CLAUDE.local.md
 
 # Local notes and sample files (private collection data stays here)
 .local/
+
+# spikes
+spikes/*/app/src/main/assets/foliate/
+spikes/**/build/
+spikes/**/.gradle/

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html, body { margin: 0; height: 100%; } foliate-view { display: block; height: 100%; }</style>
+<script type="module">
+import './foliate/view.js'
+
+const post = m => spikeBridge.postMessage(JSON.stringify(m))
+const params = new URLSearchParams(location.search)
+const t0 = performance.now()
+
+const view = document.createElement('foliate-view')
+document.body.append(view)
+
+const snippet = r => {
+    try { return r ? r.toString().replace(/\s+/g, ' ').slice(0, 60) : null } catch { return null }
+}
+view.addEventListener('relocate', e => {
+    const d = e.detail
+    post({
+        t: 'relocate', cfi: d.cfi, fraction: d.fraction,
+        href: d.pageItem?.href ?? d.tocItem?.href ?? null,
+        section: d.section?.current ?? null, words: snippet(d.range),
+    })
+})
+
+window.spike = {
+    view,
+    goTo: x => view.goTo(x),
+    goToFraction: x => view.goToFraction(x),
+    next: () => view.next(),
+    prev: () => view.prev(),
+    style: css => view.renderer.setStyles?.(css),
+}
+
+try {
+    const blob = await (await fetch(params.get('book'))).blob()
+    const file = new File([blob], params.get('name') || 'book.epub', { type: blob.type || 'application/epub+zip' })
+    post({ t: 'fetched', ms: Math.round(performance.now() - t0), bytes: blob.size })
+    await view.open(file)
+    post({ t: 'opened', ms: Math.round(performance.now() - t0) })
+    view.renderer.removeAttribute('animated')
+    const start = params.get('goto')
+    await view.init({ lastLocation: start || null })
+    post({ t: 'ready', ms: Math.round(performance.now() - t0) })
+} catch (err) {
+    post({ t: 'error', message: String(err) })
+}
+</script>
