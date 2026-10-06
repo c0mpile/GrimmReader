@@ -1,6 +1,7 @@
 package com.c0mpile.grimmreader.core.network
 
 import com.c0mpile.grimmreader.core.common.AppError
+import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
@@ -51,7 +52,7 @@ class CleartextGuardInterceptor(
             builder.method("GET", null)
             builder.removeHeader("Content-Type").removeHeader("Content-Length")
         }
-        if (url.host != request.url.host || url.scheme != request.url.scheme) builder.removeHeader("Authorization")
+        if (!url.isSameOrigin(request.url)) builder.removeHeader("Authorization").removeHeader("Cookie")
         return builder.build()
     }
 
@@ -63,3 +64,7 @@ class CleartextGuardInterceptor(
         const val HTTP_PERM_REDIRECT = 308
     }
 }
+
+/** Scheme, host and port all equal (what OkHttp uses to decide whether credentials may follow a redirect). */
+fun HttpUrl.isSameOrigin(other: HttpUrl): Boolean =
+    scheme == other.scheme && host.equals(other.host, ignoreCase = true) && port == other.port
