@@ -18,5 +18,7 @@ subprojects {
         buildUponDefaultConfig = true
         parallel = true
         config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+        // Production code only; tests are covered by ktlint.
+        source.setFrom(files("src/main/kotlin", "src/main/java"))
     }
 }
