@@ -84,6 +84,9 @@ interface BookDao {
         keep: List<Long>,
     )
 
+    @Query("DELETE FROM book WHERE serverRowId = :serverRowId")
+    suspend fun deleteAllForServer(serverRowId: Long)
+
     /** Detach books from a removed server, keeping downloaded ones as local books. */
     @Query("UPDATE book SET source = 'LOCAL', serverRowId = NULL WHERE serverRowId = :serverRowId")
     suspend fun detachFromServer(serverRowId: Long)

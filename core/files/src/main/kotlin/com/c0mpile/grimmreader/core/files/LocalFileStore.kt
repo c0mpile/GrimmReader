@@ -46,6 +46,10 @@ class LocalFileStore
             fileId: Long,
         ): File = File(booksDir, "server/$serverRowId/$serverBookId/$fileId.book").apply { parentFile?.mkdirs() }
 
+        fun deleteServerFiles(serverRowId: Long) {
+            File(booksDir, "server/$serverRowId").deleteRecursively()
+        }
+
         fun importFrom(uri: Uri): ImportedFile {
             val resolver = context.contentResolver
             val name = displayName(resolver, uri) ?: "book"

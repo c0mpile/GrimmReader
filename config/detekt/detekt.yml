@@ -12,7 +12,11 @@ style:
   UnusedPrivateMember:
     ignoreAnnotated: ['Preview']
   ReturnCount:
-    max: 4
+    # `?: return` guard clauses are idiomatic Kotlin.
+    max: 6
+    excludeGuardClauses: true
+  LoopWithTooManyJumpStatements:
+    maxJumpCount: 2
 naming:
   FunctionNaming:
     ignoreAnnotated: ['Composable']
@@ -21,6 +25,8 @@ naming:
 complexity:
   LongParameterList:
     functionThreshold: 8
+    # Injected constructors (repositories, workers) legitimately take many dependencies.
+    constructorThreshold: 10
     ignoreDefaultParameters: true
     ignoreAnnotated: ['Composable']
   LongMethod:
