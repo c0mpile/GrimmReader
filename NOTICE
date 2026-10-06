@@ -1,0 +1,15 @@
+GrimmReader
+Copyright (C) 2026 GrimmReader contributors (https://github.com/c0mpile/GrimmReader)
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, version 3 (see LICENSE).
+
+GrimmReader is an independent companion app for Grimmory (https://github.com/grimmory-tools/grimmory,
+AGPL-3.0). It does not include Grimmory's logo.
+
+Bundled third-party material (full licence texts in licenses/):
+- Inter typeface, Copyright 2020 The Inter Project Authors. SIL Open Font License 1.1 (licenses/Inter-OFL.txt).
+- Lucide icons (converted to Compose vectors), Copyright Lucide Icons and Contributors. ISC License (licenses/Lucide-ISC.txt).
+
+Library dependencies are declared in gradle/libs.versions.toml. All are FOSS (Apache-2.0, MIT, BSD-3-Clause;
+JUnit under EPL-1.0 in tests only); none require Google Play Services.
