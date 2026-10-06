@@ -35,11 +35,32 @@ object GuardedHttpClient {
             .addInterceptor(UserAgentInterceptor(userAgent))
             .addInterceptor(CleartextGuardInterceptor(policy))
             .addInterceptor(RetryInterceptor())
+            .addNetworkInterceptor(RetryAfterSanitizer())
             .sslSocketFactory(sslContext.socketFactory, trustManager)
             .hostnameVerifier(PinAwareHostnameVerifier(policy))
             .connectTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
             .build()
+    }
+}
+
+/**
+ * OkHttp's internal RetryAndFollowUpInterceptor parses a 503's `Retry-After` with Integer.valueOf, so a
+ * hostile value such as "99999999999999999" throws NumberFormatException out of the call. Network
+ * interceptors see the response first: clamp numeric values to a small range, drop malformed ones.
+ */
+internal class RetryAfterSanitizer : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val response = chain.proceed(chain.request())
+        val value = response.header("Retry-After") ?: return response
+        val seconds = value.trim().toBigIntegerOrNull()
+        val builder = response.newBuilder().removeHeader("Retry-After")
+        if (seconds != null) builder.header("Retry-After", seconds.coerceIn(0.toBigInteger(), MAX_SECONDS.toBigInteger()).toString())
+        return builder.build()
+    }
+
+    private companion object {
+        const val MAX_SECONDS = 3600
     }
 }
 
@@ -95,9 +116,10 @@ class RetryInterceptor(
                     null
                 }
             if (response != null && (lastAttempt || !retryable(response.code))) return response
-            val retryAfter = response?.header("Retry-After")?.toLongOrNull()
+            // Clamp before converting: a negative or huge header must not overflow or make sleep() throw.
+            val retryAfter = response?.header("Retry-After")?.toLongOrNull()?.coerceIn(0L, MAX_DELAY_MS / MILLIS)
             response?.close()
-            sleep(retryAfter?.times(MILLIS)?.coerceAtMost(MAX_DELAY_MS) ?: backoff(attempt))
+            sleep(retryAfter?.times(MILLIS) ?: backoff(attempt))
             attempt++
         }
     }
