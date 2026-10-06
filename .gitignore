@@ -33,3 +33,24 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Secrets and local environment (never commit)
+.env
+.env.*
+local.properties
+keystore.properties
+signing.properties
+*.p12
+*.pfx
+*.pem
+credentials*.json
+test-credentials*
+
+# Local agent state and settings
+.claude/settings.local.json
+CLAUDE.local.md
+.gemini/
+.agents/mcp_config.json
+
+# Local notes and sample files (private collection data stays here)
+.local/
