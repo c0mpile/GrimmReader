@@ -15,8 +15,9 @@ import javax.inject.Singleton
 object DatabaseModule {
     @Provides
     @Singleton
-    fun database(@ApplicationContext context: Context): GrimmDatabase =
-        Room.databaseBuilder(context, GrimmDatabase::class.java, "grimm.db").build()
+    fun database(
+        @ApplicationContext context: Context,
+    ): GrimmDatabase = Room.databaseBuilder(context, GrimmDatabase::class.java, "grimm.db").build()
 
     @Provides
     fun bookDao(db: GrimmDatabase) = db.bookDao()

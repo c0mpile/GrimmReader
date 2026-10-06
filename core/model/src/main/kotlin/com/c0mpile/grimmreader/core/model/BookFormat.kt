@@ -1,7 +1,9 @@
 package com.c0mpile.grimmreader.core.model
 
 /** Readable formats. Audiobooks are never opened by this app. */
-enum class BookFormat(val extensions: Set<String>) {
+enum class BookFormat(
+    val extensions: Set<String>,
+) {
     EPUB(setOf("epub")),
     MOBI(setOf("mobi", "azw", "azw3", "kf8")),
     FB2(setOf("fb2")),
