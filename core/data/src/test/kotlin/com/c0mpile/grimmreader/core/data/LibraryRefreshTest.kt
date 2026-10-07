@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.c0mpile.grimmreader.api.grimmory.TokenDto
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.NetworkPolicyImpl
 import com.c0mpile.grimmreader.core.data.server.ServerSession
@@ -93,10 +94,8 @@ class LibraryRefreshTest {
                     PlainCipher(),
                 )
             val serverId = db.serverDao().upsert(ServerEntity(baseUrl = server.url("/").toString().trimEnd('/'), allowCleartext = true))
-            secrets.put(ServerSession.key(serverId, "origin"), server.url("/").toString())
-            secrets.put(ServerSession.key(serverId, "access"), "stale")
-            secrets.put(ServerSession.key(serverId, "refresh"), "r1")
             val session = ServerSession(db.serverDao(), secrets, policy, Lazy { client }, backgroundScope)
+            session.storeTokens(serverId, server.url("/"), TokenDto("stale", "r1"))
             withTimeout(5_000) { session.server.first { it != null } }
             // Wait until the session loaded the stored token.
             while (!policy.isCleartextAllowed(server.hostName)) kotlinx.coroutines.delay(10)
@@ -117,7 +116,7 @@ class LibraryRefreshTest {
             val books = repo.observeLibrary().first()
             assertEquals(listOf("Sample A", "Sample Comic"), books.map { it.title })
             assertEquals(11L, books[0].files.single().serverFileId)
-            assertEquals("fresh", secrets.get(ServerSession.key(serverId, "access")))
+            assertEquals(true, secrets.get(ServerSession.tokensKey(serverId))?.contains("\"fresh\""))
             backgroundScope.cancel()
         }
 
@@ -132,9 +131,8 @@ class LibraryRefreshTest {
             val secrets = SecretStore(store, PlainCipher())
             // Token issued by `server`; then the same row is pointed at `other` (different port).
             val id = db.serverDao().upsert(ServerEntity(baseUrl = server.url("/").toString().trimEnd('/'), allowCleartext = true))
-            secrets.put(ServerSession.key(id, "origin"), server.url("/").toString())
-            secrets.put(ServerSession.key(id, "access"), "token-for-first-server")
             val session = ServerSession(db.serverDao(), secrets, policy, Lazy { GuardedHttpClient.create(policy, "test") }, backgroundScope)
+            session.storeTokens(id, server.url("/"), TokenDto("token-for-first-server", "refresh-for-first-server"))
             db.serverDao().upsert(ServerEntity(id = id, baseUrl = other.url("/").toString().trimEnd('/'), allowCleartext = true))
             withTimeout(5_000) { session.server.first { it?.baseUrl?.contains(":${other.port}") == true } }
             while (!policy.isCleartextAllowed(other.hostName)) kotlinx.coroutines.delay(10)
@@ -144,6 +142,40 @@ class LibraryRefreshTest {
 
             assertEquals(null, other.takeRequest().headers["Authorization"])
             other.close()
+            backgroundScope.cancel()
+        }
+
+    @Test fun lateUnauthorizedFromTheOldServerNeverGetsTheNewTokens() =
+        runBlocking {
+            val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val newServer = MockWebServer().apply { start() }
+            server.start()
+            server.enqueue(MockResponse.Builder().code(401).build())
+            val policy = NetworkPolicyImpl()
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "u.preferences_pb") }
+            val secrets = SecretStore(store, PlainCipher())
+            val id = db.serverDao().upsert(ServerEntity(baseUrl = server.url("/").toString().trimEnd('/'), allowCleartext = true))
+            val session = ServerSession(db.serverDao(), secrets, policy, Lazy { GuardedHttpClient.create(policy, "test") }, backgroundScope)
+            policy.setPending(server.hostName, cleartext = true, pin = null)
+            session.storeTokens(id, server.url("/"), TokenDto("old-access", "old-refresh"))
+            val client = session.authedClient()
+            // Re-login to another server reusing the same row before the old server's 401 is handled.
+            session.storeTokens(id, newServer.url("/"), TokenDto("new-access", "new-refresh"))
+
+            client
+                .newCall(
+                    okhttp3.Request
+                        .Builder()
+                        .url(server.url("/api/v1/libraries"))
+                        .build(),
+                ).execute()
+                .close()
+
+            val first = server.takeRequest()
+            assertEquals(null, first.headers["Authorization"])
+            assertEquals(1, server.requestCount)
+            assertEquals(0, newServer.requestCount)
+            newServer.close()
             backgroundScope.cancel()
         }
 }
