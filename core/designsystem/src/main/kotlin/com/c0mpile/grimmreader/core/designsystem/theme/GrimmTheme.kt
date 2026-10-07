@@ -79,6 +79,8 @@ private val GrimmShapes =
                 .RoundedCornerShape(12.dp),
     )
 
+// The provided-values array has at most six entries; copying it for the vararg call is negligible.
+@Suppress("SpreadOperator")
 @Composable
 fun GrimmTheme(
     appearance: Appearance = Appearance(),
@@ -99,25 +101,23 @@ fun GrimmTheme(
         remember(context) {
             Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
         }
-    val theme: @Composable () -> Unit = {
-        MaterialTheme(colorScheme = scheme, typography = grimmTypography(), shapes = GrimmShapes, content = content)
-    }
-    if (!eink) {
-        CompositionLocalProvider(LocalEinkLook provides false, LocalMotionEnabled provides systemAnimations, content = theme)
-        return
-    }
     val viewConfiguration = LocalViewConfiguration.current
     val einkViewConfiguration =
-        remember(viewConfiguration) {
-            viewConfiguration.withMinimumTouchTarget(DpSize(EinkMinTouchTarget, EinkMinTouchTarget))
+        remember(viewConfiguration) { viewConfiguration.withMinimumTouchTarget(DpSize(EinkMinTouchTarget, EinkMinTouchTarget)) }
+    // One provider call site for every theme: switching themes must not rebuild the app (it would reset
+    // navigation and screen state).
+    val values =
+        buildList {
+            add(LocalEinkLook provides eink)
+            add(LocalMotionEnabled provides (!eink && systemAnimations))
+            if (eink) {
+                add(LocalIndication provides NoIndication)
+                add(LocalRippleConfiguration provides null)
+                add(LocalMinimumInteractiveComponentSize provides EinkMinTouchTarget)
+                add(LocalViewConfiguration provides einkViewConfiguration)
+            }
         }
-    CompositionLocalProvider(
-        LocalEinkLook provides true,
-        LocalMotionEnabled provides false,
-        LocalIndication provides NoIndication,
-        LocalRippleConfiguration provides null,
-        LocalMinimumInteractiveComponentSize provides EinkMinTouchTarget,
-        LocalViewConfiguration provides einkViewConfiguration,
-        content = theme,
-    )
+    CompositionLocalProvider(*values.toTypedArray()) {
+        MaterialTheme(colorScheme = scheme, typography = grimmTypography(), shapes = GrimmShapes, content = content)
+    }
 }
