@@ -5,10 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.download.DownloadRepository
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
+import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookSource
 import com.c0mpile.grimmreader.core.model.Permissions
+import com.c0mpile.grimmreader.core.model.Shelf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -25,7 +27,12 @@ data class BookDetailUiState(
     val canDownload: Boolean = false,
     val canReadOnline: Boolean = false,
     val loaded: Boolean = false,
-)
+    /** User shelves (not magic); empty for local books, which cannot be shelved. */
+    val shelves: List<Shelf> = emptyList(),
+) {
+    val favorites: Shelf? get() = shelves.firstOrNull { it.isFavorites }
+    val isFavorite: Boolean get() = favorites?.let { book?.shelves?.contains(it.id) } == true
+}
 
 @HiltViewModel(assistedFactory = BookDetailViewModel.Factory::class)
 class BookDetailViewModel
@@ -34,22 +41,26 @@ class BookDetailViewModel
         @Assisted private val bookId: Long,
         private val library: LibraryRepository,
         private val downloads: DownloadRepository,
+        private val shelfRepo: ShelfRepository,
         session: ServerSession,
     ) : ViewModel() {
         val state: StateFlow<BookDetailUiState> =
-            combine(library.observeBook(bookId), downloads.observe(), session.permissions) { book, all, permissions ->
+            combine(
+                library.observeBook(bookId),
+                downloads.observe(),
+                session.permissions,
+                shelfRepo.observe(),
+            ) { book, all, permissions, shelves ->
                 val file = book?.primaryFile
                 BookDetailUiState(
                     book = book,
                     download = all.firstOrNull { it.bookFileId == file?.id },
                     // Without canDownload the server still allows reading, but nothing is kept (PLAN §5).
                     canDownload = book?.source == BookSource.SERVER && permissions.has(Permissions.CAN_DOWNLOAD),
-                    // PDF reading arrives in M1; ebooks and comics (any archive type, extracted by the server) work.
-                    canReadOnline =
-                        book?.source == BookSource.SERVER &&
-                            book.serverId != null &&
-                            file?.format?.let { it.isReflowable || it.isComic } == true,
+                    // Ebooks and PDFs are fetched whole into the cache; comics are streamed page by page.
+                    canReadOnline = book?.source == BookSource.SERVER && book.serverId != null && file != null,
                     loaded = true,
+                    shelves = if (book?.source == BookSource.SERVER) shelves.filter { !it.magic } else emptyList(),
                 )
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BookDetailUiState())
 
@@ -71,6 +82,26 @@ class BookDetailViewModel
                 library.deleteLocal(book.id)
                 if (book.source != BookSource.SERVER) onRemoved()
             }
+
+        fun toggleFavorite() {
+            val shelf = state.value.favorites ?: return
+            setShelved(shelf.id, !state.value.isFavorite)
+        }
+
+        fun setShelved(
+            shelfId: Long,
+            on: Boolean,
+        ) = viewModelScope.launch { shelfRepo.setShelved(bookId, shelfId, on) }
+
+        /** Creates a shelf and puts the book on it; the error message on failure. */
+        suspend fun createShelfWithBook(name: String): String? =
+            shelfRepo.create(name).fold(
+                onSuccess = { shelf ->
+                    shelfRepo.setShelved(bookId, shelf.id, true)
+                    null
+                },
+                onFailure = { "Could not create the shelf. Check the connection." },
+            )
 
         @AssistedFactory
         interface Factory {
