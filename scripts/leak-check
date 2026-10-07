@@ -4,6 +4,7 @@
 #   scripts/leak-check --tree     scan every tracked and untracked-unignored file
 # Forbidden strings come from the untracked .env (GRIMMREADER_* variables); nothing private lives here.
 # Any email address is a leak except *@users.noreply.github.com and example.com/org/net placeholders.
+# Third-party licence texts under licenses/ are kept verbatim, so the email rule skips them (other rules apply).
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -60,7 +61,8 @@ for p in "${patterns[@]:-}"; do
 done
 
 # Emails: allow GitHub noreply and RFC 2606 placeholders; skip Kotlin labels like this@Foo.bar.
-emails="$(grep -E -o -i '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' <<<"$content" |
+emails="$(grep -v -E '^licenses/' <<<"$content" |
+  grep -E -o -i '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' |
   grep -v -i -E '(^|[^A-Za-z0-9])(this|return|super|break|continue)@' |
   grep -v -i -E '@users\.noreply\.github\.com$' |
   grep -v -i -E '@([a-z0-9-]+\.)*example\.(com|org|net)$' | sort -u || true)"
