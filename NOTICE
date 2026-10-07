@@ -13,6 +13,14 @@ Bundled third-party material (full licence texts in licenses/):
   (licenses/foliate-js-MIT.txt); taken from Grimmory's copy, whose changes are AGPL-3.0. It bundles
   fflate (MIT, Copyright Arjun Barrett; licenses/fflate-MIT.txt) and zip.js (BSD-3-Clause, Copyright Gildas Lormeau;
   licenses/zip.js-BSD-3-Clause.txt).
+- Reader fonts (reader/ebook/src/main/assets/fonts, fetched by scripts/fetch-reader-fonts), SIL Open Font License 1.1,
+  each with its own copyright notice in licenses/<Family>-OFL.txt: Source Sans 3 (Adobe, Reserved Font Name 'Source'),
+  Roboto, Lato (Reserved Font Name "Lato"), Open Sans, Noto Sans, Gelasio, Merriweather (Reserved Font Name
+  "Merriweather"), Crimson Text, EB Garamond, Source Serif 4, Atkinson Hyperlegible, Literata. Fonts with a Reserved
+  Font Name are unmodified; the others are subset (Latin, Greek, Cyrillic; no hinting; width axis fixed at 100).
+- Charter (reader/ebook/src/main/assets/fonts/charter-*), (c) Copyright 1989-1992, Bitstream Inc., in the TrueType
+  edition by Matthew Butterick. Bitstream's X Consortium licence (licenses/Charter-Bitstream.txt).
+  BITSTREAM CHARTER is a registered trademark of Bitstream Inc.
 - Lucide icons (converted to Compose vectors), Copyright Lucide Icons and Contributors. ISC License (licenses/Lucide-ISC.txt).
 
 Library dependencies are declared in gradle/libs.versions.toml. All are FOSS (Apache-2.0, MIT, BSD-3-Clause;
