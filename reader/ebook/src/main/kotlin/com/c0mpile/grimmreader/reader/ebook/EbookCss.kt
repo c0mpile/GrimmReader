@@ -17,22 +17,25 @@ object EbookCss {
         prefs: ReaderPrefs,
         colors: PageColors,
     ): String {
-        val family =
-            when (prefs.fontFamily.lowercase()) {
-                "publisher" -> null
-                "sans", "inter" -> "sans-serif"
-                else -> "serif"
-            }
+        val font = ReaderFonts.resolve(prefs.fontFamily)
         return buildString {
+            font?.let { append(fontFaces(it)) }
             append("html { font-size: ${prefs.fontSize}px !important; ")
             append("color: ${colors.text} !important; background: ${colors.background} !important; }")
             append(" body { background: transparent !important; color: inherit !important; }")
             append(" p, li, blockquote, dd { line-height: ${prefs.lineHeight} !important; ")
             append("text-align: ${if (prefs.justify) "justify" else "start"} !important; ")
             append("hyphens: ${if (prefs.hyphenate) "auto" else "manual"} !important; }")
-            if (family != null) append(" body, p, li, div, span { font-family: $family !important; }")
+            if (font != null) append(" body, p, li, div, span { font-family: \"${font.cssFamily}\", ${font.generic} !important; }")
             append(" a:link, a:visited { color: ${colors.link} !important; }")
             colors.imageFilter?.let { append(" img, svg, video { filter: $it !important; }") }
         }
     }
+
+    /** Absolute URLs: sections are blob: documents, against which relative URLs don't resolve. */
+    private fun fontFaces(font: ReaderFont): String =
+        font.faces.joinToString("") { face ->
+            "@font-face { font-family: \"${font.cssFamily}\"; src: url(\"$ORIGIN/assets/fonts/${face.file}\"); " +
+                "font-weight: ${face.weight}; font-style: ${if (face.italic) "italic" else "normal"}; font-display: block; } "
+        }
 }

@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -484,7 +486,7 @@ private fun ReaderSettings(
     textSettings: Boolean,
     onChange: (ReaderPrefs) -> Unit,
 ) {
-    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // Page colours only; menus keep the app theme.
         Text("Page", style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -515,15 +517,7 @@ private fun ReaderSettings(
             Text("${prefs.fontSize}")
             TextButton(onClick = { onChange(prefs.copy(fontSize = (prefs.fontSize + 1).coerceAtMost(MAX_FONT))) }) { Text("A+") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Serif", "Sans", "Publisher").forEach { family ->
-                FilterChip(
-                    selected = prefs.fontFamily.equals(family, ignoreCase = true) || (family == "Serif" && prefs.fontFamily == "Literata"),
-                    onClick = { onChange(prefs.copy(fontFamily = family)) },
-                    label = { Text(family) },
-                )
-            }
-        }
+        FontPicker(prefs.fontFamily, onSelect = { onChange(prefs.copy(fontFamily = it)) })
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Justify text", Modifier.weight(1f))
             Switch(checked = prefs.justify, onCheckedChange = { onChange(prefs.copy(justify = it)) })
