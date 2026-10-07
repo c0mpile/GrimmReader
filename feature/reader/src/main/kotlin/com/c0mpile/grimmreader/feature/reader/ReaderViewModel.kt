@@ -16,6 +16,8 @@ import com.c0mpile.grimmreader.core.model.ReadingDirection
 import com.c0mpile.grimmreader.reader.comic.ArchivePageSource
 import com.c0mpile.grimmreader.reader.comic.StreamingPageSource
 import com.c0mpile.grimmreader.reader.paged.PageSource
+import com.c0mpile.grimmreader.reader.pdf.PdfPageSource
+import com.c0mpile.grimmreader.reader.pdf.ProtectedPdfException
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -123,8 +125,10 @@ class ReaderViewModel
                         book.source == BookSource.SERVER && serverId != null -> openOnline(serverId, file, local)
                         else -> ReaderContent.NotDownloaded
                     }
+                } catch (_: ProtectedPdfException) {
+                    ReaderContent.Failed(PROTECTED_PDF)
                 } catch (_: IOException) {
-                    ReaderContent.Failed(ONLINE_FAILED)
+                    ReaderContent.Failed(if (file?.localUri == null) ONLINE_FAILED else OPEN_FAILED)
                 }
             _state.update { it.copy(content = content) }
             if (content is ReaderContent.Ebook || content is ReaderContent.Paged) {
@@ -137,14 +141,16 @@ class ReaderViewModel
             format: BookFormat,
             local: Locator?,
         ): ReaderContent =
-            if (format.isReflowable) {
-                ReaderContent.Ebook(file, (local as? Locator.Epub)?.cfi)
-            } else {
-                val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(file, format, null) }
-                if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local)
+            when {
+                format.isReflowable -> ReaderContent.Ebook(file, (local as? Locator.Epub)?.cfi)
+                format == BookFormat.PDF -> paged(withContext(Dispatchers.IO) { PdfPageSource.open(file) }, local)
+                else -> {
+                    val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(file, format, null) }
+                    if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local)
+                }
             }
 
-        /** Not downloaded: ebooks are fetched whole into the cache, comics are streamed page by page. */
+        /** Not downloaded: ebooks and PDFs are fetched whole into the cache, comics are streamed page by page. */
         private suspend fun openOnline(
             serverBookId: Long,
             file: BookFile,
@@ -159,7 +165,7 @@ class ReaderViewModel
                         paged(StreamingPageSource(pages, ReadingDirection.LTR) { online.comicPage(serverBookId, it) }, local)
                     }
                 }
-                file.format.isReflowable -> {
+                file.format.isReflowable || file.format == BookFormat.PDF -> {
                     _state.update { it.copy(content = ReaderContent.Fetching(null)) }
                     val (cached, format) =
                         online.book(serverBookId, file.serverFileId, file.format) { p ->
@@ -246,6 +252,8 @@ class ReaderViewModel
 
         private companion object {
             const val SAVE_DEBOUNCE_MS = 2_000L
+            const val OPEN_FAILED = "This file could not be opened. It may be damaged."
+            const val PROTECTED_PDF = "This PDF is password-protected, which is not supported yet."
             const val ONLINE_FAILED = "Could not load this book from the server. Check the connection, or download it to read offline."
         }
     }
