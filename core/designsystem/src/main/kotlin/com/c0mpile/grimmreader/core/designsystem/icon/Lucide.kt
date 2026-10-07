@@ -31,4 +31,16 @@ internal class LucideBuilder(
             strokeLineJoin = StrokeJoin.Round,
         )
     }
+
+    /** The same outline, filled (for "on" states such as a favorited heart). */
+    fun filled(pathData: String) {
+        builder.addPath(
+            pathData = addPathNodes(pathData),
+            fill = SolidColor(Color.Black),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        )
+    }
 }
