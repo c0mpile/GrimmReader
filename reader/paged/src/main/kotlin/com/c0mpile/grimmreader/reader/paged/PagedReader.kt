@@ -19,13 +19,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.c0mpile.grimmreader.core.designsystem.theme.EinkImageFilter
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineScope
@@ -39,7 +39,7 @@ private const val ZOOM_HEADROOM = 2
 
 /**
  * Page-by-page reader for comics and PDF: one page per screen, pinch/double-tap zoom, tap zones 30/40/30
- * (mirrored for right-to-left). [grayscale] and [instantTurns] come from the page theme (E-ink pages); turns
+ * (mirrored for right-to-left). [imageFilter] and [instantTurns] come from the page theme; turns
  * are also instant when system animations are off. [onPage] gets 0-based indices.
  */
 @Composable
@@ -49,7 +49,7 @@ fun PagedReader(
     onPage: (Int) -> Unit,
     onToggleChrome: () -> Unit,
     modifier: Modifier = Modifier,
-    grayscale: Boolean = false,
+    imageFilter: ColorFilter? = null,
     instantTurns: Boolean = false,
 ) {
     val rtl = source.readingDirection == ReadingDirection.RTL
@@ -58,7 +58,7 @@ fun PagedReader(
     val motion = LocalMotionEnabled.current && !instantTurns
     LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.collect(onPage) }
     HorizontalPager(state = pager, modifier = modifier.fillMaxSize(), reverseLayout = rtl, beyondViewportPageCount = 1) { index ->
-        Page(source, index, grayscale) { offset, width ->
+        Page(source, index, imageFilter) { offset, width ->
             val forward = if (rtl) offset.x < width * TAP_EDGE else offset.x > width * (1 - TAP_EDGE)
             val backward = if (rtl) offset.x > width * (1 - TAP_EDGE) else offset.x < width * TAP_EDGE
             when {
@@ -83,7 +83,7 @@ private fun CoroutineScope.turn(
 private fun Page(
     source: PageSource,
     index: Int,
-    grayscale: Boolean,
+    imageFilter: ColorFilter?,
     onTap: (Offset, Float) -> Unit,
 ) {
     val configuration = LocalConfiguration.current
@@ -112,7 +112,7 @@ private fun Page(
                 bitmap = image,
                 contentDescription = null,
                 contentScale = ContentScale.Inside,
-                colorFilter = if (grayscale) EinkImageFilter else null,
+                colorFilter = imageFilter,
                 modifier =
                     Modifier.fillMaxSize().zoomable(
                         zoom,

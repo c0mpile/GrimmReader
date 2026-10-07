@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.c0mpile.grimmreader.core.model.Appearance
+import com.c0mpile.grimmreader.core.model.EinkTint
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ThemeMode
@@ -53,12 +54,18 @@ class StoresTest {
     @Test fun oldThemeModesFallBackToDarkAndPageThemeRoundTrips() =
         runTest {
             val store = store("old")
-            store.edit { it[stringPreferencesKey("theme_mode")] = "EINK" }
+            store.edit {
+                it[stringPreferencesKey("theme_mode")] = "EINK"
+                it[stringPreferencesKey("eink_tint")] = "COOL"
+            }
             val prefs = AppPreferences(store)
             assertEquals(ThemeMode.DARK, prefs.appearance.first().mode)
             assertEquals(PageTheme.DARK, prefs.readerPrefs.first().pageTheme)
-            prefs.setReaderPrefs(ReaderPrefs(pageTheme = PageTheme.EINK))
-            assertEquals(PageTheme.EINK, prefs.readerPrefs.first().pageTheme)
+            // The former app-wide E-ink tint carries over to the E-ink page options.
+            assertEquals(EinkTint.COOL, prefs.readerPrefs.first().einkTint)
+            val eink = ReaderPrefs(pageTheme = PageTheme.EINK, einkTint = EinkTint.WARM, einkGrain = true, einkFlashEvery = 10)
+            prefs.setReaderPrefs(eink)
+            assertEquals(eink, prefs.readerPrefs.first())
         }
 
     @Test fun secretsAreStoredEncryptedAndCleared() =

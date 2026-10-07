@@ -7,8 +7,8 @@ data class PageColors(
     val background: String,
     val text: String,
     val link: String,
-    /** E-ink pages: images in grayscale with a little more contrast. */
-    val grayscaleImages: Boolean = false,
+    /** CSS `filter` for images on the page (E-ink grayscale, Night warm), or null. */
+    val imageFilter: String? = null,
 )
 
 /** CSS injected into every section, following the web reader's strategy (font size on html, colours, layout). */
@@ -32,7 +32,7 @@ object EbookCss {
             append("hyphens: ${if (prefs.hyphenate) "auto" else "manual"} !important; }")
             if (family != null) append(" body, p, li, div, span { font-family: $family !important; }")
             append(" a:link, a:visited { color: ${colors.link} !important; }")
-            if (colors.grayscaleImages) append(" img, svg, video { filter: grayscale(1) contrast(1.15) !important; }")
+            colors.imageFilter?.let { append(" img, svg, video { filter: $it !important; }") }
         }
     }
 }

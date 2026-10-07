@@ -19,6 +19,17 @@ internal object GrimmTokens {
     val DarkTextSecondary = Color(0xFFD4D4D4)
     val WarmPaper = Color(0xFFF4F1EA)
     val WarmInk = Color(0xFF1A1A1A)
+    val CoolPaper = Color(0xFFEEF0EF)
+    val CoolInk = Color(0xFF161819)
+
+    // Page themes: Sepia matches the Grimmory web reader's light Sepia; Night is a warm near-black with
+    // amber (low-blue, about 2300 K) text.
+    val SepiaPage = Color(0xFFF1E8D0)
+    val SepiaText = Color(0xFF5B4636)
+    val SepiaLink = Color(0xFF008B8B)
+    val NightPage = Color(0xFF0E0C0A)
+    val NightText = Color(0xFFE0A46E)
+    val NightLink = Color(0xFFF2B872)
 }
 
 internal fun darkGrimmScheme(amoled: Boolean): ColorScheme =
