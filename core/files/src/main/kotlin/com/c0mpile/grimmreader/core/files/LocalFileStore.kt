@@ -49,7 +49,12 @@ class LocalFileStore
         fun deleteServerFiles(serverRowId: Long) {
             File(booksDir, "server/$serverRowId").deleteRecursively()
             deleteStreamCache(serverRowId)
+            // Pages of downloaded comics may be in here; cheap to rebuild for local ones.
+            extractDir.deleteRecursively()
         }
+
+        /** Evictable pages of CB7 and CBR comics, extracted once (see ExtractedComicArchive). */
+        val extractDir: File get() = File(context.cacheDir, "extracted")
 
         /** Evictable copies of books and comic pages read online (never kept as downloads). */
         val streamDir: File get() = File(context.cacheDir, "stream")

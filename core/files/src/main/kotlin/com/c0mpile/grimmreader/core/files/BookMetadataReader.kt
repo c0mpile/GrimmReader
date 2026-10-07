@@ -24,7 +24,10 @@ data class LocalMetadata(
     val cover: ByteArray? = null,
 )
 
-/** Reads title, authors and cover from EPUB (OPF) and CBZ (ComicInfo.xml, first page) files, and a PDF's first page. */
+/**
+ * Reads title, authors and cover from EPUB (OPF) and comic (ComicInfo.xml, first page) files, and a PDF's first
+ * page as cover.
+ */
 object BookMetadataReader {
     fun read(
         file: File,
@@ -34,6 +37,7 @@ object BookMetadataReader {
             when (format) {
                 BookFormat.EPUB -> epub(file)
                 BookFormat.CBZ -> cbz(file)
+                BookFormat.CB7, BookFormat.CBR -> LibarchiveArchive(file).use(::sequentialComic)
                 BookFormat.PDF -> LocalMetadata(title = null, cover = pdfCover(file))
                 else -> LocalMetadata(title = null)
             }
@@ -59,6 +63,28 @@ object BookMetadataReader {
             val cover = if (archive.pageCount > 0) archive.open(0).use { it.readBounded(ReadLimits.IMAGE_BYTES) } else null
             (info ?: LocalMetadata(title = null)).copy(cover = cover)
         }
+
+    /** One pass: ComicInfo.xml, and the first page in natural order as cover (one candidate in memory at a time). */
+    internal fun sequentialComic(archive: SequentialArchive): LocalMetadata {
+        var info: LocalMetadata? = null
+        var coverName: String? = null
+        var cover: ByteArray? = null
+        while (true) {
+            val name = archive.nextEntry() ?: break
+            val base = name.substringAfterLast('/')
+            when {
+                name == "ComicInfo.xml" ->
+                    info = archive.entryStream().readBounded(ReadLimits.XML_BYTES)?.let { parseComicInfo(it.inputStream()) }
+                !ZipComicArchive.isImage(name) || base.startsWith(".") -> Unit
+                coverName == null || NaturalOrder.compare(name, coverName) < 0 ->
+                    archive.entryStream().readBounded(ReadLimits.IMAGE_BYTES)?.let {
+                        coverName = name
+                        cover = it
+                    }
+            }
+        }
+        return (info ?: LocalMetadata(title = null)).copy(cover = cover)
+    }
 
     /** Page 1 rendered on white at cover height, as JPEG. */
     private fun pdfCover(file: File): ByteArray? =

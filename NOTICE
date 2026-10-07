@@ -14,6 +14,13 @@ Bundled third-party material (full licence texts in licenses/):
   fflate (MIT, Copyright Arjun Barrett; licenses/fflate-MIT.txt) and zip.js (BSD-3-Clause, Copyright Gildas Lormeau;
   licenses/zip.js-BSD-3-Clause.txt).
 - Lucide icons (converted to Compose vectors), Copyright Lucide Icons and Contributors. ISC License (licenses/Lucide-ISC.txt).
+- libarchive-android (me.zhanghai.android.libarchive, Apache-2.0) reads CB7 and CBR comics. Its native library
+  bundles: libarchive 3.8.8, Copyright Tim Kientzle and others, BSD-2-Clause (licenses/libarchive-BSD-2-Clause.txt;
+  its RAR readers are clean-room, no UnRAR code); zlib 1.3.2.1, Copyright Jean-loup Gailly and Mark Adler
+  (licenses/zlib-License.txt); bzip2 1.0.8, Copyright Julian R Seward (licenses/bzip2-License.txt); liblzma 5.8.4
+  from XZ Utils, 0BSD (licenses/liblzma-0BSD.txt); LZ4 1.10.0, Copyright Yann Collet, BSD-2-Clause
+  (licenses/lz4-BSD-2-Clause.txt); Zstandard 1.5.7, Copyright Meta Platforms, Inc. and affiliates, BSD-3-Clause
+  (licenses/zstd-BSD-3-Clause.txt); Mbed TLS, Apache-2.0.
 
 Library dependencies are declared in gradle/libs.versions.toml. All are FOSS (Apache-2.0, MIT, BSD-3-Clause;
 JUnit under EPL-1.0 in tests only); none require Google Play Services.

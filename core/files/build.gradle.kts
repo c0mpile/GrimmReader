@@ -10,6 +10,7 @@ android {
 dependencies {
     api(projects.core.model)
     implementation(projects.core.common)
+    implementation(libs.libarchive.android)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.kotlinx.coroutines.test)

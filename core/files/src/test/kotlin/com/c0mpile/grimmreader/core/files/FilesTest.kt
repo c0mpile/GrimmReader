@@ -106,6 +106,23 @@ class FilesTest {
         assertEquals(ReadingDirection.RTL, meta.readingDirection)
     }
 
+    @Test fun sequentialComicMetadataInOnePass() {
+        val info = "<ComicInfo><Title>Comic sample A</Title><Writer>A, B</Writer><Manga>YesAndRightToLeft</Manga></ComicInfo>"
+        val file =
+            zip(
+                "comic.cb7",
+                "p10.png" to byteArrayOf(10),
+                "ComicInfo.xml" to info.toByteArray(),
+                "p02.png" to png,
+                "p3.png" to byteArrayOf(3),
+            )
+        val meta = ZipSequential(file).use(BookMetadataReader::sequentialComic)
+        assertEquals("Comic sample A", meta.title)
+        assertEquals(listOf("A", "B"), meta.authors)
+        assertEquals(ReadingDirection.RTL, meta.readingDirection)
+        assertArrayEquals(png, meta.cover)
+    }
+
     @Test fun filePartialMd5MatchesByteVersion() {
         val bytes = ByteArray(300_000) { (it * 7).toByte() }
         val file = File(tmp.root, "b").apply { writeBytes(bytes) }

@@ -22,8 +22,6 @@ coroutines = "1.11.0"
 coil = "3.6.3"
 telephoto = "0.19.0"
 readium = "3.4.0"
-commons-compress = "1.28.0"
-xz = "1.12"
 libarchive = "1.1.7"
 ktlint-gradle = "14.2.0"
 detekt = "1.23.8"
@@ -100,8 +98,6 @@ telephoto-zoomable = { module = "me.saket.telephoto:zoomable", version.ref = "te
 # formats
 readium-shared = { module = "org.readium.kotlin-toolkit:readium-shared", version.ref = "readium" }
 readium-opds = { module = "org.readium.kotlin-toolkit:readium-opds", version.ref = "readium" }
-commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
-xz = { module = "org.tukaani:xz", version.ref = "xz" }
 libarchive-android = { module = "me.zhanghai.android.libarchive:library", version.ref = "libarchive" }
 
 # test
