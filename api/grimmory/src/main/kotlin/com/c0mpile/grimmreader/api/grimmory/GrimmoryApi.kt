@@ -66,6 +66,31 @@ interface GrimmoryApi {
         @Body body: UpdateProgressDto,
     ): Response<Unit>
 
+    /** This user's shelves, including the server-made "Favorites". */
+    @GET("api/v1/app/shelves")
+    suspend fun shelves(): List<ShelfDto>
+
+    @GET("api/v1/app/shelves/magic")
+    suspend fun magicShelves(): List<MagicShelfDto>
+
+    /** Ids of every book matching the filter (no paging): used for shelf membership. */
+    @GET("api/v1/app/books/ids")
+    suspend fun bookIds(
+        @Query("shelfId") shelfId: Long? = null,
+        @Query("magicShelfId") magicShelfId: Long? = null,
+    ): List<Long>
+
+    /** Answers with the changed books, which the app does not need. */
+    @POST("api/v1/books/shelves")
+    suspend fun assignShelves(
+        @Body body: ShelvesAssignmentDto,
+    ): Response<Unit>
+
+    @POST("api/v1/shelves")
+    suspend fun createShelf(
+        @Body body: ShelfCreateDto,
+    ): ShelfDto
+
     /** This user's bookmarks for a book. */
     @GET("api/v1/bookmarks/book/{bookId}")
     suspend fun bookmarks(

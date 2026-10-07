@@ -8,6 +8,7 @@ import com.c0mpile.grimmreader.api.grimmory.TokenDto
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.NetworkPolicyImpl
 import com.c0mpile.grimmreader.core.data.server.ServerSession
+import com.c0mpile.grimmreader.core.data.shelf.ShelfMirror
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
@@ -87,6 +88,24 @@ class LibraryRefreshTest {
                             }
                             auth != "Bearer fresh" -> MockResponse.Builder().code(401).build()
                             request.url.encodedPath.endsWith("/libraries") -> MockResponse.Builder().body(libraries).build()
+                            request.url.encodedPath.endsWith("/app/shelves") ->
+                                MockResponse
+                                    .Builder()
+                                    .body(
+                                        """[{"id":5,"name":"Favorites","icon":"heart"},{"id":6,"name":"To read"}]""",
+                                    ).build()
+                            request.url.encodedPath.endsWith("/app/shelves/magic") ->
+                                MockResponse.Builder().body("""[{"id":9,"name":"Comics in progress"}]""").build()
+                            request.url.encodedPath.endsWith("/app/books/ids") ->
+                                MockResponse
+                                    .Builder()
+                                    .body(
+                                        when {
+                                            request.url.queryParameter("shelfId") == "5" -> "[1]"
+                                            request.url.queryParameter("magicShelfId") == "9" -> "[3]"
+                                            else -> "[]"
+                                        },
+                                    ).build()
                             request.url.queryParameter("page") == "0" -> MockResponse.Builder().body(page0).build()
                             else -> MockResponse.Builder().body(page1).build()
                         }
@@ -115,6 +134,7 @@ class LibraryRefreshTest {
                     session,
                     LocalFileStore(ApplicationProvider.getApplicationContext()),
                     AppPreferences(PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "p.preferences_pb") }),
+                    ShelfMirror(db.shelfDao(), db.bookDao(), db.outboxDao()),
                     Dispatchers.IO,
                 )
 
@@ -126,6 +146,9 @@ class LibraryRefreshTest {
             assertEquals(listOf("Sample A", "Sample Comic"), books.map { it.title })
             assertEquals(11L, books[0].files.single().serverFileId)
             assertEquals(listOf(1L, 2L), books.map { it.libraryId })
+            // Shelves and memberships are mirrored with the books.
+            assertEquals(listOf(setOf(5L) to emptySet<Long>(), emptySet<Long>() to setOf(9L)), books.map { it.shelves to it.magicShelves })
+            assertEquals(listOf("Favorites", "To read", "Comics in progress"), db.shelfDao().forServer(serverId).map { it.name })
             val libs = repo.observeLibraries().first { it.isNotEmpty() }
             assertEquals(listOf("Books" to false, "Comics" to true), libs.map { it.name to it.isComics })
             assertEquals(true, secrets.get(ServerSession.tokensKey(serverId))?.contains("\"fresh\""))

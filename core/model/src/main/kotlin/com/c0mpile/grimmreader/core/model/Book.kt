@@ -22,6 +22,9 @@ data class Book(
     val libraryId: Long? = null,
     val addedAt: Long = 0,
     val lastReadAt: Long? = null,
+    /** Server shelves (user shelves) and magic shelves the book is on, by server shelf id. */
+    val shelves: Set<Long> = emptySet(),
+    val magicShelves: Set<Long> = emptySet(),
 ) {
     val primaryFile: BookFile? get() = files.firstOrNull { it.isPrimary } ?: files.firstOrNull()
 }
@@ -45,4 +48,17 @@ data class Library(
     val id: Long,
     val name: String,
     val isComics: Boolean,
+)
+
+/**
+ * A server shelf. [magic] shelves are rule-based (the server decides their books; read-only here).
+ * [isFavorites] marks the shelf the server makes for every user ("Favorites", heart icon).
+ */
+data class Shelf(
+    val id: Long,
+    val name: String,
+    val icon: String?,
+    val magic: Boolean,
+    val bookCount: Int,
+    val isFavorites: Boolean,
 )

@@ -82,6 +82,8 @@ fun BookWithFiles.toDomain(coverModel: (BookEntity) -> String?): Book =
         libraryId = book.serverLibraryId,
         addedAt = book.addedAt,
         lastReadAt = maxOf(book.lastReadAt ?: 0L, position?.localUpdatedAt ?: 0L).takeIf { it > 0L },
+        shelves = shelves.filter { !it.magic }.map { it.shelfId }.toSet(),
+        magicShelves = shelves.filter { it.magic }.map { it.shelfId }.toSet(),
     )
 
 private val EBOOK_FORMATS = setOf("EPUB", "MOBI", "AZW3", "FB2")

@@ -8,6 +8,7 @@ import androidx.room.Transaction
 import androidx.room.Upsert
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
+import com.c0mpile.grimmreader.core.database.entity.BookShelfEntity
 import com.c0mpile.grimmreader.core.database.entity.BookWithFiles
 import com.c0mpile.grimmreader.core.database.entity.BookmarkEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
@@ -15,6 +16,7 @@ import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
+import com.c0mpile.grimmreader.core.database.entity.ShelfEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -160,6 +162,9 @@ interface OutboxDao {
         limit: Int = 50,
     ): List<OutboxOpEntity>
 
+    @Query("SELECT * FROM outbox_op WHERE kind = :kind ORDER BY id")
+    suspend fun ofKind(kind: String): List<OutboxOpEntity>
+
     @Query("SELECT COUNT(*) FROM outbox_op")
     fun observeCount(): Flow<Int>
 
@@ -240,3 +245,66 @@ interface BookmarkDao {
     @Query("DELETE FROM bookmark WHERE id = :id")
     suspend fun delete(id: Long)
 }
+
+@Dao
+interface ShelfDao {
+    @Query("SELECT * FROM shelf WHERE serverRowId = :serverRowId ORDER BY magic, position")
+    fun observe(serverRowId: Long): Flow<List<ShelfEntity>>
+
+    @Query("SELECT * FROM shelf WHERE serverRowId = :serverRowId ORDER BY magic, position")
+    suspend fun forServer(serverRowId: Long): List<ShelfEntity>
+
+    @Query("DELETE FROM shelf WHERE serverRowId = :serverRowId")
+    suspend fun deleteForServer(serverRowId: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(shelves: List<ShelfEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(shelf: ShelfEntity)
+
+    @Query("SELECT shelfId, magic, COUNT(*) AS books FROM book_shelf GROUP BY shelfId, magic")
+    fun observeCounts(): Flow<List<ShelfCount>>
+
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM shelf WHERE serverRowId = :serverRowId AND magic = 0")
+    suspend fun nextPosition(serverRowId: Long): Int
+
+    /** Replaces every membership of one shelf. */
+    @Transaction
+    suspend fun replaceMembers(
+        shelfId: Long,
+        magic: Boolean,
+        bookIds: List<Long>,
+    ) {
+        deleteMembers(shelfId, magic)
+        addMembers(bookIds.map { BookShelfEntity(it, shelfId, magic) })
+    }
+
+    @Query("DELETE FROM book_shelf WHERE shelfId = :shelfId AND magic = :magic")
+    suspend fun deleteMembers(
+        shelfId: Long,
+        magic: Boolean,
+    )
+
+    /** Memberships of shelves that no longer exist. */
+    @Query(
+        "DELETE FROM book_shelf WHERE NOT EXISTS " +
+            "(SELECT 1 FROM shelf s WHERE s.shelfId = book_shelf.shelfId AND s.magic = book_shelf.magic)",
+    )
+    suspend fun deleteOrphanMembers()
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addMembers(members: List<BookShelfEntity>)
+
+    @Query("DELETE FROM book_shelf WHERE bookId = :bookId AND shelfId = :shelfId AND magic = 0")
+    suspend fun removeMember(
+        bookId: Long,
+        shelfId: Long,
+    )
+}
+
+data class ShelfCount(
+    val shelfId: Long,
+    val magic: Boolean,
+    val books: Int,
+)

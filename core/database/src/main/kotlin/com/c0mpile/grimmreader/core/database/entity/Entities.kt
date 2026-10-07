@@ -142,6 +142,7 @@ data class BookWithFiles(
     @Embedded val book: BookEntity,
     @Relation(parentColumn = "id", entityColumn = "bookId") val files: List<BookFileEntity>,
     @Relation(parentColumn = "id", entityColumn = "bookId") val position: ReadingPositionEntity?,
+    @Relation(parentColumn = "id", entityColumn = "bookId") val shelves: List<BookShelfEntity> = emptyList(),
 )
 
 /**
@@ -164,4 +165,32 @@ data class BookmarkEntity(
     val percent: Float? = null,
     val createdAt: Long,
     val deleted: Boolean = false,
+)
+
+/** A server shelf ([magic] = rule-based, read-only) in server order. */
+@Entity(
+    tableName = "shelf",
+    primaryKeys = ["serverRowId", "shelfId", "magic"],
+    foreignKeys = [ForeignKey(ServerEntity::class, ["id"], ["serverRowId"], onDelete = ForeignKey.CASCADE)],
+)
+data class ShelfEntity(
+    val serverRowId: Long,
+    val shelfId: Long,
+    val magic: Boolean,
+    val name: String,
+    val icon: String? = null,
+    val position: Int = 0,
+)
+
+/** A book on a shelf (server shelf id); mirrored on refresh, changed locally first when the user (un)shelves. */
+@Entity(
+    tableName = "book_shelf",
+    primaryKeys = ["bookId", "shelfId", "magic"],
+    foreignKeys = [ForeignKey(BookEntity::class, ["id"], ["bookId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("shelfId")],
+)
+data class BookShelfEntity(
+    val bookId: Long,
+    val shelfId: Long,
+    val magic: Boolean = false,
 )
