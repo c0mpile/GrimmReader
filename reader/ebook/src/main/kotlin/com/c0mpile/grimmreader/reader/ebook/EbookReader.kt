@@ -96,7 +96,7 @@ class EbookController {
     }
 }
 
-private const val ORIGIN = "https://appassets.androidplatform.net"
+internal const val ORIGIN = "https://appassets.androidplatform.net"
 private const val TAP_EDGE = 0.3f
 
 /**
