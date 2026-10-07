@@ -46,11 +46,9 @@ signing.properties
 credentials*.json
 test-credentials*
 
-# Local agent state and settings
+# Local Claude Code settings
 .claude/settings.local.json
 CLAUDE.local.md
-.gemini/
-.agents/mcp_config.json
 
 # Local notes and sample files (private collection data stays here)
 .local/
