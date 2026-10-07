@@ -10,6 +10,7 @@ import com.c0mpile.grimmreader.core.data.server.NetworkPolicyImpl
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
+import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SecretCipher
 import com.c0mpile.grimmreader.core.datastore.SecretStore
 import com.c0mpile.grimmreader.core.files.LocalFileStore
@@ -28,6 +29,8 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -111,6 +114,7 @@ class LibraryRefreshTest {
                     db.libraryDao(),
                     session,
                     LocalFileStore(ApplicationProvider.getApplicationContext()),
+                    AppPreferences(PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "p.preferences_pb") }),
                     Dispatchers.IO,
                 )
 
@@ -125,6 +129,14 @@ class LibraryRefreshTest {
             val libs = repo.observeLibraries().first { it.isNotEmpty() }
             assertEquals(listOf("Books" to false, "Comics" to true), libs.map { it.name to it.isComics })
             assertEquals(true, secrets.get(ServerSession.tokensKey(serverId))?.contains("\"fresh\""))
+
+            // The automatic refresh skips a library mirrored recently, and runs again once it is stale.
+            val requests = server.requestCount
+            assertNull(repo.refreshIfStale())
+            assertEquals(requests, server.requestCount)
+            val later = System.currentTimeMillis() + LibraryRepository.STALE_AFTER_MS + 1
+            assertEquals(2, repo.refreshIfStale(now = later)?.getOrThrow())
+            assertTrue(server.requestCount > requests)
             backgroundScope.cancel()
         }
 

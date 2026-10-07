@@ -16,12 +16,15 @@ import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LibraryView
 import com.c0mpile.grimmreader.core.model.ServerStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -36,13 +39,17 @@ data class LibraryUiState(
     val query: String = "",
     val hasServer: Boolean = false,
     val status: ServerStatus = ServerStatus.ONLINE,
+    /** A refresh the user asked for (pull to refresh): shows the pull indicator. */
     val refreshing: Boolean = false,
+    /** Any refresh in progress, including the automatic one: a thin bar that never blocks the list. */
+    val syncing: Boolean = false,
     val message: String? = null,
 )
 
 private data class LocalState(
     val query: String = "",
     val refreshing: Boolean = false,
+    val syncing: Boolean = false,
     val message: String? = null,
 )
 
@@ -83,15 +90,20 @@ class LibraryViewModel
                     hasServer = hasServer,
                     status = status,
                     refreshing = ui.refreshing,
+                    syncing = ui.syncing,
                     message = ui.message,
                 )
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LibraryUiState())
+            }.flowOn(Dispatchers.Default) // Mapping, sorting and grouping the whole library stays off the main thread.
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LibraryUiState())
+
+        private var sync: Job? = null
 
         init {
-            // The server row loads from Room asynchronously; refresh once it is there (never in local mode).
+            // The server row loads from Room asynchronously; check once it is there (never in local mode). The
+            // repository skips the network when the library was mirrored recently, so returning here is free.
             viewModelScope.launch {
                 session.server.filterNotNull().first()
-                refresh()
+                startSync { library.refreshIfStale() }
             }
         }
 
@@ -108,14 +120,31 @@ class LibraryViewModel
         private fun updateView(change: (LibraryView) -> LibraryView) =
             viewModelScope.launch { prefs.setLibraryView(change(prefs.libraryView.first())) }
 
+        /** Pull to refresh: always asks the server, or joins the refresh already running. */
         fun refresh() {
-            if (local.value.refreshing) return
-            if (session.server.value == null) return
+            if (session.server.value == null || local.value.refreshing) return
             local.update { it.copy(refreshing = true) }
-            viewModelScope.launch {
-                library.refresh().onFailure { local.update { s -> s.copy(message = "Could not refresh the library.") } }
-                local.update { it.copy(refreshing = false) }
+            val running = sync?.takeIf { it.isActive }
+            if (running != null) {
+                viewModelScope.launch {
+                    running.join()
+                    local.update { it.copy(refreshing = false) }
+                }
+            } else {
+                startSync { library.refresh() }
             }
+        }
+
+        private fun startSync(run: suspend () -> Result<Int>?) {
+            local.update { it.copy(syncing = true) }
+            sync =
+                viewModelScope.launch {
+                    try {
+                        run()?.onFailure { local.update { s -> s.copy(message = "Could not refresh the library.") } }
+                    } finally {
+                        local.update { it.copy(syncing = false, refreshing = false) }
+                    }
+                }
         }
 
         fun import(uris: List<Uri>) =
