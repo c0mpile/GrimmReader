@@ -11,12 +11,32 @@ object LucideIcons {
             stroke("M19 12H5")
         }
     }
+    val ArrowUpDown: ImageVector by lazy {
+        lucide("arrow-up-down") {
+            stroke("m21 16-4 4-4-4")
+            stroke("M17 20V4")
+            stroke("m3 8 4-4 4 4")
+            stroke("M7 4v16")
+        }
+    }
+    val BookCopy: ImageVector by lazy {
+        lucide("book-copy") {
+            stroke("M5 7a2 2 0 0 0-2 2v11")
+            stroke("M5.803 18H5a2 2 0 0 0 0 4h9.5a.5.5 0 0 0 .5-.5V21")
+            stroke("M9 15V4a2 2 0 0 1 2-2h9.5a.5.5 0 0 1 .5.5v14a.5.5 0 0 1-.5.5H11a2 2 0 0 1 0-4h10")
+        }
+    }
     val BookOpen: ImageVector by lazy {
         lucide("book-open") {
             stroke("M12 5v16")
             stroke(
                 "M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z",
             )
+        }
+    }
+    val Book: ImageVector by lazy {
+        lucide("book") {
+            stroke("M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20")
         }
     }
     val Check: ImageVector by lazy {
@@ -63,10 +83,33 @@ object LucideIcons {
             )
         }
     }
+    val Globe: ImageVector by lazy {
+        lucide("globe") {
+            stroke("M2.0 12.0a10.0 10.0 0 1 0 20.0 0a10.0 10.0 0 1 0 -20.0 0z")
+            stroke("M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20")
+            stroke("M2 12h20")
+        }
+    }
     val House: ImageVector by lazy {
         lucide("house") {
             stroke("M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8")
             stroke("M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
+        }
+    }
+    val LayoutGrid: ImageVector by lazy {
+        lucide("layout-grid") {
+            stroke(
+                "M4.0 3.0h5.0a1.0 1.0 0 0 1 1.0 1.0v5.0a1.0 1.0 0 0 1 -1.0 1.0h-5.0a1.0 1.0 0 0 1 -1.0 -1.0v-5.0a1.0 1.0 0 0 1 1.0 -1.0z",
+            )
+            stroke(
+                "M15.0 3.0h5.0a1.0 1.0 0 0 1 1.0 1.0v5.0a1.0 1.0 0 0 1 -1.0 1.0h-5.0a1.0 1.0 0 0 1 -1.0 -1.0v-5.0a1.0 1.0 0 0 1 1.0 -1.0z",
+            )
+            stroke(
+                "M15.0 14.0h5.0a1.0 1.0 0 0 1 1.0 1.0v5.0a1.0 1.0 0 0 1 -1.0 1.0h-5.0a1.0 1.0 0 0 1 -1.0 -1.0v-5.0a1.0 1.0 0 0 1 1.0 -1.0z",
+            )
+            stroke(
+                "M4.0 14.0h5.0a1.0 1.0 0 0 1 1.0 1.0v5.0a1.0 1.0 0 0 1 -1.0 1.0h-5.0a1.0 1.0 0 0 1 -1.0 -1.0v-5.0a1.0 1.0 0 0 1 1.0 -1.0z",
+            )
         }
     }
     val LibraryBig: ImageVector by lazy {
@@ -76,6 +119,16 @@ object LucideIcons {
             )
             stroke("M7 3v18")
             stroke("M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z")
+        }
+    }
+    val List: ImageVector by lazy {
+        lucide("list") {
+            stroke("M3 5h.01")
+            stroke("M3 12h.01")
+            stroke("M3 19h.01")
+            stroke("M8 5h13")
+            stroke("M8 12h13")
+            stroke("M8 19h13")
         }
     }
     val LogOut: ImageVector by lazy {
@@ -119,6 +172,14 @@ object LucideIcons {
             stroke("M9.0 12.0a3.0 3.0 0 1 0 6.0 0a3.0 3.0 0 1 0 -6.0 0z")
         }
     }
+    val Smartphone: ImageVector by lazy {
+        lucide("smartphone") {
+            stroke(
+                "M7.0 2.0h10.0a2.0 2.0 0 0 1 2.0 2.0v16.0a2.0 2.0 0 0 1 -2.0 2.0h-10.0a2.0 2.0 0 0 1 -2.0 -2.0v-16.0a2.0 2.0 0 0 1 2.0 -2.0z",
+            )
+            stroke("M12 18h.01")
+        }
+    }
     val Trash: ImageVector by lazy {
         lucide("trash") {
             stroke("M10 11v6")
@@ -126,6 +187,20 @@ object LucideIcons {
             stroke("M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6")
             stroke("M3 6h18")
             stroke("M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2")
+        }
+    }
+    val User: ImageVector by lazy {
+        lucide("user") {
+            stroke("M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2")
+            stroke("M8.0 7.0a4.0 4.0 0 1 0 8.0 0a4.0 4.0 0 1 0 -8.0 0z")
+        }
+    }
+    val Users: ImageVector by lazy {
+        lucide("users") {
+            stroke("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2")
+            stroke("M16 3.128a4 4 0 0 1 0 7.744")
+            stroke("M22 21v-2a4 4 0 0 0-3-3.87")
+            stroke("M5.0 7.0a4.0 4.0 0 1 0 8.0 0a4.0 4.0 0 1 0 -8.0 0z")
         }
     }
     val WifiOff: ImageVector by lazy {

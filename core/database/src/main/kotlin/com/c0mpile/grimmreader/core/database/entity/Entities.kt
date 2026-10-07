@@ -26,6 +26,23 @@ data class ServerEntity(
 )
 
 /**
+ * A Grimmory library as the signed-in user sees it. [formats] are the server's allowed formats
+ * (comma-separated, e.g. `EPUB,PDF` or `CBX`), used to tell book libraries from comic libraries.
+ */
+@Entity(
+    tableName = "library",
+    primaryKeys = ["serverRowId", "serverLibraryId"],
+    foreignKeys = [ForeignKey(ServerEntity::class, ["id"], ["serverRowId"], onDelete = ForeignKey.CASCADE)],
+)
+data class LibraryEntity(
+    val serverRowId: Long,
+    val serverLibraryId: Long,
+    val name: String,
+    val formats: String = "",
+    val position: Int = 0,
+)
+
+/**
  * A book in the unified library. Server books carry [serverRowId] + [serverBookId]; when a server is removed
  * but downloads are kept they become [BookSource.LOCAL] and keep [serverBookId] for a later re-link.
  */

@@ -19,6 +19,9 @@ data class Book(
     val readStatus: ReadStatus = ReadStatus.UNREAD,
     val progressPercent: Float? = null,
     val files: List<BookFile> = emptyList(),
+    val libraryId: Long? = null,
+    val addedAt: Long = 0,
+    val lastReadAt: Long? = null,
 ) {
     val primaryFile: BookFile? get() = files.firstOrNull { it.isPrimary } ?: files.firstOrNull()
 }
@@ -36,3 +39,10 @@ data class BookFile(
 ) {
     val isAvailableOffline: Boolean get() = localUri != null
 }
+
+/** A server library. [isComics] when it only allows comic (and PDF) formats, like a typical comics library. */
+data class Library(
+    val id: Long,
+    val name: String,
+    val isComics: Boolean,
+)

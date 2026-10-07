@@ -10,6 +10,7 @@ import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.BookWithFiles
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
+import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
@@ -187,4 +188,26 @@ interface DownloadDao {
 
     @Query("DELETE FROM download WHERE bookFileId = :bookFileId")
     suspend fun delete(bookFileId: Long)
+}
+
+@Dao
+interface LibraryDao {
+    @Query("SELECT * FROM library WHERE serverRowId = :serverRowId ORDER BY position")
+    fun observe(serverRowId: Long): Flow<List<LibraryEntity>>
+
+    /** Replaces the server's library list in one transaction. */
+    @Transaction
+    suspend fun replaceAll(
+        serverRowId: Long,
+        libraries: List<LibraryEntity>,
+    ) {
+        deleteAll(serverRowId)
+        insertAll(libraries)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(libraries: List<LibraryEntity>)
+
+    @Query("DELETE FROM library WHERE serverRowId = :serverRowId")
+    suspend fun deleteAll(serverRowId: Long)
 }

@@ -24,6 +24,8 @@ import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SetupState
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.feature.bookdetail.BookDetailScreen
+import com.c0mpile.grimmreader.feature.library.BookGroupScreen
+import com.c0mpile.grimmreader.feature.library.GroupKind
 import com.c0mpile.grimmreader.feature.library.LibraryScreen
 import com.c0mpile.grimmreader.feature.reader.ReaderScreen
 import com.c0mpile.grimmreader.feature.settings.SettingsScreen
@@ -38,6 +40,11 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class BookKey(
     val bookId: Long,
+) : NavKey
+
+@Serializable data class BookGroupKey(
+    val kind: GroupKind,
+    val name: String,
 ) : NavKey
 
 @Serializable data class ReaderKey(
@@ -102,7 +109,20 @@ private fun MainNavigation(
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator(), rememberViewModelStoreNavEntryDecorator()),
                 entryProvider =
                     entryProvider {
-                        entry<LibraryKey> { LibraryScreen(onOpenBook = { backStack.add(BookKey(it)) }) }
+                        entry<LibraryKey> {
+                            LibraryScreen(
+                                onOpenBook = { backStack.add(BookKey(it)) },
+                                onOpenGroup = { kind, name -> backStack.add(BookGroupKey(kind, name)) },
+                            )
+                        }
+                        entry<BookGroupKey> { key ->
+                            BookGroupScreen(
+                                kind = key.kind,
+                                name = key.name,
+                                onBack = { backStack.removeLastOrNull() },
+                                onOpenBook = { backStack.add(BookKey(it)) },
+                            )
+                        }
                         entry<SettingsKey> { SettingsScreen(versionName, onConnectServer = { backStack.add(SetupKey) }) }
                         entry<SetupKey> { SetupScreen(devServerUrl = devServerUrl, onDone = { selectTop(LibraryKey) }) }
                         entry<BookKey> { key ->
