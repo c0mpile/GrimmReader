@@ -1,9 +1,14 @@
 package com.c0mpile.grimmreader.core.files
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import android.util.Xml
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import org.xmlpull.v1.XmlPullParser
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipFile
@@ -19,7 +24,7 @@ data class LocalMetadata(
     val cover: ByteArray? = null,
 )
 
-/** Reads title, authors and cover from EPUB (OPF) and CBZ (ComicInfo.xml, first page) files. */
+/** Reads title, authors and cover from EPUB (OPF) and CBZ (ComicInfo.xml, first page) files, and a PDF's first page. */
 object BookMetadataReader {
     fun read(
         file: File,
@@ -29,6 +34,7 @@ object BookMetadataReader {
             when (format) {
                 BookFormat.EPUB -> epub(file)
                 BookFormat.CBZ -> cbz(file)
+                BookFormat.PDF -> LocalMetadata(title = null, cover = pdfCover(file))
                 else -> LocalMetadata(title = null)
             }
         }.getOrElse { LocalMetadata(title = null) }
@@ -53,6 +59,25 @@ object BookMetadataReader {
             val cover = if (archive.pageCount > 0) archive.open(0).use { it.readBounded(ReadLimits.IMAGE_BYTES) } else null
             (info ?: LocalMetadata(title = null)).copy(cover = cover)
         }
+
+    /** Page 1 rendered on white at cover height, as JPEG. */
+    private fun pdfCover(file: File): ByteArray? =
+        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+            PdfRenderer(fd).use { renderer ->
+                if (renderer.pageCount == 0) return null
+                renderer.openPage(0).use { page ->
+                    val height = PDF_COVER_HEIGHT
+                    val width = (height.toLong() * page.width / page.height.coerceAtLeast(1)).toInt().coerceIn(1, height * 2)
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, PDF_COVER_QUALITY, it) }.toByteArray()
+                }
+            }
+        }
+
+    private const val PDF_COVER_HEIGHT = 840
+    private const val PDF_COVER_QUALITY = 85
 
     private class Opf(
         val title: String?,

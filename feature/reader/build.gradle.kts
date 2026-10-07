@@ -9,4 +9,5 @@ android {
 dependencies {
     implementation(projects.reader.ebook)
     implementation(projects.reader.comic)
+    implementation(projects.reader.pdf)
 }
