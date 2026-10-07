@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "scaffold/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: One guarded HTTP client
+        run: scripts/check-http-clients
+      - name: Lint, test, build
+        run: ./gradlew ktlintCheck detekt lint testDebugUnitTest test assembleDebug --console=plain
+
+  leak-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Private strings come from repository secrets into an untracked .env; they never appear in the repo.
+      - name: Write .env from secrets
+        env:
+          SERVER_URL: ${{ secrets.GRIMMREADER_SERVER_URL }}
+          FORBIDDEN: ${{ secrets.GRIMMREADER_FORBIDDEN }}
+        run: |
+          umask 077
+          {
+            [ -n "$SERVER_URL" ] && printf "GRIMMREADER_SERVER_URL='%s'\n" "$SERVER_URL"
+            [ -n "$FORBIDDEN" ] && printf "GRIMMREADER_FORBIDDEN='%s'\n" "$FORBIDDEN"
+            true
+          } > .env
+      - name: Scan tree
+        run: scripts/leak-check --tree
