@@ -33,5 +33,10 @@ scripts/check-http-clients                                  # one-HTTP-client in
 Debug builds can prefill the server address from the `GRIMMREADER_SERVER_URL` environment variable or an untracked
 `local.properties`; release builds never contain it.
 
+Every push and pull request builds a debug APK on GitHub Actions (`.github/workflows/apk.yml`, also runnable by hand
+from the Actions tab); download it from the run's artifacts. CI APKs never contain a server prefill. To let each
+build install over the previous one, store a debug keystore as the repository secret `GRIMMREADER_DEBUG_KEYSTORE`
+(`base64 -w0 ~/.android/debug.keystore`); without it every run signs with a new key.
+
 ## Licence
 AGPL-3.0 (see [LICENSE](LICENSE)). Third-party material is listed in [NOTICE](NOTICE).
