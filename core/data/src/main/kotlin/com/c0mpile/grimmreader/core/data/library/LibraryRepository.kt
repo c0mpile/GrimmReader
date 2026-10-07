@@ -7,6 +7,8 @@ import com.c0mpile.grimmreader.api.grimmory.GrimmoryUrls
 import com.c0mpile.grimmreader.api.grimmory.LibraryDto
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.data.server.ServerSession
+import com.c0mpile.grimmreader.core.data.shelf.ShelfMirror
+import com.c0mpile.grimmreader.core.data.shelf.ShelfSnapshot
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
@@ -45,6 +47,7 @@ class LibraryRepository
         private val session: ServerSession,
         private val files: LocalFileStore,
         private val prefs: AppPreferences,
+        private val shelfMirror: ShelfMirror,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
         private val refreshLock = Mutex()
@@ -101,7 +104,11 @@ class LibraryRepository
                             books += result.content
                             page++
                         } while (result.hasNext)
-                        val seen = db.withTransaction { mirror(server.id, libraries, books) }
+                        val shelves = ShelfSnapshot.fetch(api)
+                        val seen =
+                            db.withTransaction {
+                                mirror(server.id, libraries, books).also { shelfMirror.apply(server.id, shelves) }
+                            }
                         session.reportOffline(false)
                         prefs.setLibraryRefreshedAt(server.id, System.currentTimeMillis())
                         seen

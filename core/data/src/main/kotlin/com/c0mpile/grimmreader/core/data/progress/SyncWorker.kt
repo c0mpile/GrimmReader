@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.c0mpile.grimmreader.api.grimmory.GrimmoryApi
 import com.c0mpile.grimmreader.core.data.bookmark.BookmarkRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
+import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.database.dao.OutboxDao
 import com.c0mpile.grimmreader.core.database.dao.ReadingPositionDao
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
@@ -26,13 +27,18 @@ class SyncWorker
         private val positions: ReadingPositionDao,
         private val session: ServerSession,
         private val bookmarks: BookmarkRepository,
+        private val shelves: ShelfRepository,
     ) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
             val api = session.api() ?: return Result.success()
             for (op in outbox.due(System.currentTimeMillis())) {
                 val done =
                     try {
-                        if (op.kind == ProgressRepository.KIND_PROGRESS) pushProgress(op, api) else bookmarks.push(op, api)
+                        when (op.kind) {
+                            ProgressRepository.KIND_PROGRESS -> pushProgress(op, api)
+                            ShelfRepository.KIND_ASSIGN -> shelves.push(op, api)
+                            else -> bookmarks.push(op, api)
+                        }
                     } catch (_: IOException) {
                         session.reportOffline(true)
                         return Result.retry()

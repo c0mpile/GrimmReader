@@ -212,3 +212,38 @@ data class CreateBookmarkDto(
     val title: String? = null,
     val pdfBookmark: Boolean? = null,
 )
+
+/** `AppShelfSummary` (also the subset of `Shelf` returned on create). The server creates "Favorites" (icon "heart") per user. */
+@Serializable
+data class ShelfDto(
+    val id: Long,
+    val name: String,
+    val icon: String? = null,
+    val bookCount: Int? = null,
+    val publicShelf: Boolean? = null,
+)
+
+/** `AppMagicShelfSummary`: a rule-based shelf; membership comes from the server. */
+@Serializable
+data class MagicShelfDto(
+    val id: Long,
+    val name: String,
+    val icon: String? = null,
+    val publicShelf: Boolean? = null,
+)
+
+/** `ShelvesAssignmentRequest`: only the user's own shelves are accepted. Both lists are always sent. */
+@Serializable
+data class ShelvesAssignmentDto(
+    val bookIds: List<Long>,
+    val shelvesToAssign: List<Long>,
+    val shelvesToUnassign: List<Long>,
+)
+
+/** `ShelfCreateRequest` */
+@Serializable
+data class ShelfCreateDto(
+    val name: String,
+    val icon: String? = null,
+    val publicShelf: Boolean = false,
+)
