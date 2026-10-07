@@ -15,7 +15,9 @@ class ModelTest {
 
     @Test fun formatFromExtension() {
         assertEquals(BookFormat.MOBI, BookFormat.fromExtension("AZW3"))
-        assertEquals(BookFormat.CBR, BookFormat.fromExtension("cbr"))
+        assertEquals(BookFormat.CBZ, BookFormat.fromExtension("cbz"))
+        assertEquals(null, BookFormat.fromExtension("cbr"))
+        assertEquals(null, BookFormat.fromExtension("cb7"))
         assertEquals(null, BookFormat.fromExtension("m4b"))
     }
 

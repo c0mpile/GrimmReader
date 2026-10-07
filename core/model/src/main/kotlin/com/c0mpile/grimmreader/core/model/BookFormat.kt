@@ -9,11 +9,9 @@ enum class BookFormat(
     FB2(setOf("fb2")),
     PDF(setOf("pdf")),
     CBZ(setOf("cbz", "zip")),
-    CB7(setOf("cb7", "7z")),
-    CBR(setOf("cbr", "rar")),
     ;
 
-    val isComic get() = this == CBZ || this == CB7 || this == CBR
+    val isComic get() = this == CBZ
 
     val isReflowable get() = this == EPUB || this == MOBI || this == FB2
 

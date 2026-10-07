@@ -7,13 +7,15 @@ import java.util.zip.ZipFile
 
 /**
  * Detects the real format from the file's bytes; extensions and server content types lie (the server labels
- * CBZ files `application/x-cbr`, page images are always `image/jpeg`). Falls back to the extension.
+ * CBZ files `application/x-cbr`, page images are always `image/jpeg`). Falls back to the extension. 7z and RAR
+ * archives are rejected whatever their name: CBZ is the only comic format.
  */
 object FormatSniffer {
     private const val HEADER_BYTES = 128
     private const val MOBI_MAGIC_OFFSET = 60
     private const val MOBI_MAGIC = "BOOKMOBI"
     private val SEVEN_ZIP = byteArrayOf(0x37, 0x7A, 0xBC.toByte(), 0xAF.toByte(), 0x27, 0x1C)
+    private const val RAR = "Rar!\u001A\u0007"
 
     fun sniff(
         file: File,
@@ -26,8 +28,7 @@ object FormatSniffer {
                 n <= 0 -> null
                 header.startsWith("%PDF") -> BookFormat.PDF
                 header.startsWith("PK\u0003\u0004") -> sniffZip(file)
-                header.startsWith(SEVEN_ZIP) -> BookFormat.CB7
-                header.startsWith("Rar!\u001A\u0007") -> BookFormat.CBR
+                header.startsWith(SEVEN_ZIP) || header.startsWith(RAR) -> return null
                 n >= MOBI_MAGIC_OFFSET + MOBI_MAGIC.length &&
                     String(header, MOBI_MAGIC_OFFSET, MOBI_MAGIC.length, Charsets.ISO_8859_1) == MOBI_MAGIC -> BookFormat.MOBI
                 String(header, 0, n, Charsets.UTF_8).contains("<FictionBook") -> BookFormat.FB2

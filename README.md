@@ -3,16 +3,16 @@
 A native Android reader for ebooks and comics, and a companion app for [Grimmory](https://github.com/grimmory-tools/grimmory),
 the self-hosted library. A server is optional: without one, GrimmReader is a complete local reader.
 
-**Status:** early development (milestone M0). Not released yet.
+**Status:** early development (milestone M1 in progress). Not released yet.
 
-## Features (M0)
-- Read EPUB, MOBI/AZW3 and FB2 (foliate-js, the engine the Grimmory web reader uses, so positions match the web exactly) and CBZ comics.
+## Features
+- Read EPUB, MOBI/AZW3 and FB2 (foliate-js, the engine the Grimmory web reader uses, so positions match the web exactly), PDF, and comics in CBZ (the only comic format; CBR and CB7 are not supported).
 - Local library: open files from the device; nothing leaves the device in local mode.
 - Grimmory server: sign in, browse the library with covers, download books, reading progress synced in both directions.
 - Themes: System, Light, Dark, AMOLED and an "E-ink look" (paper and ink, no animations, grayscale images, larger touch targets).
 - Works offline; progress queues and syncs when the server is reachable again.
 
-Planned (see [PLAN.md](PLAN.md)): PDF, CB7/CBR, OPDS catalogs, bookmarks and annotations, a guided view for comics, and
+Planned (see [PLAN.md](PLAN.md)): OPDS catalogs, bookmarks and annotations, a guided view for comics, and
 the rest of the Grimmory web features. There is no audiobook player.
 
 ## Security and privacy
@@ -22,7 +22,7 @@ the rest of the Grimmory web features. There is no audiobook player.
 - Tokens are encrypted with an Android Keystore key; your password is never stored. No analytics, no Google services.
 
 ## Building
-JDK 21 and the Android SDK (compile SDK 37.2) are required.
+JDK 21 and the Android SDK (compile SDK 37) are required.
 
 ```
 ./gradlew assembleDebug

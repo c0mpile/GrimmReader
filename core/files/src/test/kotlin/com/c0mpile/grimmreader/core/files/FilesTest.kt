@@ -66,6 +66,11 @@ class FilesTest {
         assertEquals(BookFormat.EPUB, FormatSniffer.sniff(epub(), "whatever.cbr"))
         assertEquals(BookFormat.CBZ, FormatSniffer.sniff(zip("comic.cbr", "001.jpg" to png), "comic.cbr"))
         assertEquals(BookFormat.PDF, FormatSniffer.sniff(File(tmp.root, "a").apply { writeText("%PDF-1.7\n") }))
+        // CBZ only: RAR and 7z are rejected even when named like a CBZ.
+        val rar = File(tmp.root, "r.cbz").apply { writeBytes("Rar!\u001A\u0007\u0001\u0000".toByteArray(Charsets.ISO_8859_1)) }
+        assertEquals(null, FormatSniffer.sniff(rar, "r.cbz"))
+        val sevenZip = File(tmp.root, "s.cbz").apply { writeBytes(byteArrayOf(0x37, 0x7A, 0xBC.toByte(), 0xAF.toByte(), 0x27, 0x1C, 0, 4)) }
+        assertEquals(null, FormatSniffer.sniff(sevenZip, "s.cbz"))
         val mobi = ByteArray(80).also { "BOOKMOBI".toByteArray().copyInto(it, 60) }
         assertEquals(BookFormat.MOBI, FormatSniffer.sniff(File(tmp.root, "m").apply { writeBytes(mobi) }))
         assertEquals(BookFormat.FB2, FormatSniffer.sniff(File(tmp.root, "f").apply { writeText("<?xml version=\"1.0\"?><FictionBook>") }))
@@ -104,23 +109,6 @@ class FilesTest {
         assertEquals("Sample Series #3", meta.title)
         assertEquals(listOf("A. Writer", "B. Writer"), meta.authors)
         assertEquals(ReadingDirection.RTL, meta.readingDirection)
-    }
-
-    @Test fun sequentialComicMetadataInOnePass() {
-        val info = "<ComicInfo><Title>Comic sample A</Title><Writer>A, B</Writer><Manga>YesAndRightToLeft</Manga></ComicInfo>"
-        val file =
-            zip(
-                "comic.cb7",
-                "p10.png" to byteArrayOf(10),
-                "ComicInfo.xml" to info.toByteArray(),
-                "p02.png" to png,
-                "p3.png" to byteArrayOf(3),
-            )
-        val meta = ZipSequential(file).use(BookMetadataReader::sequentialComic)
-        assertEquals("Comic sample A", meta.title)
-        assertEquals(listOf("A", "B"), meta.authors)
-        assertEquals(ReadingDirection.RTL, meta.readingDirection)
-        assertArrayEquals(png, meta.cover)
     }
 
     @Test fun filePartialMd5MatchesByteVersion() {
