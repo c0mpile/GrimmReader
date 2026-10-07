@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GrimmReader launcher icon: a hooded reader with an open book (original design, PLAN §8). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="62"
+        android:scaleX="0.8"
+        android:scaleY="0.8">
+        <!-- hood and shoulders -->
+        <path
+            android:fillColor="#FF1C1917"
+            android:pathData="M24,108 L24,98 C24,88 29,81 36,77 C35,57 40,38 52,28 C54,26 57,24.5 60,24 C58.5,26 58,28.5 58.6,31 C68,40 73,57 72,77 C79,81 84,88 84,98 L84,108 Z" />
+        <!-- face -->
+        <path
+            android:fillColor="#FF0A0807"
+            android:pathData="M42.5,79 C42.5,63 46.5,52 54,45.5 C61.5,52 65.5,63 65.5,79 Z" />
+        <!-- eyes -->
+        <path
+            android:fillColor="#FFFFB24D"
+            android:pathData="M47.1,59 a2.5,1.5 0 1,0 5,0 a2.5,1.5 0 1,0 -5,0 Z M55.9,59 a2.5,1.5 0 1,0 5,0 a2.5,1.5 0 1,0 -5,0 Z" />
+        <!-- open book -->
+        <path
+            android:fillColor="#FFFAFAF9"
+            android:pathData="M53.3,70 C48,66.5 41,65.8 35,67.5 L35,81 C41,79.6 48,80.3 53.3,83.6 Z M54.7,70 C60,66.5 67,65.8 73,67.5 L73,81 C67,79.6 60,80.3 54.7,83.6 Z" />
+        <path
+            android:pathData="M39,71.5 C43,70.6 47,71 50.5,72.6 M39,75 C43,74.1 47,74.5 50.5,76.1 M57.5,72.6 C61,71 65,70.6 69,71.5 M57.5,76.1 C61,74.5 65,74.1 69,75"
+            android:strokeWidth="1"
+            android:strokeColor="#FFD6D3D1"
+            android:strokeLineCap="round" />
+    </group>
+</vector>
