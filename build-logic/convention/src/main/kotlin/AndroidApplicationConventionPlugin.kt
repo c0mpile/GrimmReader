@@ -9,6 +9,7 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
         pluginManager.apply("com.android.application")
         extensions.configure<ApplicationExtension> {
             compileSdk = COMPILE_SDK
+            compileSdkMinor = COMPILE_SDK_MINOR
             defaultConfig {
                 minSdk = MIN_SDK
                 targetSdk = TARGET_SDK

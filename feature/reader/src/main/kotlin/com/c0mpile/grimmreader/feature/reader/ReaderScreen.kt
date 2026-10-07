@@ -123,14 +123,14 @@ private fun Content(
             key(content.restoreKey) {
                 PagedReader(content.source, content.page, onPage = viewModel::onPage, onToggleChrome = onToggleChrome)
             }
-        is ReaderContent.Unsupported -> Message("Reading ${content.format.name} files arrives in the next milestone (M1).")
-        is ReaderContent.Fetching ->
+        is ReaderContent.Unsupported -> Message("${content.format.name} files cannot be read yet.")
+        is ReaderContent.Preparing ->
             Column(
                 Modifier.fillMaxSize().padding(32.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Loading from the server…", style = MaterialTheme.typography.bodyLarge)
+                Text(content.message, style = MaterialTheme.typography.bodyLarge)
                 val p = content.progress
                 if (p == null) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
