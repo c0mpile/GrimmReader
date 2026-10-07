@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -56,8 +57,12 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
+import com.c0mpile.grimmreader.core.designsystem.theme.PageImages
+import com.c0mpile.grimmreader.core.designsystem.theme.colorFilter
 import com.c0mpile.grimmreader.core.designsystem.theme.palette
+import com.c0mpile.grimmreader.core.designsystem.theme.paperGrain
 import com.c0mpile.grimmreader.core.model.Bookmark
+import com.c0mpile.grimmreader.core.model.EinkTint
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.reader.ebook.EbookController
@@ -66,6 +71,7 @@ import com.c0mpile.grimmreader.reader.ebook.EbookEvent
 import com.c0mpile.grimmreader.reader.ebook.EbookReader
 import com.c0mpile.grimmreader.reader.ebook.PageColors
 import com.c0mpile.grimmreader.reader.paged.PagedReader
+import kotlinx.coroutines.delay
 
 private const val MIN_FONT = 12
 private const val MAX_FONT = 36
@@ -99,6 +105,7 @@ fun ReaderScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Content(state.content, prefs, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = { chrome = !chrome })
+        PageOverlays(state, prefs)
         AnimatedVisibility(chrome, enter = if (motion) fadeIn() else fadeIn(snap()), exit = if (motion) fadeOut() else fadeOut(snap())) {
             Chrome(
                 state,
@@ -161,8 +168,8 @@ private fun Content(
     when (content) {
         ReaderContent.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         is ReaderContent.Ebook -> {
-            val page = prefs.pageTheme.palette()
-            val css = EbookCss.build(prefs, PageColors(page.background.hex(), page.text.hex(), page.link.hex(), page.grayscaleImages))
+            val page = prefs.pageTheme.palette(prefs.einkTint)
+            val css = EbookCss.build(prefs, PageColors(page.background.hex(), page.text.hex(), page.link.hex(), page.images.css()))
             key(content.file, content.restoreKey) {
                 // The page colour also fills the safe-area margins around the book.
                 EbookReader(
@@ -186,7 +193,7 @@ private fun Content(
             }
         }
         is ReaderContent.Paged -> {
-            val page = prefs.pageTheme.palette()
+            val page = prefs.pageTheme.palette(prefs.einkTint)
             key(content.restoreKey) {
                 PagedReader(
                     content.source,
@@ -194,7 +201,7 @@ private fun Content(
                     onPage = viewModel::onPage,
                     onToggleChrome = onToggleChrome,
                     modifier = Modifier.background(page.background),
-                    grayscale = page.grayscaleImages,
+                    imageFilter = page.images.colorFilter,
                     instantTurns = page.instantTurns,
                 )
             }
@@ -340,7 +347,7 @@ private fun ReaderSettings(
         Text("Page", style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PageTheme.entries.forEach { theme ->
-                val swatch = theme.palette()
+                val swatch = theme.palette(prefs.einkTint)
                 FilterChip(
                     selected = prefs.pageTheme == theme,
                     onClick = { onChange(prefs.copy(pageTheme = theme)) },
@@ -357,7 +364,8 @@ private fun ReaderSettings(
                 )
             }
         }
-        // Comics and PDFs are images: only the page colour applies.
+        if (prefs.pageTheme == PageTheme.EINK) EinkOptions(prefs, onChange)
+        // Comics and PDFs are images: only the page settings apply.
         if (!textSettings) return@Column
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Font size", Modifier.weight(1f))
@@ -381,12 +389,88 @@ private fun ReaderSettings(
     }
 }
 
+/** E-ink paper grain and refresh flash over the page. They only draw; touches go through to the page. */
+@Composable
+private fun BoxScope.PageOverlays(
+    state: ReaderUiState,
+    prefs: ReaderPrefs,
+) {
+    val reading = state.content is ReaderContent.Ebook || state.content is ReaderContent.Paged
+    if (reading && prefs.pageTheme == PageTheme.EINK && prefs.einkGrain) Box(Modifier.matchParentSize().paperGrain())
+    refreshFlash(prefs, state.pageTurns)?.let { Box(Modifier.matchParentSize().background(it)) }
+}
+
+/** E-ink refresh flash: one ink frame, then one paper frame, every N page turns; null otherwise. */
+@Composable
+private fun refreshFlash(
+    prefs: ReaderPrefs,
+    pageTurns: Int,
+): Color? {
+    var flash by remember { mutableStateOf<Color?>(null) }
+    LaunchedEffect(pageTurns) {
+        val every = prefs.einkFlashEvery.takeIf { prefs.pageTheme == PageTheme.EINK && it > 0 } ?: return@LaunchedEffect
+        if (pageTurns == 0 || pageTurns % every != 0) return@LaunchedEffect
+        val page = prefs.pageTheme.palette(prefs.einkTint)
+        flash = page.text
+        delay(FLASH_INK_MS)
+        flash = page.background
+        delay(FLASH_PAPER_MS)
+        flash = null
+    }
+    return flash
+}
+
+/** Shown only for E-ink pages. */
+@Composable
+private fun EinkOptions(
+    prefs: ReaderPrefs,
+    onChange: (ReaderPrefs) -> Unit,
+) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        EinkTint.entries.forEach { tint ->
+            FilterChip(
+                selected = prefs.einkTint == tint,
+                onClick = { onChange(prefs.copy(einkTint = tint)) },
+                label = { Text(if (tint == EinkTint.WARM) "Warm paper" else "Cool paper") },
+            )
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Paper grain", Modifier.weight(1f))
+        Switch(checked = prefs.einkGrain, onCheckedChange = { onChange(prefs.copy(einkGrain = it)) })
+    }
+    Text("Refresh flash", style = MaterialTheme.typography.bodyMedium)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FLASH_CHOICES.forEach { n ->
+            FilterChip(
+                selected = prefs.einkFlashEvery == n,
+                onClick = { onChange(prefs.copy(einkFlashEvery = n)) },
+                label = { Text(if (n == 0) "Off" else "Every $n pages") },
+            )
+        }
+    }
+}
+
+private val FLASH_CHOICES = listOf(0, 5, 10, 20)
+private const val FLASH_INK_MS = 120L
+private const val FLASH_PAPER_MS = 90L
+
 private fun PageTheme.label() =
     when (this) {
         PageTheme.EINK -> "E-ink"
         PageTheme.LIGHT -> "Light"
+        PageTheme.SEPIA -> "Sepia"
         PageTheme.DARK -> "Dark"
+        PageTheme.NIGHT -> "Night"
         PageTheme.AMOLED -> "AMOLED"
+    }
+
+/** CSS filter for pictures inside ebooks, matching the bitmap filters used for comic/PDF pages. */
+private fun PageImages.css(): String? =
+    when (this) {
+        PageImages.NORMAL -> null
+        PageImages.GRAYSCALE -> "grayscale(1) contrast(1.15)"
+        PageImages.WARM -> "sepia(0.4) brightness(0.8)"
     }
 
 private fun Color.hex(): String = "#%06X".format(toArgb() and 0xFFFFFF)

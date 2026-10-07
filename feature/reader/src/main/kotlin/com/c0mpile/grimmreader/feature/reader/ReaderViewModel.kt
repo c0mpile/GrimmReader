@@ -84,6 +84,8 @@ data class ReaderUiState(
     /** The bookmark on the current page, if any (drives the filled bookmark icon). */
     val bookmarkHere: Bookmark? = null,
     val message: String? = null,
+    /** Page turns since the book was opened (drives the E-ink refresh flash). */
+    val pageTurns: Int = 0,
 )
 
 @OptIn(FlowPreview::class)
@@ -210,11 +212,17 @@ class ReaderViewModel
             hasPosition: Boolean,
             bookmarkCfi: String?,
         ) {
+            val turned = ebookAt?.let { it.cfi != locator.cfi } == true
             ebookAt = locator
             ebookChapter = tocLabel ?: ebookChapter
             ebookBookmarkCfi = bookmarkCfi
             _state.update {
-                it.copy(location = tocLabel, percent = if (hasPosition) locator.percent else it.percent, bookmarkHere = here(it.bookmarks))
+                it.copy(
+                    location = tocLabel,
+                    percent = if (hasPosition) locator.percent else it.percent,
+                    bookmarkHere = here(it.bookmarks),
+                    pageTurns = if (turned) it.pageTurns + 1 else it.pageTurns,
+                )
             }
             if (hasPosition) pending.value = locator
         }
@@ -227,9 +235,17 @@ class ReaderViewModel
 
         fun onPage(index: Int) {
             val count = source?.pageCount ?: return
+            val turned = pageAt?.let { it != index + 1 } == true
             pageAt = index + 1
             val locator = Locator.Page(index + 1, count)
-            _state.update { it.copy(location = "${index + 1} / $count", percent = locator.percent, bookmarkHere = here(it.bookmarks)) }
+            _state.update {
+                it.copy(
+                    location = "${index + 1} / $count",
+                    percent = locator.percent,
+                    bookmarkHere = here(it.bookmarks),
+                    pageTurns = if (turned) it.pageTurns + 1 else it.pageTurns,
+                )
+            }
             pending.value = locator
         }
 

@@ -112,8 +112,8 @@ private fun AppearanceSettings(
         }
     }
     Text(
-        "AMOLED uses true black. Page colours for reading (E-ink, light, dark, AMOLED) are in the reading " +
-            "settings while a book is open.",
+        "AMOLED uses true black. Page colours for reading (E-ink, light, sepia, dark, night, AMOLED) are in " +
+            "the reading settings while a book is open.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

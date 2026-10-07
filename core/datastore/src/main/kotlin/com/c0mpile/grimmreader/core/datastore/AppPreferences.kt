@@ -43,6 +43,9 @@ class AppPreferences(
                 maxColumnCount = p[COLUMNS] ?: defaults.maxColumnCount,
                 theme = p[READER_THEME] ?: defaults.theme,
                 pageTheme = enumOr(p[PAGE_THEME], defaults.pageTheme),
+                einkTint = enumOr(p[EINK_TINT], defaults.einkTint),
+                einkGrain = p[EINK_GRAIN] ?: defaults.einkGrain,
+                einkFlashEvery = p[EINK_FLASH] ?: defaults.einkFlashEvery,
             )
         }
 
@@ -96,6 +99,9 @@ class AppPreferences(
             it[COLUMNS] = prefs.maxColumnCount
             it[READER_THEME] = prefs.theme
             it[PAGE_THEME] = prefs.pageTheme.name
+            it[EINK_TINT] = prefs.einkTint.name
+            it[EINK_GRAIN] = prefs.einkGrain
+            it[EINK_FLASH] = prefs.einkFlashEvery
         }
     }
 
@@ -115,6 +121,11 @@ class AppPreferences(
         val COLUMNS = intPreferencesKey("reader_columns")
         val READER_THEME = stringPreferencesKey("reader_theme")
         val PAGE_THEME = stringPreferencesKey("reader_page_theme")
+
+        // Same keys as the former app-wide E-ink look, so earlier choices carry over.
+        val EINK_TINT = stringPreferencesKey("eink_tint")
+        val EINK_FLASH = intPreferencesKey("eink_flash_every")
+        val EINK_GRAIN = booleanPreferencesKey("eink_grain")
         val LIBRARY_SCOPE = stringPreferencesKey("library_scope")
         val LIBRARY_MODE = stringPreferencesKey("library_mode")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")

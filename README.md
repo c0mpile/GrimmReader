@@ -9,7 +9,7 @@ the self-hosted library. A server is optional: without one, GrimmReader is a com
 - Read EPUB, MOBI/AZW3 and FB2 (foliate-js, the engine the Grimmory web reader uses, so positions match the web exactly), PDF, and comics in CBZ (the only comic format; CBR and CB7 are not supported).
 - Local library: open files from the device; nothing leaves the device in local mode.
 - Grimmory server: sign in, browse the library with covers, download books, reading progress synced in both directions.
-- Themes: the app is dark or AMOLED black; reading pages have their own theme (E-ink paper and ink with grayscale images and instant page turns, light, dark or AMOLED).
+- Themes: the app is dark or AMOLED black; reading pages have their own theme: E-ink (paper and ink, warm or cool, optional paper grain and refresh flash, grayscale images, instant page turns), light, sepia, dark, night (amber, low-blue text) or AMOLED.
 - Works offline; progress queues and syncs when the server is reachable again.
 
 Planned (see [PLAN.md](PLAN.md)): OPDS catalogs, bookmarks and annotations, a guided view for comics, and

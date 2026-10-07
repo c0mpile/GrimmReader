@@ -5,9 +5,12 @@ enum class ThemeMode { DARK, AMOLED }
 
 /**
  * Colours of the reading area only (the book's pages). Menus, sheets and the reader chrome follow the app
- * theme. [EINK] is paper and ink with grayscale comic/PDF images and instant page turns.
+ * theme. [EINK] is paper and ink with grayscale images and instant page turns (see the `eink*` options in
+ * [ReaderPrefs]); [NIGHT] is a dark page with amber, low-blue text and warm-filtered images.
  */
-enum class PageTheme { EINK, LIGHT, DARK, AMOLED }
+enum class PageTheme { EINK, LIGHT, SEPIA, DARK, NIGHT, AMOLED }
+
+enum class EinkTint { WARM, COOL }
 
 data class Appearance(
     val mode: ThemeMode = ThemeMode.DARK,
@@ -23,4 +26,9 @@ data class ReaderPrefs(
     val maxColumnCount: Int = 1,
     val theme: String = "default",
     val pageTheme: PageTheme = PageTheme.DARK,
+    /** E-ink page options, used only when [pageTheme] is [PageTheme.EINK]. */
+    val einkTint: EinkTint = EinkTint.WARM,
+    val einkGrain: Boolean = false,
+    /** Simulated refresh flash every N page turns; 0 = off. */
+    val einkFlashEvery: Int = 0,
 )
