@@ -23,8 +23,12 @@ class EbookBridgeTest {
 
     @Test fun readyAndGarbage() {
         assertEquals(
-            listOf(TocEntry("One", "a.xhtml")),
-            (parse("""{"t":"ready","toc":[{"label":"One","href":"a.xhtml"}]}""") as EbookEvent.Ready).toc,
+            listOf(TocEntry("One", "a.xhtml"), TocEntry("1.1", "a.xhtml#s", depth = 1)),
+            (
+                parse(
+                    """{"t":"ready","toc":[{"label":"One","href":"a.xhtml"},{"label":" 1.1 ","href":"a.xhtml#s","depth":1}]}""",
+                ) as EbookEvent.Ready
+            ).toc,
         )
         assertNull(parse("not json"))
         assertNull(parse("""{"t":"relocate"}"""))

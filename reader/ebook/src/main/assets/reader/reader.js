@@ -52,7 +52,9 @@ window.grimm_api = {
 try {
     const blob = await (await fetch('/book/current')).blob()
     await view.open(new File([blob], params.get('name') || 'book'))
-    const toc = (view.book.toc ?? []).map(i => ({ label: i.label, href: i.href }))
+    // Chapters in reading order, nested ones flattened with their depth.
+    const flat = (items, depth) => (items ?? []).flatMap(i => [{ label: i.label, href: i.href, depth }, ...flat(i.subitems, depth + 1)])
+    const toc = flat(view.book.toc, 0)
     await view.init({ lastLocation: params.get('cfi') || null })
     // No page-turn animation for the initial positioning; styles apply once the first section is shown.
     window.grimm_api.setAnimated(params.get('animated') === '1')

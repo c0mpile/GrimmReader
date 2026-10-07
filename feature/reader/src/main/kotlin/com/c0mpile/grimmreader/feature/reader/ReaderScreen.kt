@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +32,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -49,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -70,8 +75,10 @@ import com.c0mpile.grimmreader.reader.ebook.EbookCss
 import com.c0mpile.grimmreader.reader.ebook.EbookEvent
 import com.c0mpile.grimmreader.reader.ebook.EbookReader
 import com.c0mpile.grimmreader.reader.ebook.PageColors
+import com.c0mpile.grimmreader.reader.ebook.TocEntry
 import com.c0mpile.grimmreader.reader.paged.PagedReader
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 private const val MIN_FONT = 12
 private const val MAX_FONT = 36
@@ -86,11 +93,10 @@ fun ReaderScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.readerPrefs.collectAsStateWithLifecycle()
     var chrome by rememberSaveable { mutableStateOf(true) }
-    var settings by remember { mutableStateOf(false) }
-    var bookmarkList by remember { mutableStateOf(false) }
+    var sheet by remember { mutableStateOf<Sheet?>(null) }
     val motion = LocalMotionEnabled.current
     val snackbar = remember { SnackbarHostState() }
-    // One controller per ebook view, hoisted so the bookmark list can jump through it.
+    // One controller per ebook view, hoisted so the sheets and the position bar can jump through it.
     val ebook = state.content as? ReaderContent.Ebook
     val controller = remember(ebook?.file, ebook?.restoreKey) { EbookController() }
     var pageReady by remember(controller) { mutableStateOf(false) }
@@ -111,34 +117,16 @@ fun ReaderScreen(
                 state,
                 onBack = onBack,
                 onToggleBookmark = viewModel::toggleBookmark,
-                onBookmarks = { bookmarkList = true },
-                onSettings = { settings = true },
+                onSheet = { sheet = it },
+                onSeekFraction = controller::goToFraction,
+                onSeekPage = viewModel::goToPage,
             )
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 48.dp))
     }
-    if (settings) {
-        ModalBottomSheet(onDismissRequest = { settings = false }) {
-            ReaderSettings(prefs, textSettings = state.content !is ReaderContent.Paged, onChange = viewModel::setReaderPrefs)
-        }
-    }
-    if (bookmarkList) {
-        ModalBottomSheet(onDismissRequest = { bookmarkList = false }) {
-            BookmarkList(
-                bookmarks = state.bookmarks,
-                current = state.bookmarkHere,
-                onOpen = { bookmark ->
-                    bookmarkList = false
-                    val cfi = bookmark.cfi
-                    val page = bookmark.page
-                    if (cfi != null) {
-                        controller.goTo(cfi)
-                    } else if (page != null) {
-                        viewModel.goToPage(page)
-                    }
-                },
-                onDelete = viewModel::removeBookmark,
-            )
+    sheet?.let { open ->
+        ModalBottomSheet(onDismissRequest = { sheet = null }) {
+            SheetContent(open, state, prefs, viewModel, controller, onClose = { sheet = null })
         }
     }
     state.offer?.let { offer ->
@@ -180,7 +168,10 @@ private fun Content(
                     controller = controller,
                     onEvent = { event ->
                         when (event) {
-                            is EbookEvent.Ready -> onPageReady()
+                            is EbookEvent.Ready -> {
+                                viewModel.onEbookReady(event.toc)
+                                onPageReady()
+                            }
                             is EbookEvent.Relocated ->
                                 viewModel.onEbookPosition(event.locator, event.tocLabel, event.hasPosition, event.bookmark)
                             is EbookEvent.BookmarkHere -> viewModel.onEbookBookmarkHere(event.cfi)
@@ -240,8 +231,9 @@ private fun Chrome(
     state: ReaderUiState,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
-    onBookmarks: () -> Unit,
-    onSettings: () -> Unit,
+    onSheet: (Sheet) -> Unit,
+    onSeekFraction: (Float) -> Unit,
+    onSeekPage: (Int) -> Unit,
 ) {
     val canRead = state.content is ReaderContent.Ebook || state.content is ReaderContent.Paged
     Column(Modifier.fillMaxSize()) {
@@ -264,24 +256,174 @@ private fun Chrome(
                         tint = if (marked) CHROME_ACCENT else Color.White,
                     )
                 }
-                IconButton(onClick = onBookmarks) { Icon(LucideIcons.List, contentDescription = "Bookmarks", tint = Color.White) }
+                IconButton(onClick = { onSheet(Sheet.BOOKMARKS) }) {
+                    Icon(LucideIcons.BookBookmark, contentDescription = "Bookmarks", tint = Color.White)
+                }
             }
-            IconButton(onClick = onSettings) { Icon(LucideIcons.Settings, contentDescription = "Reading settings", tint = Color.White) }
+            if (state.toc.isNotEmpty()) {
+                IconButton(
+                    onClick = { onSheet(Sheet.CONTENTS) },
+                ) { Icon(LucideIcons.List, contentDescription = "Chapters", tint = Color.White) }
+            }
+            IconButton(onClick = { onSheet(Sheet.SETTINGS) }) {
+                Icon(LucideIcons.Settings, contentDescription = "Reading settings", tint = Color.White)
+            }
         }
         Box(Modifier.weight(1f))
-        Row(
+        Column(
             Modifier
                 .fillMaxWidth()
                 .background(Color(0xE6171717))
                 .safeDrawingPadding()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            Text(state.location.orEmpty(), color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            state.percent?.let { Text("%.0f %%".format(it), color = Color.White.copy(alpha = 0.6f)) }
+            PositionBar(state, onSeekFraction, onSeekPage)
         }
     }
 }
+
+/**
+ * Where the reader is, with a slider to jump: by page for comics and PDFs, by position (0..100 %) for ebooks.
+ * While dragging, the labels show the target; the jump happens on release.
+ */
+@Composable
+private fun PositionBar(
+    state: ReaderUiState,
+    onSeekFraction: (Float) -> Unit,
+    onSeekPage: (Int) -> Unit,
+) {
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val pages = state.pageCount?.takeIf { state.content is ReaderContent.Paged && it > 1 }
+    val (left, right) = positionLabels(state, drag, pages)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(left, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        right?.let { Text(it, color = Color.White.copy(alpha = 0.7f)) }
+    }
+    when {
+        pages != null ->
+            SeekSlider(drag ?: (state.page ?: 1).toFloat(), 1f..pages.toFloat(), steps = (pages - 2).coerceAtLeast(0), { drag = it }) {
+                drag?.let { onSeekPage(it.roundToInt()) }
+                drag = null
+            }
+        state.content is ReaderContent.Ebook ->
+            SeekSlider(drag ?: ((state.percent ?: 0f) / PERCENT), 0f..1f, steps = 0, { drag = it }) {
+                drag?.let(onSeekFraction)
+                drag = null
+            }
+    }
+}
+
+/** Left and right labels: the current location, or the target while dragging. */
+private fun positionLabels(
+    state: ReaderUiState,
+    target: Float?,
+    pages: Int?,
+): Pair<String, String?> =
+    when {
+        target == null && pages != null -> state.location.orEmpty() to null
+        target == null -> state.location.orEmpty() to state.percent?.let { "%.0f %%".format(it) }
+        pages != null -> "Page ${target.roundToInt()} / $pages" to null
+        else -> "Go to %.0f %%".format(target * PERCENT) to null
+    }
+
+@Composable
+private fun SeekSlider(
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onDrag: (Float) -> Unit,
+    onRelease: () -> Unit,
+) {
+    Slider(
+        value = value,
+        onValueChange = onDrag,
+        onValueChangeFinished = onRelease,
+        valueRange = range,
+        steps = steps,
+        colors =
+            SliderDefaults.colors(
+                thumbColor = CHROME_ACCENT,
+                activeTrackColor = CHROME_ACCENT,
+                inactiveTrackColor = Color.White.copy(alpha = 0.24f),
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
+    )
+}
+
+private const val PERCENT = 100f
+
+/** The bottom sheets of the reader; one at a time. */
+private enum class Sheet { SETTINGS, BOOKMARKS, CONTENTS }
+
+@Composable
+private fun SheetContent(
+    sheet: Sheet,
+    state: ReaderUiState,
+    prefs: ReaderPrefs,
+    viewModel: ReaderViewModel,
+    controller: EbookController,
+    onClose: () -> Unit,
+) {
+    when (sheet) {
+        Sheet.SETTINGS ->
+            ReaderSettings(prefs, textSettings = state.content !is ReaderContent.Paged, onChange = viewModel::setReaderPrefs)
+        Sheet.BOOKMARKS ->
+            BookmarkList(
+                bookmarks = state.bookmarks,
+                current = state.bookmarkHere,
+                onOpen = { bookmark ->
+                    onClose()
+                    val cfi = bookmark.cfi
+                    val page = bookmark.page
+                    if (cfi != null) {
+                        controller.goTo(cfi)
+                    } else if (page != null) {
+                        viewModel.goToPage(page)
+                    }
+                },
+                onDelete = viewModel::removeBookmark,
+            )
+        Sheet.CONTENTS ->
+            ContentsList(state.toc, state.chapter) { entry ->
+                onClose()
+                controller.goTo(entry.href)
+            }
+    }
+}
+
+/** Chapters, nested ones indented; opens scrolled to the chapter being read, which is highlighted. */
+@Composable
+private fun ContentsList(
+    toc: List<TocEntry>,
+    current: String?,
+    onOpen: (TocEntry) -> Unit,
+) {
+    val currentIndex = toc.indexOfLast { it.label == current }
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = (currentIndex - 2).coerceAtLeast(0))
+    Column(Modifier.padding(bottom = 24.dp)) {
+        Text("Chapters", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        LazyColumn(state = list) {
+            itemsIndexed(toc) { index, entry ->
+                val here = index == currentIndex
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            entry.label,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (here) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                            fontWeight = if (here) FontWeight.SemiBold else null,
+                        )
+                    },
+                    modifier = Modifier.clickable { onOpen(entry) }.padding(start = (entry.depth * TOC_INDENT).dp),
+                )
+            }
+        }
+    }
+}
+
+private const val TOC_INDENT = 16
 
 /** Accent on the always-dark reader chrome (web: primary-400). */
 private val CHROME_ACCENT = Color(0xFFFF8904)

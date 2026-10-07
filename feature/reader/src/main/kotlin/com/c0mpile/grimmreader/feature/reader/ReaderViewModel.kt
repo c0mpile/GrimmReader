@@ -17,6 +17,7 @@ import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import com.c0mpile.grimmreader.reader.comic.ArchivePageSource
 import com.c0mpile.grimmreader.reader.comic.StreamingPageSource
+import com.c0mpile.grimmreader.reader.ebook.TocEntry
 import com.c0mpile.grimmreader.reader.paged.PageSource
 import com.c0mpile.grimmreader.reader.pdf.PdfPageSource
 import com.c0mpile.grimmreader.reader.pdf.ProtectedPdfException
@@ -86,6 +87,12 @@ data class ReaderUiState(
     val message: String? = null,
     /** Page turns since the book was opened (drives the E-ink refresh flash). */
     val pageTurns: Int = 0,
+    /** Ebook chapters (empty for comics and PDFs) and the label of the chapter being read. */
+    val toc: List<TocEntry> = emptyList(),
+    val chapter: String? = null,
+    /** Comics and PDFs: current 1-based page and page count. */
+    val page: Int? = null,
+    val pageCount: Int? = null,
 )
 
 @OptIn(FlowPreview::class)
@@ -219,6 +226,7 @@ class ReaderViewModel
             _state.update {
                 it.copy(
                     location = tocLabel,
+                    chapter = tocLabel?.trim() ?: it.chapter,
                     percent = if (hasPosition) locator.percent else it.percent,
                     bookmarkHere = here(it.bookmarks),
                     pageTurns = if (turned) it.pageTurns + 1 else it.pageTurns,
@@ -226,6 +234,8 @@ class ReaderViewModel
             }
             if (hasPosition) pending.value = locator
         }
+
+        fun onEbookReady(toc: List<TocEntry>) = _state.update { it.copy(toc = toc) }
 
         /** The ebook page answered a new bookmark list with the bookmark it shows (or none). */
         fun onEbookBookmarkHere(cfi: String?) {
@@ -241,6 +251,8 @@ class ReaderViewModel
             _state.update {
                 it.copy(
                     location = "${index + 1} / $count",
+                    page = index + 1,
+                    pageCount = count,
                     percent = locator.percent,
                     bookmarkHere = here(it.bookmarks),
                     pageTurns = if (turned) it.pageTurns + 1 else it.pageTurns,

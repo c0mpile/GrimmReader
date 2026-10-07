@@ -29,15 +29,18 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.io.FileInputStream
 
+/** A chapter; [depth] is 0 for top-level entries, 1 for their sub-chapters and so on. */
 data class TocEntry(
     val label: String,
     val href: String,
+    val depth: Int = 0,
 )
 
 sealed interface EbookEvent {
@@ -76,6 +79,9 @@ class EbookController {
 
     /** Arguments are JSON-encoded, so book data can never break out of the string literal. */
     fun goTo(target: String) = call("grimm_api.goTo(${Json.encodeToString(target)})")
+
+    /** Jumps to a position 0..1 through the book (foliate's fraction, weighted like the progress). */
+    fun goToFraction(fraction: Float) = call("grimm_api.goToFraction(${fraction.coerceIn(0f, 1f)})")
 
     fun setStyle(css: String) = call("grimm_api.setStyle(${Json.encodeToString(css)})")
 
@@ -277,7 +283,11 @@ internal fun parse(data: String): EbookEvent? {
                     ?.jsonArray
                     ?.mapNotNull { e ->
                         val item = e as? JsonObject ?: return@mapNotNull null
-                        TocEntry(item.str("label") ?: return@mapNotNull null, item.str("href") ?: return@mapNotNull null)
+                        TocEntry(
+                            item.str("label")?.trim() ?: return@mapNotNull null,
+                            item.str("href") ?: return@mapNotNull null,
+                            item["depth"]?.jsonPrimitive?.intOrNull ?: 0,
+                        )
                     }.orEmpty(),
             )
         "relocate" -> {
