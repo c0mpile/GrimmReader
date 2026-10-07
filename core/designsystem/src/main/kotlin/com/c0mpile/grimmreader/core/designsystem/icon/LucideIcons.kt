@@ -39,6 +39,17 @@ object LucideIcons {
             stroke("M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20")
         }
     }
+    val BookmarkCheck: ImageVector by lazy {
+        lucide("bookmark-check") {
+            stroke("M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z")
+            stroke("m9 10 2 2 4-4")
+        }
+    }
+    val Bookmark: ImageVector by lazy {
+        lucide("bookmark") {
+            stroke("M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z")
+        }
+    }
     val Check: ImageVector by lazy {
         lucide("check") {
             stroke("M20 6 9 17l-5-5")

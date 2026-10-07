@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,12 +22,17 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +51,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
+import com.c0mpile.grimmreader.core.model.Bookmark
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.reader.ebook.EbookController
 import com.c0mpile.grimmreader.reader.ebook.EbookCss
@@ -65,16 +74,56 @@ fun ReaderScreen(
     val prefs by viewModel.readerPrefs.collectAsStateWithLifecycle()
     var chrome by rememberSaveable { mutableStateOf(true) }
     var settings by remember { mutableStateOf(false) }
+    var bookmarkList by remember { mutableStateOf(false) }
     val motion = LocalMotionEnabled.current
+    val snackbar = remember { SnackbarHostState() }
+    // One controller per ebook view, hoisted so the bookmark list can jump through it.
+    val ebook = state.content as? ReaderContent.Ebook
+    val controller = remember(ebook?.file, ebook?.restoreKey) { EbookController() }
+    var pageReady by remember(controller) { mutableStateOf(false) }
+    val bookmarkCfis = state.bookmarks.mapNotNull { it.cfi }
+    LaunchedEffect(controller, pageReady, bookmarkCfis) { if (pageReady) controller.setBookmarks(bookmarkCfis) }
+    LaunchedEffect(state.message) {
+        state.message?.let {
+            snackbar.showSnackbar(it, duration = SnackbarDuration.Short)
+            viewModel.messageShown()
+        }
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Content(state.content, prefs, viewModel, onToggleChrome = { chrome = !chrome })
+        Content(state.content, prefs, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = { chrome = !chrome })
         AnimatedVisibility(chrome, enter = if (motion) fadeIn() else fadeIn(snap()), exit = if (motion) fadeOut() else fadeOut(snap())) {
-            Chrome(state, onBack = onBack, onSettings = { settings = true })
+            Chrome(
+                state,
+                onBack = onBack,
+                onToggleBookmark = viewModel::toggleBookmark,
+                onBookmarks = { bookmarkList = true },
+                onSettings = { settings = true },
+            )
         }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 48.dp))
     }
     if (settings) {
         ModalBottomSheet(onDismissRequest = { settings = false }) { ReaderSettings(prefs, viewModel::setReaderPrefs) }
+    }
+    if (bookmarkList) {
+        ModalBottomSheet(onDismissRequest = { bookmarkList = false }) {
+            BookmarkList(
+                bookmarks = state.bookmarks,
+                current = state.bookmarkHere,
+                onOpen = { bookmark ->
+                    bookmarkList = false
+                    val cfi = bookmark.cfi
+                    val page = bookmark.page
+                    if (cfi != null) {
+                        controller.goTo(cfi)
+                    } else if (page != null) {
+                        viewModel.goToPage(page)
+                    }
+                },
+                onDelete = viewModel::removeBookmark,
+            )
+        }
     }
     state.offer?.let { offer ->
         AlertDialog(
@@ -96,6 +145,8 @@ private fun Content(
     content: ReaderContent,
     prefs: ReaderPrefs,
     viewModel: ReaderViewModel,
+    controller: EbookController,
+    onPageReady: () -> Unit,
     onToggleChrome: () -> Unit,
 ) {
     when (content) {
@@ -103,7 +154,6 @@ private fun Content(
         is ReaderContent.Ebook -> {
             val colors = MaterialTheme.colorScheme
             val css = EbookCss.build(prefs, PageColors(colors.background.hex(), colors.onBackground.hex(), colors.primary.hex()))
-            val controller = remember(content.restoreKey) { EbookController() }
             key(content.file, content.restoreKey) {
                 EbookReader(
                     file = content.file,
@@ -112,7 +162,13 @@ private fun Content(
                     animated = LocalMotionEnabled.current,
                     controller = controller,
                     onEvent = { event ->
-                        if (event is EbookEvent.Relocated) viewModel.onEbookPosition(event.locator, event.tocLabel, event.hasPosition)
+                        when (event) {
+                            is EbookEvent.Ready -> onPageReady()
+                            is EbookEvent.Relocated ->
+                                viewModel.onEbookPosition(event.locator, event.tocLabel, event.hasPosition, event.bookmark)
+                            is EbookEvent.BookmarkHere -> viewModel.onEbookBookmarkHere(event.cfi)
+                            is EbookEvent.Failed -> Unit
+                        }
                     },
                     onToggleChrome = onToggleChrome,
                     modifier = Modifier.fillMaxSize().safeDrawingPadding(),
@@ -156,8 +212,11 @@ private fun Message(text: String) {
 private fun Chrome(
     state: ReaderUiState,
     onBack: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onBookmarks: () -> Unit,
     onSettings: () -> Unit,
 ) {
+    val canRead = state.content is ReaderContent.Ebook || state.content is ReaderContent.Paged
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -169,6 +228,17 @@ private fun Chrome(
         ) {
             IconButton(onClick = onBack) { Icon(LucideIcons.ArrowLeft, contentDescription = "Back", tint = Color.White) }
             Text(state.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (canRead) {
+                val marked = state.bookmarkHere != null
+                IconButton(onClick = onToggleBookmark) {
+                    Icon(
+                        if (marked) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
+                        contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
+                        tint = if (marked) CHROME_ACCENT else Color.White,
+                    )
+                }
+                IconButton(onClick = onBookmarks) { Icon(LucideIcons.List, contentDescription = "Bookmarks", tint = Color.White) }
+            }
             IconButton(onClick = onSettings) { Icon(LucideIcons.Settings, contentDescription = "Reading settings", tint = Color.White) }
         }
         Box(Modifier.weight(1f))
@@ -183,6 +253,59 @@ private fun Chrome(
             Text(state.location.orEmpty(), color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             state.percent?.let { Text("%.0f %%".format(it), color = Color.White.copy(alpha = 0.6f)) }
         }
+    }
+}
+
+/** Accent on the always-dark reader chrome (web: primary-400). */
+private val CHROME_ACCENT = Color(0xFFFF8904)
+
+@Composable
+private fun BookmarkList(
+    bookmarks: List<Bookmark>,
+    current: Bookmark?,
+    onOpen: (Bookmark) -> Unit,
+    onDelete: (Bookmark) -> Unit,
+) {
+    Column(Modifier.padding(bottom = 24.dp)) {
+        Text("Bookmarks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        if (bookmarks.isEmpty()) {
+            Text(
+                "No bookmarks yet. Tap the bookmark icon at the top to mark the current page.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+            return
+        }
+        LazyColumn {
+            items(bookmarks, key = { it.id }) { bookmark ->
+                ListItem(
+                    headlineContent = { Text(bookmark.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = bookmarkDetail(bookmark)?.let { detail -> { Text(detail) } },
+                    leadingContent = {
+                        Icon(
+                            if (bookmark.id == current?.id) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        IconButton(onClick = { onDelete(bookmark) }) { Icon(LucideIcons.Trash, contentDescription = "Delete bookmark") }
+                    },
+                    modifier = Modifier.clickable { onOpen(bookmark) },
+                )
+            }
+        }
+    }
+}
+
+/** "Page 12" unless the title already says so; else the position when known. */
+private fun bookmarkDetail(bookmark: Bookmark): String? {
+    val page = bookmark.page?.let { "Page $it" }
+    return when {
+        page != null && page != bookmark.title -> page
+        page == null -> bookmark.percent?.let { "%.0f %%".format(it) }
+        else -> null
     }
 }
 

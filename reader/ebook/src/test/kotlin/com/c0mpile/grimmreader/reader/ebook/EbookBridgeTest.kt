@@ -61,4 +61,10 @@ class EbookBridgeTest {
         assertFalse(isAllowedNavigation("blob:$origin/x", mainFrame = true))
         assertFalse(isAllowedNavigation("https://example.com/", mainFrame = true))
     }
+
+    @Test fun bookmarkOnTheVisiblePageIsReported() {
+        val moved = parse("""{"t":"relocate","cfi":"epubcfi(/6/4!/4,/2/1:0,/8/1:9)","fraction":0.1,"bookmark":"epubcfi(/6/4!/4/2/1:0)"}""")
+        assertEquals("epubcfi(/6/4!/4/2/1:0)", (moved as EbookEvent.Relocated).bookmark)
+        assertEquals(EbookEvent.BookmarkHere(null), parse("""{"t":"bookmark","cfi":null}"""))
+    }
 }
