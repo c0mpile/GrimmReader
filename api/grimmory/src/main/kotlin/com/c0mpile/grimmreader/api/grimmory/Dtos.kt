@@ -247,3 +247,41 @@ data class ShelfCreateDto(
     val icon: String? = null,
     val publicShelf: Boolean = false,
 )
+
+/** `AppNotebookBookSummary`: a book with highlights, notes or bookmarks. */
+@Serializable
+data class NotebookBookDto(
+    val bookId: Long,
+    val bookTitle: String? = null,
+    val noteCount: Int = 0,
+    val authors: List<String> = emptyList(),
+    val coverUpdatedOn: String? = null,
+)
+
+/** `AppNotebookEntry`: [type] is HIGHLIGHT, NOTE or BOOKMARK. */
+@Serializable
+data class NotebookEntryDto(
+    val id: Long,
+    val type: String? = null,
+    val bookId: Long? = null,
+    val text: String? = null,
+    val note: String? = null,
+    val color: String? = null,
+    val style: String? = null,
+    val chapterTitle: String? = null,
+    val createdAt: String? = null,
+)
+
+/** `AppPageResponseAppNotebookBookSummary` */
+@Serializable
+data class NotebookBookPageDto(
+    val content: List<NotebookBookDto> = emptyList(),
+    val hasNext: Boolean = false,
+)
+
+/** `AppPageResponseAppNotebookEntry` */
+@Serializable
+data class NotebookEntryPageDto(
+    val content: List<NotebookEntryDto> = emptyList(),
+    val hasNext: Boolean = false,
+)

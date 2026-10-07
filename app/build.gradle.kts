@@ -47,6 +47,7 @@ dependencies {
     implementation(projects.feature.bookdetail)
     implementation(projects.feature.reader)
     implementation(projects.feature.settings)
+    implementation(projects.feature.notebook)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
