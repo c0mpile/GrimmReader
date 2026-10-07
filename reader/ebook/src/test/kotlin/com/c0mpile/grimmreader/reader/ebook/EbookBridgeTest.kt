@@ -50,4 +50,15 @@ class EbookBridgeTest {
         assertFalse("inline scripts would be blocked by our own CSP", Regex("<script(?![^>]*\\bsrc=)[^>]*>").containsMatchIn(html))
         assertTrue(html.contains(READER_CSP))
     }
+
+    @Test fun onlyOwnBlobFramesAndTheReaderMayNavigate() {
+        val origin = "https://appassets.androidplatform.net"
+        assertTrue(isAllowedNavigation("blob:$origin/0b1c-section", mainFrame = false))
+        assertTrue(isAllowedNavigation("about:blank", mainFrame = false))
+        assertFalse(isAllowedNavigation("https://example.com/", mainFrame = false))
+        assertFalse(isAllowedNavigation("blob:https://example.com/x", mainFrame = false))
+        assertTrue(isAllowedNavigation("$origin/assets/reader/reader.html?name=x", mainFrame = true))
+        assertFalse(isAllowedNavigation("blob:$origin/x", mainFrame = true))
+        assertFalse(isAllowedNavigation("https://example.com/", mainFrame = true))
+    }
 }

@@ -70,8 +70,9 @@ class EbookController {
 
     fun setStyle(css: String) = call("grimm_api.setStyle(${Json.encodeToString(css)})")
 
+    /** No-op until the page script defined its API (styles can change before the book is open). */
     private fun call(js: String) {
-        webView?.evaluateJavascript(js, null)
+        webView?.evaluateJavascript("window.grimm_api && $js", null)
     }
 }
 
@@ -231,11 +232,26 @@ private class LocalOnlyClient(
 
     private fun forbidden() = WebResourceResponse("text/plain", "utf-8", HTTP_FORBIDDEN, "Forbidden", emptyMap(), null)
 
+    /**
+     * Android also asks about sub-frame navigations to non-HTTP schemes: foliate loads every section into a
+     * frame from a `blob:` URL of our own origin, which must be allowed. Everything else (a book's external
+     * links, any navigation of the main frame away from the reader) is cancelled.
+     */
     override fun shouldOverrideUrlLoading(
         view: WebView,
         request: WebResourceRequest,
-    ): Boolean = true
+    ): Boolean = !isAllowedNavigation(request.url.toString(), request.isForMainFrame)
 }
+
+internal fun isAllowedNavigation(
+    url: String,
+    mainFrame: Boolean,
+): Boolean =
+    if (mainFrame) {
+        url.startsWith("$ORIGIN/assets/reader/")
+    } else {
+        url.startsWith("blob:$ORIGIN/") || url == "about:blank"
+    }
 
 internal fun parse(data: String): EbookEvent? {
     val o = runCatching { Json.parseToJsonElement(data).jsonObject }.getOrNull() ?: return null
