@@ -10,8 +10,9 @@ AGPL-3.0). It does not include Grimmory's logo.
 Bundled third-party material (full licence texts in licenses/):
 - Inter typeface, Copyright 2020 The Inter Project Authors. SIL Open Font License 1.1 (licenses/Inter-OFL.txt).
 - foliate-js (reader/ebook/src/main/assets/foliate), Copyright (c) 2022 John Factotum. MIT License
-  (licenses/foliate-js-MIT.txt); taken from Grimmory's copy, whose changes are AGPL-3.0. Its vendor/ files keep
-  their own licence headers.
+  (licenses/foliate-js-MIT.txt); taken from Grimmory's copy, whose changes are AGPL-3.0. It bundles
+  fflate (MIT, Copyright Arjun Barrett; licenses/fflate-MIT.txt) and zip.js (BSD-3-Clause, Copyright Gildas Lormeau;
+  licenses/zip.js-BSD-3-Clause.txt).
 - Lucide icons (converted to Compose vectors), Copyright Lucide Icons and Contributors. ISC License (licenses/Lucide-ISC.txt).
 
 Library dependencies are declared in gradle/libs.versions.toml. All are FOSS (Apache-2.0, MIT, BSD-3-Clause;
