@@ -9,6 +9,7 @@ import androidx.room.Upsert
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.BookWithFiles
+import com.c0mpile.grimmreader.core.database.entity.BookmarkEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
@@ -210,4 +211,32 @@ interface LibraryDao {
 
     @Query("DELETE FROM library WHERE serverRowId = :serverRowId")
     suspend fun deleteAll(serverRowId: Long)
+}
+
+@Dao
+interface BookmarkDao {
+    @Query("SELECT * FROM bookmark WHERE bookId = :bookId AND deleted = 0")
+    fun observe(bookId: Long): Flow<List<BookmarkEntity>>
+
+    /** Including tombstones. */
+    @Query("SELECT * FROM bookmark WHERE bookId = :bookId")
+    suspend fun forBook(bookId: Long): List<BookmarkEntity>
+
+    @Query("SELECT * FROM bookmark WHERE id = :id")
+    suspend fun get(id: Long): BookmarkEntity?
+
+    @Insert
+    suspend fun insert(bookmark: BookmarkEntity): Long
+
+    @Query("UPDATE bookmark SET serverId = :serverId WHERE id = :id")
+    suspend fun setServerId(
+        id: Long,
+        serverId: Long,
+    )
+
+    @Query("UPDATE bookmark SET deleted = 1 WHERE id = :id")
+    suspend fun markDeleted(id: Long)
+
+    @Query("DELETE FROM bookmark WHERE id = :id")
+    suspend fun delete(id: Long)
 }

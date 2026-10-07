@@ -55,6 +55,8 @@ class MigrationTest {
                 assertEquals("CBZ", c.getString(0))
             }
         }
+        // v4 adds the bookmark table (auto-migration).
+        helper.runMigrationsAndValidate(DB, 4, true).close()
         assertFalse(comic.exists())
         assertFalse(cover.exists())
         assertTrue(keptCover.exists())

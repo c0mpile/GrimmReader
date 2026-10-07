@@ -187,3 +187,28 @@ data class UpdateProgressDto(
     val pdfProgress: PageProgressDto? = null,
     val cbxProgress: PageProgressDto? = null,
 )
+
+/**
+ * `BookMark`. Ebooks store a CFI in [cfi]; the comic reader stores the 1-based page as text in [cfi]; the PDF
+ * reader uses [pageNumber]. Audiobook bookmarks ([positionMs]) are ignored by the app.
+ */
+@Serializable
+data class BookmarkDto(
+    val id: Long,
+    val bookId: Long? = null,
+    val cfi: String? = null,
+    val pageNumber: Int? = null,
+    val positionMs: Long? = null,
+    val title: String? = null,
+    val createdAt: String? = null,
+)
+
+/** `CreateBookMarkRequest`. [pdfBookmark] makes the server reject a second bookmark on the same page (409). */
+@Serializable
+data class CreateBookmarkDto(
+    val bookId: Long,
+    val cfi: String? = null,
+    val pageNumber: Int? = null,
+    val title: String? = null,
+    val pdfBookmark: Boolean? = null,
+)
