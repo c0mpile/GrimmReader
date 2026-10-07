@@ -37,4 +37,6 @@ object DatabaseModule {
     @Provides fun downloadDao(db: GrimmDatabase) = db.downloadDao()
 
     @Provides fun libraryDao(db: GrimmDatabase) = db.libraryDao()
+
+    @Provides fun bookmarkDao(db: GrimmDatabase) = db.bookmarkDao()
 }

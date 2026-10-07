@@ -8,6 +8,7 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -63,6 +64,23 @@ interface GrimmoryApi {
     suspend fun updateProgress(
         @Path("bookId") bookId: Long,
         @Body body: UpdateProgressDto,
+    ): Response<Unit>
+
+    /** This user's bookmarks for a book. */
+    @GET("api/v1/bookmarks/book/{bookId}")
+    suspend fun bookmarks(
+        @Path("bookId") bookId: Long,
+    ): List<BookmarkDto>
+
+    /** 409 when a bookmark already exists at that CFI (or PDF page). */
+    @POST("api/v1/bookmarks")
+    suspend fun createBookmark(
+        @Body body: CreateBookmarkDto,
+    ): Response<BookmarkDto>
+
+    @DELETE("api/v1/bookmarks/{bookmarkId}")
+    suspend fun deleteBookmark(
+        @Path("bookmarkId") bookmarkId: Long,
     ): Response<Unit>
 
     /** 1-based page numbers of a comic, extracted on the server. */

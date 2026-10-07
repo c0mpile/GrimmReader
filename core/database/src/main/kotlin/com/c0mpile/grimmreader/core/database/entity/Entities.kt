@@ -143,3 +143,25 @@ data class BookWithFiles(
     @Relation(parentColumn = "id", entityColumn = "bookId") val files: List<BookFileEntity>,
     @Relation(parentColumn = "id", entityColumn = "bookId") val position: ReadingPositionEntity?,
 )
+
+/**
+ * A bookmark at [cfi] (ebooks) or [page] (comics and PDF, 1-based). [serverId] is null until the server knows
+ * it; [deleted] keeps a synced bookmark as a tombstone until its deletion reaches the server.
+ */
+@Entity(
+    tableName = "bookmark",
+    foreignKeys = [ForeignKey(BookEntity::class, ["id"], ["bookId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("bookId"), Index("serverId")],
+)
+data class BookmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bookId: Long,
+    val serverId: Long? = null,
+    val cfi: String? = null,
+    val page: Int? = null,
+    val title: String,
+    /** Position (0..100) when made on this device, for ordering and display; unknown for others. */
+    val percent: Float? = null,
+    val createdAt: Long,
+    val deleted: Boolean = false,
+)

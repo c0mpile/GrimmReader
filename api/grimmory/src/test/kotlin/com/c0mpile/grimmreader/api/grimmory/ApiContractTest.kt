@@ -37,6 +37,8 @@ class ApiContractTest {
             serializer<PageProgressDto>() to "PdfProgress",
             serializer<FileProgressDto>() to "BookFileProgress",
             serializer<UpdateProgressDto>() to "UpdateProgressRequest",
+            serializer<BookmarkDto>() to "BookMark",
+            serializer<CreateBookmarkDto>() to "CreateBookMarkRequest",
         )
 
     @Test fun dtoFieldsExistInTheSpec() {

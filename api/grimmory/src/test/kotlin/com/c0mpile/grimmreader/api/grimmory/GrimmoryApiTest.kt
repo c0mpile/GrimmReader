@@ -64,6 +64,35 @@ class GrimmoryApiTest {
             assertEquals(setOf("canDownload", "canAccessOpds"), api.me().permissionFlags())
         }
 
+    @Test fun bookmarksListCreateAndDelete() =
+        runTest {
+            respond("bookmarks.json")
+            val list = api.bookmarks(101)
+            assertEquals(listOf(901L, 902L, 903L, 904L), list.map { it.id })
+            assertEquals("12", list[1].cfi)
+            assertEquals(4, list[2].pageNumber)
+            assertEquals("/grimmory/api/v1/bookmarks/book/101", server.takeRequest().url.encodedPath)
+
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(409)
+                    .body("""{"message":"Bookmark already exists at this location"}""")
+                    .build(),
+            )
+            val created = api.createBookmark(CreateBookmarkDto(bookId = 101, pageNumber = 4, title = "Page 4", pdfBookmark = true))
+            assertEquals(409, created.code())
+            val post = server.takeRequest()
+            assertEquals("POST", post.method)
+            assertEquals("""{"bookId":101,"pageNumber":4,"title":"Page 4","pdfBookmark":true}""", post.body?.utf8())
+
+            server.enqueue(MockResponse.Builder().code(204).build())
+            assertTrue(api.deleteBookmark(901).isSuccessful)
+            val delete = server.takeRequest()
+            assertEquals("DELETE", delete.method)
+            assertEquals("/grimmory/api/v1/bookmarks/901", delete.url.encodedPath)
+        }
+
     @Test fun progressWriteSendsPerFormatAndFileProgressWithoutNulls() =
         runTest {
             server.enqueue(MockResponse.Builder().code(200).build())
