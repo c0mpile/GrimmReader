@@ -120,17 +120,24 @@ class LibraryViewModel
 
         fun import(uris: List<Uri>) =
             viewModelScope.launch {
+                var unsupported = 0
                 var failed = 0
                 for (uri in uris) {
                     try {
                         library.importLocal(uri)
                     } catch (_: UnsupportedFormatException) {
-                        failed++
+                        unsupported++
                     } catch (_: IOException) {
                         failed++
                     }
                 }
-                if (failed > 0) local.update { it.copy(message = "$failed file(s) could not be imported.") }
+                val message =
+                    listOfNotNull(
+                        "$unsupported file(s) not supported. Books: EPUB, MOBI/AZW3, FB2, PDF; comics: CBZ only."
+                            .takeIf { unsupported > 0 },
+                        "$failed file(s) could not be imported.".takeIf { failed > 0 },
+                    ).joinToString(" ")
+                if (message.isNotEmpty()) local.update { it.copy(message = message) }
             }
 
         fun messageShown() = local.update { it.copy(message = null) }

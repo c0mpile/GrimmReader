@@ -25,8 +25,8 @@ import javax.inject.Singleton
 /**
  * Reading server books without downloading them. Ebooks are fetched whole into an evictable cache (foliate
  * needs the complete file; EPUBs are small); comics are streamed page by page from the server, which extracts
- * pages itself, so CBR and CB7 work too. Nothing here is a kept download: the cache is trimmed to [MAX_CACHE]
- * bytes, Android may clear it, and signing out deletes it. Uses the authenticated guarded client.
+ * pages itself. Nothing here is a kept download: the cache is trimmed to [MAX_CACHE] bytes, Android may clear
+ * it, and signing out deletes it. Uses the authenticated guarded client.
  */
 @Singleton
 class OnlineReading

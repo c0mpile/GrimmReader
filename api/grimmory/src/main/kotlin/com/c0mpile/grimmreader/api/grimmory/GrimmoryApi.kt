@@ -65,7 +65,7 @@ interface GrimmoryApi {
         @Body body: UpdateProgressDto,
     ): Response<Unit>
 
-    /** 1-based page numbers of a comic, extracted on the server (works for CBZ, CB7 and CBR alike). */
+    /** 1-based page numbers of a comic, extracted on the server. */
     @GET("api/v1/cbx/{bookId}/pages")
     suspend fun cbxPages(
         @Path("bookId") bookId: Long,

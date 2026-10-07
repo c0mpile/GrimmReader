@@ -72,7 +72,10 @@ class ProgressRulesTest {
 
     @Test fun formatAndStatusMapping() {
         assertEquals(BookFormat.CBZ, formatOf("CBX", "x.cbz"))
-        assertEquals(BookFormat.CBR, formatOf("CBX", "x.cbr"))
+        assertEquals(BookFormat.CBZ, formatOf("CBX", null))
+        assertNull(formatOf("CBX", "x.CBR"))
+        assertNull(formatOf("CBX", "x.cb7"))
+        assertNull(formatOf("CBR", "x.cbr"))
         assertEquals(BookFormat.MOBI, formatOf("AZW3", null))
         assertNull(formatOf("AUDIOBOOK", "x.m4b"))
         assertEquals(ReadStatus.READING, readStatusOf("RE_READING"))

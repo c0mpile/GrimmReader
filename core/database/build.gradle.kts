@@ -8,6 +8,13 @@ android {
     namespace = "com.c0mpile.grimmreader.core.database"
 }
 
+// MigrationTestHelper reads the exported schemas as test assets.
+androidComponents {
+    onVariants { variant ->
+        variant.hostTests.values.forEach { it.sources.assets?.addStaticSourceDirectory("$projectDir/schemas") }
+    }
+}
+
 dependencies {
     api(projects.core.model)
     testImplementation(libs.robolectric)

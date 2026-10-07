@@ -9,9 +9,6 @@ import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 
 internal const val COMPILE_SDK = 37
-
-// libarchive-android 1.1.7 (libarchive 3.8.8) requires compile SDK 37.2.
-internal const val COMPILE_SDK_MINOR = 2
 internal const val MIN_SDK = 31
 internal const val TARGET_SDK = 37
 internal const val JDK = 21

@@ -18,7 +18,10 @@ import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 
-/** Test builds are installed on real devices, so schema changes ship with a migration (v2: libraries). */
+/**
+ * Test builds are installed on real devices, so schema changes ship with a migration (v2: libraries; v3: CB7 and
+ * CBR books removed, see [MIGRATION_2_3]).
+ */
 @Database(
     entities = [
         ServerEntity::class,
@@ -29,7 +32,7 @@ import com.c0mpile.grimmreader.core.database.entity.ServerEntity
         DownloadEntity::class,
         LibraryEntity::class,
     ],
-    version = 2,
+    version = 3,
     autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class GrimmDatabase : RoomDatabase() {

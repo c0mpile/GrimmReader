@@ -13,7 +13,10 @@ import com.c0mpile.grimmreader.core.model.Library
 import com.c0mpile.grimmreader.core.model.ReadStatus
 import java.time.Instant
 
-/** Grimmory file types the app can read. Audiobook types map to null and are filtered from the library. */
+/**
+ * Grimmory file types the app can read. Audiobooks and CBR/CB7 comics map to null and are filtered from the
+ * library: CBZ is the only comic format. The server reports every comic as CBX, so the file name decides.
+ */
 internal fun formatOf(
     primaryFileType: String?,
     fileName: String?,
@@ -24,11 +27,13 @@ internal fun formatOf(
         "PDF" -> BookFormat.PDF
         "MOBI", "AZW", "AZW3" -> BookFormat.MOBI
         "FB2" -> BookFormat.FB2
-        "CBX", "CBZ", "CBR", "CB7" -> fromName?.takeIf { it.isComic } ?: BookFormat.CBZ
+        "CBX", "CBZ" -> if (fileName?.substringAfterLast('.', "")?.lowercase() in UNSUPPORTED_COMICS) null else BookFormat.CBZ
         null -> fromName
         else -> null
     }
 }
+
+private val UNSUPPORTED_COMICS = setOf("cbr", "rar", "cb7", "7z")
 
 internal fun readStatusOf(value: String?): ReadStatus =
     when (value?.uppercase()) {

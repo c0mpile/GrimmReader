@@ -7,8 +7,6 @@ import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.progress.RemotePosition
 import com.c0mpile.grimmreader.core.data.stream.OnlineReading
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
-import com.c0mpile.grimmreader.core.files.EncryptedArchiveException
-import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
@@ -62,9 +60,8 @@ sealed interface ReaderContent {
         val format: BookFormat,
     ) : ReaderContent
 
-    /** A server book being fetched, or a comic being unpacked; [progress] is 0..1 or null when unknown. */
-    data class Preparing(
-        val message: String,
+    /** A server book being fetched for online reading; [progress] is 0..1 or null when unknown. */
+    data class Fetching(
         val progress: Float?,
     ) : ReaderContent
 
@@ -92,7 +89,6 @@ class ReaderViewModel
         private val library: LibraryRepository,
         private val progress: ProgressRepository,
         private val online: OnlineReading,
-        private val files: LocalFileStore,
         prefs: AppPreferences,
     ) : ViewModel() {
         private val _state = MutableStateFlow(ReaderUiState())
@@ -130,9 +126,7 @@ class ReaderViewModel
                         else -> ReaderContent.NotDownloaded
                     }
                 } catch (_: ProtectedPdfException) {
-                    ReaderContent.Failed(PROTECTED)
-                } catch (_: EncryptedArchiveException) {
-                    ReaderContent.Failed(PROTECTED)
+                    ReaderContent.Failed(PROTECTED_PDF)
                 } catch (_: IOException) {
                     ReaderContent.Failed(if (file?.localUri == null) ONLINE_FAILED else OPEN_FAILED)
                 }
@@ -151,7 +145,7 @@ class ReaderViewModel
                 format.isReflowable -> ReaderContent.Ebook(file, (local as? Locator.Epub)?.cfi)
                 format == BookFormat.PDF -> paged(withContext(Dispatchers.IO) { PdfPageSource.open(file) }, local)
                 else -> {
-                    val opened = ArchivePageSource.open(file, format, null, files.extractDir) { p -> preparing(UNPACKING, p) }
+                    val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(file, format, null) }
                     if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local)
                 }
             }
@@ -172,23 +166,17 @@ class ReaderViewModel
                     }
                 }
                 file.format.isReflowable || file.format == BookFormat.PDF -> {
-                    _state.update { it.copy(content = ReaderContent.Preparing(FETCHING, null)) }
-                    val (cached, format) = online.book(serverBookId, file.serverFileId, file.format) { p -> preparing(FETCHING, p) }
+                    _state.update { it.copy(content = ReaderContent.Fetching(null)) }
+                    val (cached, format) =
+                        online.book(serverBookId, file.serverFileId, file.format) { p ->
+                            _state.update { s ->
+                                if (s.content is ReaderContent.Fetching) s.copy(content = ReaderContent.Fetching(p)) else s
+                            }
+                        }
                     openLocal(cached, format, local)
                 }
                 else -> ReaderContent.Unsupported(file.format)
             }
-
-        private fun preparing(
-            message: String,
-            progress: Float?,
-        ) = _state.update { s ->
-            if (s.content == ReaderContent.Loading || s.content is ReaderContent.Preparing) {
-                s.copy(content = ReaderContent.Preparing(message, progress))
-            } else {
-                s
-            }
-        }
 
         private fun paged(
             opened: PageSource,
@@ -265,9 +253,7 @@ class ReaderViewModel
         private companion object {
             const val SAVE_DEBOUNCE_MS = 2_000L
             const val OPEN_FAILED = "This file could not be opened. It may be damaged."
-            const val PROTECTED = "This file is password-protected, which is not supported yet."
-            const val FETCHING = "Loading from the server…"
-            const val UNPACKING = "Unpacking the comic…"
+            const val PROTECTED_PDF = "This PDF is password-protected, which is not supported yet."
             const val ONLINE_FAILED = "Could not load this book from the server. Check the connection, or download it to read offline."
         }
     }

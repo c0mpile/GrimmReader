@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.database.di
 import android.content.Context
 import androidx.room.Room
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
+import com.c0mpile.grimmreader.core.database.MIGRATION_2_3
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -17,7 +18,11 @@ object DatabaseModule {
     @Singleton
     fun database(
         @ApplicationContext context: Context,
-    ): GrimmDatabase = Room.databaseBuilder(context, GrimmDatabase::class.java, "grimm.db").build()
+    ): GrimmDatabase =
+        Room
+            .databaseBuilder(context, GrimmDatabase::class.java, "grimm.db")
+            .addMigrations(MIGRATION_2_3)
+            .build()
 
     @Provides fun serverDao(db: GrimmDatabase) = db.serverDao()
 
