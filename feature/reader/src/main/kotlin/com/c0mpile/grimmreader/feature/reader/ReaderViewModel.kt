@@ -5,11 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.progress.RemotePosition
+import com.c0mpile.grimmreader.core.data.stream.OnlineReading
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
+import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
+import com.c0mpile.grimmreader.core.model.BookSource
 import com.c0mpile.grimmreader.core.model.Locator
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
+import com.c0mpile.grimmreader.core.model.ReadingDirection
 import com.c0mpile.grimmreader.reader.comic.ArchivePageSource
+import com.c0mpile.grimmreader.reader.comic.StreamingPageSource
 import com.c0mpile.grimmreader.reader.paged.PageSource
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
@@ -31,6 +36,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 sealed interface ReaderContent {
     data object Loading : ReaderContent
@@ -52,6 +58,15 @@ sealed interface ReaderContent {
         val format: BookFormat,
     ) : ReaderContent
 
+    /** A server book being fetched for online reading; [progress] is 0..1 or null when unknown. */
+    data class Fetching(
+        val progress: Float?,
+    ) : ReaderContent
+
+    data class Failed(
+        val message: String,
+    ) : ReaderContent
+
     data object NotDownloaded : ReaderContent
 }
 
@@ -71,6 +86,7 @@ class ReaderViewModel
         @Assisted private val bookId: Long,
         private val library: LibraryRepository,
         private val progress: ProgressRepository,
+        private val online: OnlineReading,
         prefs: AppPreferences,
     ) : ViewModel() {
         private val _state = MutableStateFlow(ReaderUiState())
@@ -95,28 +111,73 @@ class ReaderViewModel
         private suspend fun open() {
             val book = library.observeBook(bookId).first() ?: return
             val file = book.primaryFile
-            val path = file?.localUri
             _state.update { it.copy(title = book.title, percent = book.progressPercent) }
-            if (file == null || path == null) {
-                _state.update { it.copy(content = ReaderContent.NotDownloaded) }
-                return
-            }
             val local = progress.local(bookId)
             val content =
-                when {
-                    file.format.isReflowable -> ReaderContent.Ebook(File(path), (local as? Locator.Epub)?.cfi)
-                    else -> {
-                        val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(File(path), file.format, null) }
-                        source = opened
-                        if (opened == null) {
-                            ReaderContent.Unsupported(file.format)
-                        } else {
-                            ReaderContent.Paged(opened, ((local as? Locator.Page)?.page ?: 1) - 1)
-                        }
+                try {
+                    val path = file?.localUri
+                    val serverId = book.serverId
+                    when {
+                        file == null -> ReaderContent.NotDownloaded
+                        path != null -> openLocal(File(path), file.format, local)
+                        book.source == BookSource.SERVER && serverId != null -> openOnline(serverId, file, local)
+                        else -> ReaderContent.NotDownloaded
                     }
+                } catch (_: IOException) {
+                    ReaderContent.Failed(ONLINE_FAILED)
                 }
             _state.update { it.copy(content = content) }
-            progress.remoteToOffer(bookId)?.let { offer -> _state.update { it.copy(offer = offer) } }
+            if (content is ReaderContent.Ebook || content is ReaderContent.Paged) {
+                progress.remoteToOffer(bookId)?.let { offer -> _state.update { it.copy(offer = offer) } }
+            }
+        }
+
+        private suspend fun openLocal(
+            file: File,
+            format: BookFormat,
+            local: Locator?,
+        ): ReaderContent =
+            if (format.isReflowable) {
+                ReaderContent.Ebook(file, (local as? Locator.Epub)?.cfi)
+            } else {
+                val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(file, format, null) }
+                if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local)
+            }
+
+        /** Not downloaded: ebooks are fetched whole into the cache, comics are streamed page by page. */
+        private suspend fun openOnline(
+            serverBookId: Long,
+            file: BookFile,
+            local: Locator?,
+        ): ReaderContent =
+            when {
+                file.format.isComic -> {
+                    val pages = online.comicPages(serverBookId)
+                    if (pages.isEmpty()) {
+                        ReaderContent.Failed(ONLINE_FAILED)
+                    } else {
+                        paged(StreamingPageSource(pages, ReadingDirection.LTR) { online.comicPage(serverBookId, it) }, local)
+                    }
+                }
+                file.format.isReflowable -> {
+                    _state.update { it.copy(content = ReaderContent.Fetching(null)) }
+                    val (cached, format) =
+                        online.book(serverBookId, file.serverFileId, file.format) { p ->
+                            _state.update { s ->
+                                if (s.content is ReaderContent.Fetching) s.copy(content = ReaderContent.Fetching(p)) else s
+                            }
+                        }
+                    openLocal(cached, format, local)
+                }
+                else -> ReaderContent.Unsupported(file.format)
+            }
+
+        private fun paged(
+            opened: PageSource,
+            local: Locator?,
+        ): ReaderContent {
+            source = opened
+            return ReaderContent.Paged(opened, ((local as? Locator.Page)?.page ?: 1) - 1)
         }
 
         fun onEbookPosition(
@@ -185,5 +246,6 @@ class ReaderViewModel
 
         private companion object {
             const val SAVE_DEBOUNCE_MS = 2_000L
+            const val ONLINE_FAILED = "Could not load this book from the server. Check the connection, or download it to read offline."
         }
     }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -87,7 +88,11 @@ class LibraryViewModel
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LibraryUiState())
 
         init {
-            refresh()
+            // The server row loads from Room asynchronously; refresh once it is there (never in local mode).
+            viewModelScope.launch {
+                session.server.filterNotNull().first()
+                refresh()
+            }
         }
 
         fun setScope(scope: LibraryScope) = updateView { it.copy(scope = scope) }
