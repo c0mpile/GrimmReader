@@ -10,8 +10,6 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.BookLayout
 import com.c0mpile.grimmreader.core.model.BookSort
-import com.c0mpile.grimmreader.core.model.BrowseMode
-import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LibraryView
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ThemeMode
@@ -52,8 +50,6 @@ class AppPreferences(
     val libraryView: Flow<LibraryView> =
         store.data.map { p ->
             LibraryView(
-                scope = LibraryScope.decode(p[LIBRARY_SCOPE]),
-                mode = enumOr(p[LIBRARY_MODE], BrowseMode.BOOKS),
                 sort = enumOr(p[LIBRARY_SORT], BookSort.TITLE),
                 layout = enumOr(p[LIBRARY_LAYOUT], BookLayout.GRID),
             )
@@ -61,8 +57,6 @@ class AppPreferences(
 
     suspend fun setLibraryView(view: LibraryView) {
         store.edit {
-            it[LIBRARY_SCOPE] = view.scope.encode()
-            it[LIBRARY_MODE] = view.mode.name
             it[LIBRARY_SORT] = view.sort.name
             it[LIBRARY_LAYOUT] = view.layout.name
         }
@@ -126,8 +120,6 @@ class AppPreferences(
         val EINK_TINT = stringPreferencesKey("eink_tint")
         val EINK_FLASH = intPreferencesKey("eink_flash_every")
         val EINK_GRAIN = booleanPreferencesKey("eink_grain")
-        val LIBRARY_SCOPE = stringPreferencesKey("library_scope")
-        val LIBRARY_MODE = stringPreferencesKey("library_mode")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")

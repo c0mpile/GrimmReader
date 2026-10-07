@@ -42,6 +42,8 @@ class ShelfMirror
         private val bookDao: BookDao,
         private val outbox: OutboxDao,
     ) {
+        suspend fun hasShelves(serverRowId: Long): Boolean = shelfDao.forServer(serverRowId).isNotEmpty()
+
         suspend fun apply(
             serverRowId: Long,
             snapshot: ShelfSnapshot,

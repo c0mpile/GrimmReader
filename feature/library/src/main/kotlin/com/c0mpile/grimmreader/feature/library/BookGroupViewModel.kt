@@ -12,7 +12,6 @@ import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -34,11 +33,12 @@ class BookGroupViewModel
         fun setLayout(layout: BookLayout) = viewModelScope.launch { prefs.setLibraryView(prefs.libraryView.first().copy(layout = layout)) }
 
         val books: StateFlow<List<Book>?> =
-            combine(library.observeLibrary(), prefs.libraryView) { all, view ->
-                val inScope = all.inScope(view.scope)
-                val groups = if (kind == GroupKind.AUTHOR) groupByAuthor(inScope) else groupBySeries(inScope)
-                groups.firstOrNull { it.name == name }?.books.orEmpty()
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+            library
+                .observeLibrary()
+                .map { all ->
+                    val groups = if (kind == GroupKind.AUTHOR) groupByAuthor(all) else groupBySeries(all)
+                    groups.firstOrNull { it.name == name }?.books.orEmpty()
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
         @AssistedFactory
         interface Factory {
