@@ -1,9 +1,12 @@
 package com.c0mpile.grimmreader.core.datastore
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.c0mpile.grimmreader.core.model.Appearance
-import com.c0mpile.grimmreader.core.model.EinkTint
+import com.c0mpile.grimmreader.core.model.PageTheme
+import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ThemeMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
@@ -41,10 +44,21 @@ class StoresTest {
         runTest {
             val prefs = AppPreferences(store("app"))
             assertEquals(Appearance(), prefs.appearance.first())
-            val eink = Appearance(ThemeMode.EINK, EinkTint.COOL, einkFlashEvery = 10, einkGrain = true)
-            prefs.setAppearance(eink)
-            assertEquals(eink, prefs.appearance.first())
+            assertEquals(ThemeMode.DARK, prefs.appearance.first().mode)
+            prefs.setAppearance(Appearance(ThemeMode.AMOLED))
+            assertEquals(Appearance(ThemeMode.AMOLED), prefs.appearance.first())
             assertEquals(SetupState.NOT_DONE, prefs.setupState.first())
+        }
+
+    @Test fun oldThemeModesFallBackToDarkAndPageThemeRoundTrips() =
+        runTest {
+            val store = store("old")
+            store.edit { it[stringPreferencesKey("theme_mode")] = "EINK" }
+            val prefs = AppPreferences(store)
+            assertEquals(ThemeMode.DARK, prefs.appearance.first().mode)
+            assertEquals(PageTheme.DARK, prefs.readerPrefs.first().pageTheme)
+            prefs.setReaderPrefs(ReaderPrefs(pageTheme = PageTheme.EINK))
+            assertEquals(PageTheme.EINK, prefs.readerPrefs.first().pageTheme)
         }
 
     @Test fun secretsAreStoredEncryptedAndCleared() =

@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,7 +15,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -25,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -33,7 +30,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.c0mpile.grimmreader.core.designsystem.component.StatusChip
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.model.Appearance
-import com.c0mpile.grimmreader.core.model.EinkTint
 import com.c0mpile.grimmreader.core.model.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,39 +111,16 @@ private fun AppearanceSettings(
             )
         }
     }
-    if (appearance.mode == ThemeMode.EINK) {
-        Text("E-ink look makes the screen look like e-paper: paper and ink colours, no animations, grayscale images.")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            EinkTint.entries.forEach { tint ->
-                FilterChip(
-                    selected = appearance.einkTint == tint,
-                    onClick = { onChange(appearance.copy(einkTint = tint)) },
-                    label = { Text(if (tint == EinkTint.WARM) "Warm paper" else "Cool paper") },
-                )
-            }
-        }
-        Text("Refresh flash")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(0, 5, 10, 20).forEach { n ->
-                FilterChip(
-                    selected = appearance.einkFlashEvery == n,
-                    onClick = { onChange(appearance.copy(einkFlashEvery = n)) },
-                    label = { Text(if (n == 0) "Off" else "Every $n pages") },
-                )
-            }
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Paper grain", Modifier.weight(1f))
-            Switch(checked = appearance.einkGrain, onCheckedChange = { onChange(appearance.copy(einkGrain = it)) })
-        }
-    }
+    Text(
+        "AMOLED uses true black. Page colours for reading (E-ink, light, dark, AMOLED) are in the reading " +
+            "settings while a book is open.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 private fun ThemeMode.label() =
     when (this) {
-        ThemeMode.SYSTEM -> "System"
-        ThemeMode.LIGHT -> "Light"
         ThemeMode.DARK -> "Dark"
         ThemeMode.AMOLED -> "AMOLED"
-        ThemeMode.EINK -> "E-ink look"
     }

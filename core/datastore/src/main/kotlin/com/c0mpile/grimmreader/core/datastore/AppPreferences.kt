@@ -11,7 +11,6 @@ import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.BookLayout
 import com.c0mpile.grimmreader.core.model.BookSort
 import com.c0mpile.grimmreader.core.model.BrowseMode
-import com.c0mpile.grimmreader.core.model.EinkTint
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LibraryView
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
@@ -29,15 +28,8 @@ class AppPreferences(
 ) {
     val setupState: Flow<SetupState> = store.data.map { p -> enumOr(p[SETUP], SetupState.NOT_DONE) }
 
-    val appearance: Flow<Appearance> =
-        store.data.map { p ->
-            Appearance(
-                mode = enumOr(p[THEME], ThemeMode.SYSTEM),
-                einkTint = enumOr(p[EINK_TINT], EinkTint.WARM),
-                einkFlashEvery = p[EINK_FLASH] ?: 0,
-                einkGrain = p[EINK_GRAIN] ?: false,
-            )
-        }
+    /** Modes saved by older builds (System, Light, E-ink) fall back to Dark. */
+    val appearance: Flow<Appearance> = store.data.map { p -> Appearance(mode = enumOr(p[THEME], ThemeMode.DARK)) }
 
     val readerPrefs: Flow<ReaderPrefs> =
         store.data.map { p ->
@@ -50,6 +42,7 @@ class AppPreferences(
                 hyphenate = p[HYPHENATE] ?: defaults.hyphenate,
                 maxColumnCount = p[COLUMNS] ?: defaults.maxColumnCount,
                 theme = p[READER_THEME] ?: defaults.theme,
+                pageTheme = enumOr(p[PAGE_THEME], defaults.pageTheme),
             )
         }
 
@@ -90,12 +83,7 @@ class AppPreferences(
     }
 
     suspend fun setAppearance(appearance: Appearance) {
-        store.edit {
-            it[THEME] = appearance.mode.name
-            it[EINK_TINT] = appearance.einkTint.name
-            it[EINK_FLASH] = appearance.einkFlashEvery
-            it[EINK_GRAIN] = appearance.einkGrain
-        }
+        store.edit { it[THEME] = appearance.mode.name }
     }
 
     suspend fun setReaderPrefs(prefs: ReaderPrefs) {
@@ -107,6 +95,7 @@ class AppPreferences(
             it[HYPHENATE] = prefs.hyphenate
             it[COLUMNS] = prefs.maxColumnCount
             it[READER_THEME] = prefs.theme
+            it[PAGE_THEME] = prefs.pageTheme.name
         }
     }
 
@@ -118,9 +107,6 @@ class AppPreferences(
     private companion object {
         val SETUP = stringPreferencesKey("setup_state")
         val THEME = stringPreferencesKey("theme_mode")
-        val EINK_TINT = stringPreferencesKey("eink_tint")
-        val EINK_FLASH = intPreferencesKey("eink_flash_every")
-        val EINK_GRAIN = booleanPreferencesKey("eink_grain")
         val FONT_FAMILY = stringPreferencesKey("reader_font_family")
         val FONT_SIZE = intPreferencesKey("reader_font_size")
         val LINE_HEIGHT = floatPreferencesKey("reader_line_height")
@@ -128,6 +114,7 @@ class AppPreferences(
         val HYPHENATE = booleanPreferencesKey("reader_hyphenate")
         val COLUMNS = intPreferencesKey("reader_columns")
         val READER_THEME = stringPreferencesKey("reader_theme")
+        val PAGE_THEME = stringPreferencesKey("reader_page_theme")
         val LIBRARY_SCOPE = stringPreferencesKey("library_scope")
         val LIBRARY_MODE = stringPreferencesKey("library_mode")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")

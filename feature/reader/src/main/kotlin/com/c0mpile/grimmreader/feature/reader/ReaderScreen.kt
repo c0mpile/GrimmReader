@@ -4,17 +4,21 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,7 +56,9 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
+import com.c0mpile.grimmreader.core.designsystem.theme.palette
 import com.c0mpile.grimmreader.core.model.Bookmark
+import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.reader.ebook.EbookController
 import com.c0mpile.grimmreader.reader.ebook.EbookCss
@@ -104,7 +111,9 @@ fun ReaderScreen(
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 48.dp))
     }
     if (settings) {
-        ModalBottomSheet(onDismissRequest = { settings = false }) { ReaderSettings(prefs, viewModel::setReaderPrefs) }
+        ModalBottomSheet(onDismissRequest = { settings = false }) {
+            ReaderSettings(prefs, textSettings = state.content !is ReaderContent.Paged, onChange = viewModel::setReaderPrefs)
+        }
     }
     if (bookmarkList) {
         ModalBottomSheet(onDismissRequest = { bookmarkList = false }) {
@@ -152,14 +161,15 @@ private fun Content(
     when (content) {
         ReaderContent.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         is ReaderContent.Ebook -> {
-            val colors = MaterialTheme.colorScheme
-            val css = EbookCss.build(prefs, PageColors(colors.background.hex(), colors.onBackground.hex(), colors.primary.hex()))
+            val page = prefs.pageTheme.palette()
+            val css = EbookCss.build(prefs, PageColors(page.background.hex(), page.text.hex(), page.link.hex(), page.grayscaleImages))
             key(content.file, content.restoreKey) {
+                // The page colour also fills the safe-area margins around the book.
                 EbookReader(
                     file = content.file,
                     initialCfi = content.cfi,
                     css = css,
-                    animated = LocalMotionEnabled.current,
+                    animated = LocalMotionEnabled.current && !page.instantTurns,
                     controller = controller,
                     onEvent = { event ->
                         when (event) {
@@ -171,14 +181,24 @@ private fun Content(
                         }
                     },
                     onToggleChrome = onToggleChrome,
-                    modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                    modifier = Modifier.fillMaxSize().background(page.background).safeDrawingPadding(),
                 )
             }
         }
-        is ReaderContent.Paged ->
+        is ReaderContent.Paged -> {
+            val page = prefs.pageTheme.palette()
             key(content.restoreKey) {
-                PagedReader(content.source, content.page, onPage = viewModel::onPage, onToggleChrome = onToggleChrome)
+                PagedReader(
+                    content.source,
+                    content.page,
+                    onPage = viewModel::onPage,
+                    onToggleChrome = onToggleChrome,
+                    modifier = Modifier.background(page.background),
+                    grayscale = page.grayscaleImages,
+                    instantTurns = page.instantTurns,
+                )
             }
+        }
         is ReaderContent.Unsupported -> Message("${content.format.name} files cannot be read.")
         is ReaderContent.Fetching ->
             Column(
@@ -312,9 +332,33 @@ private fun bookmarkDetail(bookmark: Bookmark): String? {
 @Composable
 private fun ReaderSettings(
     prefs: ReaderPrefs,
+    textSettings: Boolean,
     onChange: (ReaderPrefs) -> Unit,
 ) {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Page colours only; menus keep the app theme.
+        Text("Page", style = MaterialTheme.typography.titleSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PageTheme.entries.forEach { theme ->
+                val swatch = theme.palette()
+                FilterChip(
+                    selected = prefs.pageTheme == theme,
+                    onClick = { onChange(prefs.copy(pageTheme = theme)) },
+                    label = { Text(theme.label()) },
+                    leadingIcon = {
+                        Box(
+                            Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(swatch.background)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                        )
+                    },
+                )
+            }
+        }
+        // Comics and PDFs are images: only the page colour applies.
+        if (!textSettings) return@Column
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Font size", Modifier.weight(1f))
             TextButton(onClick = { onChange(prefs.copy(fontSize = (prefs.fontSize - 1).coerceAtLeast(MIN_FONT))) }) { Text("A−") }
@@ -336,5 +380,13 @@ private fun ReaderSettings(
         }
     }
 }
+
+private fun PageTheme.label() =
+    when (this) {
+        PageTheme.EINK -> "E-ink"
+        PageTheme.LIGHT -> "Light"
+        PageTheme.DARK -> "Dark"
+        PageTheme.AMOLED -> "AMOLED"
+    }
 
 private fun Color.hex(): String = "#%06X".format(toArgb() and 0xFFFFFF)

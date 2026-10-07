@@ -3,11 +3,7 @@
 package com.c0mpile.grimmreader.core.designsystem.theme
 
 import android.provider.Settings
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -15,13 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.c0mpile.grimmreader.core.designsystem.R
@@ -79,45 +73,19 @@ private val GrimmShapes =
                 .RoundedCornerShape(12.dp),
     )
 
-// The provided-values array has at most six entries; copying it for the vararg call is negligible.
-@Suppress("SpreadOperator")
+/** The app is always dark; [ThemeMode.AMOLED] makes surfaces true black. Reader pages use [PagePalette]. */
 @Composable
 fun GrimmTheme(
     appearance: Appearance = Appearance(),
     content: @Composable () -> Unit,
 ) {
-    val systemDark = isSystemInDarkTheme()
-    val eink = appearance.mode == ThemeMode.EINK
-    val scheme =
-        when (appearance.mode) {
-            ThemeMode.LIGHT -> lightGrimmScheme()
-            ThemeMode.DARK -> darkGrimmScheme(amoled = false)
-            ThemeMode.AMOLED -> darkGrimmScheme(amoled = true)
-            ThemeMode.EINK -> einkScheme(appearance.einkTint)
-            ThemeMode.SYSTEM -> if (systemDark) darkGrimmScheme(amoled = false) else lightGrimmScheme()
-        }
+    val scheme = darkGrimmScheme(amoled = appearance.mode == ThemeMode.AMOLED)
     val context = LocalContext.current
     val systemAnimations =
         remember(context) {
             Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
         }
-    val viewConfiguration = LocalViewConfiguration.current
-    val einkViewConfiguration =
-        remember(viewConfiguration) { viewConfiguration.withMinimumTouchTarget(DpSize(EinkMinTouchTarget, EinkMinTouchTarget)) }
-    // One provider call site for every theme: switching themes must not rebuild the app (it would reset
-    // navigation and screen state).
-    val values =
-        buildList {
-            add(LocalEinkLook provides eink)
-            add(LocalMotionEnabled provides (!eink && systemAnimations))
-            if (eink) {
-                add(LocalIndication provides NoIndication)
-                add(LocalRippleConfiguration provides null)
-                add(LocalMinimumInteractiveComponentSize provides EinkMinTouchTarget)
-                add(LocalViewConfiguration provides einkViewConfiguration)
-            }
-        }
-    CompositionLocalProvider(*values.toTypedArray()) {
+    CompositionLocalProvider(LocalMotionEnabled provides systemAnimations) {
         MaterialTheme(colorScheme = scheme, typography = grimmTypography(), shapes = GrimmShapes, content = content)
     }
 }

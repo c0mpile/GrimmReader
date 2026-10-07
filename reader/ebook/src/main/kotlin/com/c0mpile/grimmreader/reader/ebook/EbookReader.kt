@@ -79,6 +79,8 @@ class EbookController {
 
     fun setStyle(css: String) = call("grimm_api.setStyle(${Json.encodeToString(css)})")
 
+    fun setAnimated(on: Boolean) = call("grimm_api.setAnimated($on)")
+
     /** The page answers with [EbookEvent.BookmarkHere]. */
     fun setBookmarks(cfis: List<String>) = call("grimm_api.setBookmarks(${Json.encodeToString(cfis)})")
 
@@ -116,6 +118,7 @@ fun EbookReader(
         TapZones(controller, onToggleChrome)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
+    LaunchedEffect(animated) { controller.setAnimated(animated) }
     DisposableEffect(Unit) {
         onDispose {
             controller.webView?.destroy()
