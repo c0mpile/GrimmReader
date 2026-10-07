@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import okhttp3.Authenticator
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -91,9 +93,12 @@ class ServerSession
             cached = null
             if (s == null || origin == null || current != null) return
             // A token is only reused for the origin that issued it (never after the row's URL changed).
-            if (secrets.get(key(s.id, ORIGIN)) != origin.toString()) return
-            val token = secrets.get(key(s.id, ACCESS)) ?: return
-            if (server.value?.id == s.id && server.value?.baseUrl == s.baseUrl) current = Session(s.id, BearerCredentials(origin, token))
+            val record = readTokens(s.id)?.takeIf { it.origin == origin.toString() } ?: return
+            if (server.value?.id == s.id &&
+                server.value?.baseUrl == s.baseUrl
+            ) {
+                current = Session(s.id, BearerCredentials(origin, record.access))
+            }
         }
 
         fun baseUrl(): HttpUrl? = server.value?.baseUrl?.toHttpUrlOrNull()
@@ -117,15 +122,18 @@ class ServerSession
         /** Unauthenticated API against [base] (login, refresh, setup). */
         fun anonymousApi(base: HttpUrl): GrimmoryApi = GrimmoryApi.create(base, guardedClient.get())
 
-        /** Saves tokens issued by the server at [origin]; they are only ever sent back to that origin. */
+        /**
+         * Saves tokens issued by the server at [origin] as one record (origin, access, refresh), written in a
+         * single store operation: a refresh token can only ever be read together with the origin it belongs to.
+         */
         suspend fun storeTokens(
             serverId: Long,
             origin: HttpUrl,
             token: TokenDto,
         ) {
-            secrets.put(key(serverId, ORIGIN), origin.toString())
-            secrets.put(key(serverId, ACCESS), token.accessToken)
-            secrets.put(key(serverId, REFRESH), token.refreshToken)
+            current = null
+            val record = TokenRecord(origin.toString(), token.accessToken, token.refreshToken)
+            secrets.put(tokensKey(serverId), json.encodeToString(TokenRecord.serializer(), record))
             current = Session(serverId, BearerCredentials(origin, token.accessToken))
             _status.value = ServerStatus.ONLINE
         }
@@ -159,9 +167,11 @@ class ServerSession
 
         private suspend fun refresh(session: Session): String? {
             val origin = session.credentials.origin
-            val refreshToken = secrets.get(key(session.serverId, REFRESH)) ?: return expired(session)
+            val record = readTokens(session.serverId) ?: return expired(session)
+            // Tokens were replaced (re-login, other server): never send them to this session's origin.
+            if (record.origin != origin.toString()) return null
             return try {
-                val token = anonymousApi(origin).refresh(RefreshRequestDto(refreshToken))
+                val token = anonymousApi(origin).refresh(RefreshRequestDto(record.refresh))
                 // The server may have changed while refreshing: keep the result only for the same session.
                 if (current != session) return null
                 storeTokens(session.serverId, origin, token)
@@ -181,17 +191,22 @@ class ServerSession
 
         private fun Request.withBearer(token: String) = newBuilder().header("Authorization", "Bearer $token").build()
 
+        private suspend fun readTokens(serverId: Long): TokenRecord? =
+            secrets.get(tokensKey(serverId))?.let { runCatching { json.decodeFromString(TokenRecord.serializer(), it) }.getOrNull() }
+
+        @Serializable
+        private data class TokenRecord(
+            val origin: String,
+            val access: String,
+            val refresh: String,
+        )
+
         companion object {
-            private const val ACCESS = "access"
-            private const val REFRESH = "refresh"
-            private const val ORIGIN = "origin"
+            private val json = Json { ignoreUnknownKeys = true }
             private const val HTTP_UNAUTHORIZED = 401
             private const val HTTP_FORBIDDEN = 403
 
-            fun key(
-                serverId: Long,
-                name: String,
-            ) = "server.$serverId.$name"
+            fun tokensKey(serverId: Long) = "server.$serverId.tokens"
 
             fun hostOf(baseUrl: String): String = baseUrl.toHttpUrlOrNull()?.host.orEmpty()
         }
