@@ -17,6 +17,7 @@ import com.c0mpile.grimmreader.core.model.LibraryView
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** What the first-run screen decided. */
@@ -71,6 +72,19 @@ class AppPreferences(
         }
     }
 
+    /** When the library of server row [serverId] was last mirrored successfully (epoch ms); 0 when never. */
+    suspend fun libraryRefreshedAt(serverId: Long): Long {
+        val value = store.data.first()[LIBRARY_REFRESHED] ?: return 0
+        return if (value.substringBefore(':') == serverId.toString()) value.substringAfter(':').toLongOrNull() ?: 0 else 0
+    }
+
+    suspend fun setLibraryRefreshedAt(
+        serverId: Long,
+        at: Long,
+    ) {
+        store.edit { it[LIBRARY_REFRESHED] = "$serverId:$at" }
+    }
+
     suspend fun setSetupState(state: SetupState) {
         store.edit { it[SETUP] = state.name }
     }
@@ -118,5 +132,6 @@ class AppPreferences(
         val LIBRARY_MODE = stringPreferencesKey("library_mode")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
+        val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
     }
 }

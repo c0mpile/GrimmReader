@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.items
@@ -21,6 +23,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -126,10 +129,16 @@ fun LibraryScreen(
             if (state.hasServer) ScopeChips(state, viewModel::setScope)
             ModeSelector(state.view.mode, viewModel::setMode)
             StatusRow(state)
+            // Background refresh: a thin bar, the list stays usable. The pull indicator is only for a user pull.
+            if (state.syncing && !state.refreshing) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+            } else {
+                Spacer(Modifier.height(2.dp))
+            }
             PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {
                 val empty = if (state.view.mode == BrowseMode.BOOKS) state.books.isEmpty() else state.groups.isEmpty()
                 when {
-                    empty && !state.refreshing -> EmptyMessage(state)
+                    empty && !state.syncing -> EmptyMessage(state)
                     state.view.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onOpenBook)
                     state.view.mode == BrowseMode.AUTHORS -> AuthorList(state.groups) { onOpenGroup(GroupKind.AUTHOR, it) }
                     else -> SeriesCollection(state.groups, state.view.layout) { onOpenGroup(GroupKind.SERIES, it) }

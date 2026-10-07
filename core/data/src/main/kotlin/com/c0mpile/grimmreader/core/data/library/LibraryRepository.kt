@@ -2,7 +2,9 @@ package com.c0mpile.grimmreader.core.data.library
 
 import android.net.Uri
 import androidx.room.withTransaction
+import com.c0mpile.grimmreader.api.grimmory.BookSummaryDto
 import com.c0mpile.grimmreader.api.grimmory.GrimmoryUrls
+import com.c0mpile.grimmreader.api.grimmory.LibraryDto
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
@@ -12,6 +14,7 @@ import com.c0mpile.grimmreader.core.database.dao.LibraryDao
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
+import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.files.BookMetadataReader
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.Book
@@ -23,6 +26,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import javax.inject.Inject
@@ -39,8 +44,11 @@ class LibraryRepository
         private val libraryDao: LibraryDao,
         private val session: ServerSession,
         private val files: LocalFileStore,
+        private val prefs: AppPreferences,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
+        private val refreshLock = Mutex()
+
         fun observeLibrary(libraryId: Long? = null): Flow<List<Book>> =
             bookDao.observeLibrary(libraryId).map { rows -> rows.filter { it.files.isNotEmpty() }.map { it.toDomain(::coverModel) } }
 
@@ -64,45 +72,69 @@ class LibraryRepository
         }
 
         /**
-         * Pulls every page of `/api/v1/app/books` (sequential, [PAGE_SIZE] per request) and mirrors it into Room.
-         * Books that disappeared are removed unless downloaded. Audiobook-only items are skipped.
+         * The automatic refresh: runs [refresh] only when the last successful one for this server is older than
+         * [STALE_AFTER_MS] (kept across restarts). Null when skipped.
+         */
+        suspend fun refreshIfStale(now: Long = System.currentTimeMillis()): Result<Int>? {
+            val server = session.server.value ?: return null
+            if (now - prefs.libraryRefreshedAt(server.id) < STALE_AFTER_MS) return null
+            return refresh()
+        }
+
+        /**
+         * Pulls every page of `/api/v1/app/books` (sequential, [PAGE_SIZE] per request), then mirrors it into Room
+         * in one transaction, so the library updates once instead of once per page. Books that disappeared are
+         * removed unless downloaded. Audiobook-only items are skipped. One refresh at a time; a second caller waits
+         * for the first and then runs its own.
          */
         suspend fun refresh(): Result<Int> =
-            withContext(io) {
-                val server = session.server.value ?: return@withContext Result.success(0)
-                val api = session.api() ?: return@withContext Result.success(0)
-                runCatching {
-                    val libraries = api.libraries()
-                    libraryDao.replaceAll(
-                        server.id,
-                        libraries.mapIndexed { i, l -> LibraryEntity(server.id, l.id, l.name, l.allowedFormats.joinToString(","), i) },
-                    )
-                    val seen = mutableListOf<Long>()
-                    var page = 0
-                    do {
-                        val result = api.books(page = page, size = PAGE_SIZE, sort = "title", dir = "asc")
-                        db.withTransaction {
-                            for (dto in result.content) {
-                                val format = formatOf(dto.primaryFileType, dto.primaryFileName) ?: continue
-                                val existing = bookDao.byServerId(server.id, dto.id)
-                                val bookId = bookDao.upsert(dto.toEntity(server.id, existing)).takeIf { it > 0 } ?: existing!!.id
-                                val file = fileDao.forBook(bookId).firstOrNull { it.isPrimary }
-                                fileDao.upsert(
-                                    (file ?: BookFileEntity(bookId = bookId, format = format)).copy(
-                                        serverFileId = dto.primaryFileId,
-                                        format = if (file?.localUri != null) file.format else format,
-                                    ),
-                                )
-                                seen += dto.id
-                            }
-                        }
-                        page++
-                    } while (result.hasNext)
-                    bookDao.deleteServerBooksNotIn(server.id, seen)
-                    session.reportOffline(false)
-                    seen.size
-                }.onFailure { if (it is IOException) session.reportOffline(true) }
+            refreshLock.withLock {
+                withContext(io) {
+                    val server = session.server.value ?: return@withContext Result.success(0)
+                    val api = session.api() ?: return@withContext Result.success(0)
+                    runCatching {
+                        val libraries = api.libraries()
+                        val books = mutableListOf<BookSummaryDto>()
+                        var page = 0
+                        do {
+                            val result = api.books(page = page, size = PAGE_SIZE, sort = "title", dir = "asc")
+                            books += result.content
+                            page++
+                        } while (result.hasNext)
+                        val seen = db.withTransaction { mirror(server.id, libraries, books) }
+                        session.reportOffline(false)
+                        prefs.setLibraryRefreshedAt(server.id, System.currentTimeMillis())
+                        seen
+                    }.onFailure { if (it is IOException) session.reportOffline(true) }
+                }
             }
+
+        private suspend fun mirror(
+            serverRowId: Long,
+            libraries: List<LibraryDto>,
+            books: List<BookSummaryDto>,
+        ): Int {
+            libraryDao.replaceAll(
+                serverRowId,
+                libraries.mapIndexed { i, l -> LibraryEntity(serverRowId, l.id, l.name, l.allowedFormats.joinToString(","), i) },
+            )
+            val seen = mutableListOf<Long>()
+            for (dto in books) {
+                val format = formatOf(dto.primaryFileType, dto.primaryFileName) ?: continue
+                val existing = bookDao.byServerId(serverRowId, dto.id)
+                val bookId = bookDao.upsert(dto.toEntity(serverRowId, existing)).takeIf { it > 0 } ?: existing!!.id
+                val file = fileDao.forBook(bookId).firstOrNull { it.isPrimary }
+                fileDao.upsert(
+                    (file ?: BookFileEntity(bookId = bookId, format = format)).copy(
+                        serverFileId = dto.primaryFileId,
+                        format = if (file?.localUri != null) file.format else format,
+                    ),
+                )
+                seen += dto.id
+            }
+            bookDao.deleteServerBooksNotIn(serverRowId, seen)
+            return seen.size
+        }
 
         /** Copies a user-picked file into app storage and adds it as a local book. Returns the new book id. */
         suspend fun importLocal(uri: Uri): Long =
@@ -152,7 +184,10 @@ class LibraryRepository
                 }
             }
 
-        private companion object {
-            const val PAGE_SIZE = 100
+        companion object {
+            private const val PAGE_SIZE = 100
+
+            /** The automatic refresh skips a library mirrored less than 30 minutes ago; pull-to-refresh never does. */
+            const val STALE_AFTER_MS = 30 * 60 * 1000L
         }
     }
