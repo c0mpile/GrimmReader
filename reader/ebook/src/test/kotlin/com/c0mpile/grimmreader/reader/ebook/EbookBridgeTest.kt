@@ -40,4 +40,14 @@ class EbookBridgeTest {
         assertTrue(css.contains("text-align: start"))
         assertTrue(css.contains("sans-serif"))
     }
+
+    @Test fun cspBlocksForeignAndInlineScripts() {
+        val directives = READER_CSP.split(';').map { it.trim() }.associate { it.substringBefore(' ') to it.substringAfter(' ') }
+        assertEquals("'self'", directives["script-src"])
+        assertEquals("'none'", directives["object-src"])
+        assertFalse(READER_CSP.contains("unsafe-eval"))
+        val html = java.io.File("src/main/assets/reader/reader.html").readText()
+        assertFalse("inline scripts would be blocked by our own CSP", Regex("<script(?![^>]*\\bsrc=)[^>]*>").containsMatchIn(html))
+        assertTrue(html.contains(READER_CSP))
+    }
 }

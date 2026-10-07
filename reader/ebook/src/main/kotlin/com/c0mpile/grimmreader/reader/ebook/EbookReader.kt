@@ -1,6 +1,7 @@
 package com.c0mpile.grimmreader.reader.ebook
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -81,7 +82,6 @@ private const val TAP_EDGE = 0.3f
  * foliate-js in a WebView that can only reach app-local content: the reader page, foliate itself and the
  * one [file] being read. Every other request gets a 403; network loads are blocked outright.
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun EbookReader(
     file: File,
@@ -94,73 +94,13 @@ fun EbookReader(
     modifier: Modifier = Modifier,
 ) {
     val events by rememberUpdatedState(onEvent)
-    val startUrl =
-        remember(file) {
-            Uri
-                .parse("$ORIGIN/assets/reader/reader.html")
-                .buildUpon()
-                .appendQueryParameter("name", file.name)
-                .appendQueryParameter("animated", if (animated) "1" else "0")
-                .apply { if (initialCfi != null) appendQueryParameter("cfi", initialCfi) }
-                .appendQueryParameter("css", css)
-                .build()
-                .toString()
-        }
+    val startUrl = remember(file) { startUrl(file, initialCfi, css, animated) }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                val loader =
-                    WebViewAssetLoader
-                        .Builder()
-                        .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
-                        .addPathHandler("/book/") { path ->
-                            if (path == "current") WebResourceResponse("application/octet-stream", null, FileInputStream(file)) else null
-                        }.build()
-                WebView(context).apply {
-                    settings.javaScriptEnabled = true
-                    settings.allowFileAccess = false
-                    settings.allowContentAccess = false
-                    settings.blockNetworkLoads = true
-                    settings.safeBrowsingEnabled = false
-                    settings.setSupportZoom(false)
-                    webViewClient = LocalOnlyClient(loader)
-                    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-                        WebViewCompat.addWebMessageListener(this, "grimm", setOf(ORIGIN)) { _, message, _, _, _ ->
-                            message.data?.let { parse(it) }?.let { events(it) }
-                        }
-                    }
-                    controller.webView = this
-                    loadUrl(startUrl)
-                }
-            },
+            factory = { context -> readerWebView(context, file, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
-        // Tap zones 30/40/30 and horizontal swipes, like the web reader.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        when {
-                            offset.x < size.width * TAP_EDGE -> controller.prev()
-                            offset.x > size.width * (1 - TAP_EDGE) -> controller.next()
-                            else -> onToggleChrome()
-                        }
-                    }
-                }.pointerInput(Unit) {
-                    var total = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { total = 0f },
-                        onDragEnd = {
-                            if (total < -SWIPE_PX) {
-                                controller.next()
-                            } else if (total > SWIPE_PX) {
-                                controller.prev()
-                            }
-                        },
-                    ) { _, amount -> total += amount }
-                },
-        )
+        TapZones(controller, onToggleChrome)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
     DisposableEffect(Unit) {
@@ -171,7 +111,114 @@ fun EbookReader(
     }
 }
 
+private fun startUrl(
+    file: File,
+    initialCfi: String?,
+    css: String,
+    animated: Boolean,
+): String =
+    Uri
+        .parse("$ORIGIN/assets/reader/reader.html")
+        .buildUpon()
+        .appendQueryParameter("name", file.name)
+        .appendQueryParameter("animated", if (animated) "1" else "0")
+        .apply { if (initialCfi != null) appendQueryParameter("cfi", initialCfi) }
+        .appendQueryParameter("css", css)
+        .build()
+        .toString()
+
+@SuppressLint("SetJavaScriptEnabled")
+private fun readerWebView(
+    context: Context,
+    file: File,
+    controller: EbookController,
+    onEvent: (EbookEvent) -> Unit,
+): WebView {
+    val loader =
+        WebViewAssetLoader
+            .Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+            .addPathHandler("/book/") { path ->
+                if (path == "current") WebResourceResponse("application/octet-stream", null, FileInputStream(file)) else null
+            }.build()
+    return WebView(context).apply {
+        settings.javaScriptEnabled = true
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        settings.blockNetworkLoads = true
+        settings.safeBrowsingEnabled = false
+        settings.setSupportZoom(false)
+        webViewClient = LocalOnlyClient(loader)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(this, "grimm", setOf(ORIGIN)) { _, message, _, isMainFrame, _ ->
+                // Book sections are same-origin frames; only our own page may talk to the app.
+                if (isMainFrame) message.data?.let { parse(it) }?.let(onEvent)
+            }
+        }
+        controller.webView = this
+    }
+}
+
+/** Tap zones 30/40/30 and horizontal swipes, like the web reader. */
+@Composable
+private fun TapZones(
+    controller: EbookController,
+    onToggleChrome: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    when {
+                        offset.x < size.width * TAP_EDGE -> controller.prev()
+                        offset.x > size.width * (1 - TAP_EDGE) -> controller.next()
+                        else -> onToggleChrome()
+                    }
+                }
+            }.pointerInput(Unit) {
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = {
+                        when {
+                            total < -SWIPE_PX -> controller.next()
+                            total > SWIPE_PX -> controller.prev()
+                        }
+                    },
+                ) { _, amount -> total += amount }
+            },
+    )
+}
+
 private const val SWIPE_PX = 60f
+
+/**
+ * foliate renders untrusted book content in same-origin frames with scripts allowed (WebKit bug 218086), so
+ * the only safe setup is a CSP that blocks every script but our own (foliate README). Sent on every response
+ * and repeated in reader.html; book sections (blob: frames) inherit it.
+ */
+internal val READER_CSP =
+    listOf(
+        "default-src 'self' blob: data:",
+        "script-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "connect-src 'self' blob:",
+        "style-src 'self' 'unsafe-inline' blob:",
+        "img-src 'self' blob: data:",
+        "font-src 'self' blob: data:",
+        "media-src 'self' blob:",
+        "frame-src 'self' blob:",
+    ).joinToString("; ")
+
+internal fun WebResourceResponse.withSecurityHeaders(): WebResourceResponse =
+    apply {
+        responseHeaders =
+            (responseHeaders.orEmpty() + mapOf("Content-Security-Policy" to READER_CSP, "X-Content-Type-Options" to "nosniff"))
+    }
+
 private const val HTTP_FORBIDDEN = 403
 
 private class LocalOnlyClient(
@@ -180,7 +227,7 @@ private class LocalOnlyClient(
     override fun shouldInterceptRequest(
         view: WebView,
         request: WebResourceRequest,
-    ): WebResourceResponse = loader.shouldInterceptRequest(request.url) ?: forbidden()
+    ): WebResourceResponse = (loader.shouldInterceptRequest(request.url) ?: forbidden()).withSecurityHeaders()
 
     private fun forbidden() = WebResourceResponse("text/plain", "utf-8", HTTP_FORBIDDEN, "Forbidden", emptyMap(), null)
 
