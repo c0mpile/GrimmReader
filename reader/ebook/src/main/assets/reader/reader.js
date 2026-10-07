@@ -34,10 +34,11 @@ window.grimm_api = {
 try {
     const blob = await (await fetch('/book/current')).blob()
     await view.open(new File([blob], params.get('name') || 'book'))
-    window.grimm_api.setAnimated(params.get('animated') === '1')
-    if (params.get('css')) window.grimm_api.setStyle(params.get('css'))
     const toc = (view.book.toc ?? []).map(i => ({ label: i.label, href: i.href }))
     await view.init({ lastLocation: params.get('cfi') || null })
+    // No page-turn animation for the initial positioning; styles apply once the first section is shown.
+    window.grimm_api.setAnimated(params.get('animated') === '1')
+    if (params.get('css')) window.grimm_api.setStyle(params.get('css'))
     ready = true
     post({ t: 'ready', toc })
     // Report the restored position once init settled.

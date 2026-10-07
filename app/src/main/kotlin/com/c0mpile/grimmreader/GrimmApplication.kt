@@ -21,6 +21,12 @@ class GrimmApplication :
 
     @Inject lateinit var session: Lazy<ServerSession>
 
+    override fun onCreate() {
+        super.onCreate()
+        // Debug builds only: lets developers inspect the reader page with DevTools over adb.
+        if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+    }
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
 
