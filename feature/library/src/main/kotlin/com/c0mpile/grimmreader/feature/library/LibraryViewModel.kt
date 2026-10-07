@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
+import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
-import com.c0mpile.grimmreader.core.files.UnsupportedFormatException
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookLayout
 import com.c0mpile.grimmreader.core.model.BookSort
@@ -15,25 +15,27 @@ import com.c0mpile.grimmreader.core.model.Library
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LibraryView
 import com.c0mpile.grimmreader.core.model.ServerStatus
+import com.c0mpile.grimmreader.core.model.Shelf
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedFactory
+import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.IOException
-import javax.inject.Inject
 
 data class LibraryUiState(
+    val scope: LibraryScope = LibraryScope.All,
+    val mode: BrowseMode = BrowseMode.BOOKS,
     val view: LibraryView = LibraryView(),
     val libraries: List<Library> = emptyList(),
+    val shelves: List<Shelf> = emptyList(),
     val books: List<Book> = emptyList(),
     val groups: List<BookGroup> = emptyList(),
     val query: String = "",
@@ -46,47 +48,44 @@ data class LibraryUiState(
     val message: String? = null,
 )
 
-private data class LocalState(
-    val query: String = "",
-    val refreshing: Boolean = false,
-    val syncing: Boolean = false,
-    val message: String? = null,
-)
-
-@HiltViewModel
+/** One library screen: [scope] (all, a library, a shelf, on this device…) shown as books, authors or series. */
+@HiltViewModel(assistedFactory = LibraryViewModel.Factory::class)
 class LibraryViewModel
-    @Inject
+    @AssistedInject
     constructor(
+        @Assisted private val scope: LibraryScope,
+        @Assisted private val mode: BrowseMode,
         private val library: LibraryRepository,
         private val session: ServerSession,
+        shelves: ShelfRepository,
         private val prefs: AppPreferences,
     ) : ViewModel() {
-        private val local = MutableStateFlow(LocalState())
+        private val query = MutableStateFlow("")
+        private val sync = LibrarySync(viewModelScope, library, session)
 
         val state: StateFlow<LibraryUiState> =
             combine(
                 library.observeLibrary(),
-                library.observeLibraries(),
+                combine(library.observeLibraries(), shelves.observe()) { libraries, shelfList -> libraries to shelfList },
                 prefs.libraryView,
                 combine(session.server, session.status) { server, status -> (server != null) to status },
-                local,
-            ) { all, libraries, view, (hasServer, status), ui ->
-                // A library that disappeared (or a server that was removed) falls back to everything.
-                val scope =
-                    view.scope.takeUnless { s -> s is LibraryScope.Server && (!hasServer || libraries.none { it.id == s.libraryId }) }
-                        ?: LibraryScope.All
+                combine(query, sync.flags) { q, flags -> q to flags },
+            ) { all, (libraries, shelfList), view, (hasServer, status), (q, ui) ->
                 val inScope = all.inScope(scope)
                 LibraryUiState(
-                    view = view.copy(scope = scope),
+                    scope = scope,
+                    mode = mode,
+                    view = view,
                     libraries = libraries,
-                    books = if (view.mode == BrowseMode.BOOKS) inScope.matching(ui.query).sortedFor(view.sort) else emptyList(),
+                    shelves = shelfList,
+                    books = if (mode == BrowseMode.BOOKS) inScope.matching(q).sortedFor(view.sort) else emptyList(),
                     groups =
-                        when (view.mode) {
+                        when (mode) {
                             BrowseMode.BOOKS -> emptyList()
-                            BrowseMode.AUTHORS -> groupByAuthor(inScope).matchingName(ui.query)
-                            BrowseMode.SERIES -> groupBySeries(inScope).matchingName(ui.query)
+                            BrowseMode.AUTHORS -> groupByAuthor(inScope).matchingName(q)
+                            BrowseMode.SERIES -> groupBySeries(inScope).matchingName(q)
                         },
-                    query = ui.query,
+                    query = q,
                     hasServer = hasServer,
                     status = status,
                     refreshing = ui.refreshing,
@@ -94,82 +93,32 @@ class LibraryViewModel
                     message = ui.message,
                 )
             }.flowOn(Dispatchers.Default) // Mapping, sorting and grouping the whole library stays off the main thread.
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LibraryUiState())
-
-        private var sync: Job? = null
-
-        init {
-            // The server row loads from Room asynchronously; check once it is there (never in local mode). The
-            // repository skips the network when the library was mirrored recently, so returning here is free.
-            viewModelScope.launch {
-                session.server.filterNotNull().first()
-                startSync { library.refreshIfStale() }
-            }
-        }
-
-        fun setScope(scope: LibraryScope) = updateView { it.copy(scope = scope) }
-
-        fun setMode(mode: BrowseMode) = updateView { it.copy(mode = mode) }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LibraryUiState(scope = scope, mode = mode))
 
         fun setSort(sort: BookSort) = updateView { it.copy(sort = sort) }
 
         fun setLayout(layout: BookLayout) = updateView { it.copy(layout = layout) }
 
-        fun setQuery(query: String) = local.update { it.copy(query = query) }
+        fun setQuery(text: String) {
+            query.value = text
+        }
 
         private fun updateView(change: (LibraryView) -> LibraryView) =
             viewModelScope.launch { prefs.setLibraryView(change(prefs.libraryView.first())) }
 
-        /** Pull to refresh: always asks the server, or joins the refresh already running. */
-        fun refresh() {
-            if (session.server.value == null || local.value.refreshing) return
-            local.update { it.copy(refreshing = true) }
-            val running = sync?.takeIf { it.isActive }
-            if (running != null) {
-                viewModelScope.launch {
-                    running.join()
-                    local.update { it.copy(refreshing = false) }
-                }
-            } else {
-                startSync { library.refresh() }
-            }
+        fun refresh() = sync.refresh()
+
+        fun import(uris: List<Uri>) = sync.import(uris)
+
+        fun messageShown() = sync.messageShown()
+
+        @AssistedFactory
+        interface Factory {
+            fun create(
+                scope: LibraryScope,
+                mode: BrowseMode,
+            ): LibraryViewModel
         }
-
-        private fun startSync(run: suspend () -> Result<Int>?) {
-            local.update { it.copy(syncing = true) }
-            sync =
-                viewModelScope.launch {
-                    try {
-                        run()?.onFailure { local.update { s -> s.copy(message = "Could not refresh the library.") } }
-                    } finally {
-                        local.update { it.copy(syncing = false, refreshing = false) }
-                    }
-                }
-        }
-
-        fun import(uris: List<Uri>) =
-            viewModelScope.launch {
-                var unsupported = 0
-                var failed = 0
-                for (uri in uris) {
-                    try {
-                        library.importLocal(uri)
-                    } catch (_: UnsupportedFormatException) {
-                        unsupported++
-                    } catch (_: IOException) {
-                        failed++
-                    }
-                }
-                val message =
-                    listOfNotNull(
-                        "$unsupported file(s) not supported. Books: EPUB, MOBI/AZW3, FB2, PDF; comics: CBZ only."
-                            .takeIf { unsupported > 0 },
-                        "$failed file(s) could not be imported.".takeIf { failed > 0 },
-                    ).joinToString(" ")
-                if (message.isNotEmpty()) local.update { it.copy(message = message) }
-            }
-
-        fun messageShown() = local.update { it.copy(message = null) }
 
         private companion object {
             const val STOP_TIMEOUT_MS = 5_000L

@@ -76,11 +76,13 @@ class LibraryRepository
 
         /**
          * The automatic refresh: runs [refresh] only when the last successful one for this server is older than
-         * [STALE_AFTER_MS] (kept across restarts). Null when skipped.
+         * [STALE_AFTER_MS] (kept across restarts), or when shelves were never mirrored (the server always has
+         * Favorites; an update that added shelves must not wait). Null when skipped.
          */
         suspend fun refreshIfStale(now: Long = System.currentTimeMillis()): Result<Int>? {
             val server = session.server.value ?: return null
-            if (now - prefs.libraryRefreshedAt(server.id) < STALE_AFTER_MS) return null
+            val recent = now - prefs.libraryRefreshedAt(server.id) < STALE_AFTER_MS
+            if (recent && withContext(io) { shelfMirror.hasShelves(server.id) }) return null
             return refresh()
         }
 

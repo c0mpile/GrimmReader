@@ -27,6 +27,9 @@ internal fun List<Book>.inScope(scope: LibraryScope): List<Book> =
         LibraryScope.All -> this
         LibraryScope.OnDevice -> filter { it.source != BookSource.SERVER || it.primaryFile?.isAvailableOffline == true }
         is LibraryScope.Server -> filter { it.source == BookSource.SERVER && it.libraryId == scope.libraryId }
+        LibraryScope.Unshelved -> filter { it.source == BookSource.SERVER && it.shelves.isEmpty() }
+        is LibraryScope.Shelf -> filter { scope.shelfId in it.shelves }
+        is LibraryScope.MagicShelf -> filter { scope.shelfId in it.magicShelves }
     }
 
 /** Case- and accent-insensitive match on title, authors and series. */

@@ -61,6 +61,11 @@ object LucideIcons {
             stroke("M20 6 9 17l-5-5")
         }
     }
+    val ChevronDown: ImageVector by lazy {
+        lucide("chevron-down") {
+            stroke("m6 9 6 6 6-6")
+        }
+    }
     val ChevronRight: ImageVector by lazy {
         lucide("chevron-right") {
             stroke("m9 18 6-6-6-6")
@@ -107,10 +112,23 @@ object LucideIcons {
             stroke("M2 12h20")
         }
     }
+    val Heart: ImageVector by lazy {
+        lucide("heart") {
+            stroke(
+                "M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5",
+            )
+        }
+    }
     val House: ImageVector by lazy {
         lucide("house") {
             stroke("M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8")
             stroke("M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
+        }
+    }
+    val Inbox: ImageVector by lazy {
+        lucide("inbox") {
+            stroke("M22 12L16 12L14 15L10 15L8 12L2 12")
+            stroke("M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z")
         }
     }
     val LayoutGrid: ImageVector by lazy {
@@ -138,6 +156,14 @@ object LucideIcons {
             stroke("M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z")
         }
     }
+    val Library: ImageVector by lazy {
+        lucide("library") {
+            stroke("m16 6 4 14")
+            stroke("M12 6v14")
+            stroke("M8 8v12")
+            stroke("M4 4v16")
+        }
+    }
     val List: ImageVector by lazy {
         lucide("list") {
             stroke("M3 5h.01")
@@ -153,6 +179,40 @@ object LucideIcons {
             stroke("m16 17 5-5-5-5")
             stroke("M21 12H9")
             stroke("M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4")
+        }
+    }
+    val Menu: ImageVector by lazy {
+        lucide("menu") {
+            stroke("M4 5h16")
+            stroke("M4 12h16")
+            stroke("M4 19h16")
+        }
+    }
+    val NotebookPen: ImageVector by lazy {
+        lucide("notebook-pen") {
+            stroke("M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4")
+            stroke("M2 6h4")
+            stroke("M2 10h4")
+            stroke("M2 14h4")
+            stroke("M2 18h4")
+            stroke(
+                "M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z",
+            )
+        }
+    }
+    val PanelLeftClose: ImageVector by lazy {
+        lucide("panel-left-close") {
+            stroke(
+                "M5.0 3.0h14.0a2.0 2.0 0 0 1 2.0 2.0v14.0a2.0 2.0 0 0 1 -2.0 2.0h-14.0a2.0 2.0 0 0 1 -2.0 -2.0v-14.0a2.0 2.0 0 0 1 2.0 -2.0z",
+            )
+            stroke("M9 3v18")
+            stroke("m16 15-3-3 3-3")
+        }
+    }
+    val Plus: ImageVector by lazy {
+        lucide("plus") {
+            stroke("M5 12h14")
+            stroke("M12 5v14")
         }
     }
     val RefreshCw: ImageVector by lazy {
@@ -195,6 +255,16 @@ object LucideIcons {
                 "M7.0 2.0h10.0a2.0 2.0 0 0 1 2.0 2.0v16.0a2.0 2.0 0 0 1 -2.0 2.0h-10.0a2.0 2.0 0 0 1 -2.0 -2.0v-16.0a2.0 2.0 0 0 1 2.0 -2.0z",
             )
             stroke("M12 18h.01")
+        }
+    }
+    val Sparkles: ImageVector by lazy {
+        lucide("sparkles") {
+            stroke(
+                "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+            )
+            stroke("M20 2v4")
+            stroke("M22 4h-4")
+            stroke("M2.0 20.0a2.0 2.0 0 1 0 4.0 0a2.0 2.0 0 1 0 -4.0 0z")
         }
     }
     val Trash: ImageVector by lazy {
