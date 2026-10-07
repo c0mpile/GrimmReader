@@ -42,6 +42,8 @@ import com.c0mpile.grimmreader.feature.library.GroupKind
 import com.c0mpile.grimmreader.feature.library.LibraryScreen
 import com.c0mpile.grimmreader.feature.library.Sidebar
 import com.c0mpile.grimmreader.feature.library.SidebarDestination
+import com.c0mpile.grimmreader.feature.notebook.NotebookBookScreen
+import com.c0mpile.grimmreader.feature.notebook.NotebookScreen
 import com.c0mpile.grimmreader.feature.reader.ReaderScreen
 import com.c0mpile.grimmreader.feature.settings.SettingsScreen
 import com.c0mpile.grimmreader.feature.setup.SetupScreen
@@ -58,6 +60,14 @@ import kotlinx.serialization.Serializable
 ) : NavKey
 
 @Serializable data object SettingsKey : NavKey
+
+@Serializable data object NotebookKey : NavKey
+
+@Serializable data class NotebookBookKey(
+    val serverBookId: Long,
+    val title: String,
+    val localBookId: Long? = null,
+) : NavKey
 
 @Serializable data object SetupKey : NavKey
 
@@ -93,6 +103,7 @@ private fun NavKey.destination(): SidebarDestination? =
     when (this) {
         DashboardKey -> SidebarDestination.Dashboard
         SettingsKey -> SidebarDestination.Settings
+        NotebookKey -> SidebarDestination.Notebook
         is BrowseKey -> SidebarDestination.Browse(LibraryScope.decode(scope), mode)
         else -> null
     }
@@ -102,7 +113,7 @@ private fun SidebarDestination.key(): NavKey =
         SidebarDestination.Dashboard -> DashboardKey
         SidebarDestination.Settings -> SettingsKey
         SidebarDestination.Search -> BrowseKey(LibraryScope.All.encode(), search = true)
-        SidebarDestination.Notebook -> DashboardKey
+        SidebarDestination.Notebook -> NotebookKey
         is SidebarDestination.Browse -> BrowseKey(scope.encode(), mode)
     }
 
@@ -129,7 +140,7 @@ private fun MainNavigation(
             var panel by rememberSaveable { mutableStateOf(true) }
             Row(Modifier.fillMaxSize()) {
                 if (topLevel && panel) {
-                    Sidebar(selected, ::go, onCollapse = { panel = false })
+                    Sidebar(selected, ::go, onCollapse = { panel = false }, notebook = true)
                     VerticalDivider()
                 }
                 CompositionLocalProvider(LocalOpenSidebar provides ({ panel = true }).takeIf { !panel }) {
@@ -147,7 +158,7 @@ private fun MainNavigation(
                         Sidebar(selected, { destination ->
                             go(destination)
                             scope.launch { drawer.close() }
-                        })
+                        }, notebook = true)
                     }
                 },
             ) {
@@ -184,6 +195,18 @@ private fun Screens(
                     BookGroupScreen(
                         kind = key.kind,
                         name = key.name,
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenBook = { backStack.add(BookKey(it)) },
+                    )
+                }
+                entry<NotebookKey> {
+                    NotebookScreen(onOpen = { backStack.add(NotebookBookKey(it.serverBookId, it.title, it.localBookId)) })
+                }
+                entry<NotebookBookKey> { key ->
+                    NotebookBookScreen(
+                        serverBookId = key.serverBookId,
+                        title = key.title,
+                        localBookId = key.localBookId,
                         onBack = { backStack.removeLastOrNull() },
                         onOpenBook = { backStack.add(BookKey(it)) },
                     )

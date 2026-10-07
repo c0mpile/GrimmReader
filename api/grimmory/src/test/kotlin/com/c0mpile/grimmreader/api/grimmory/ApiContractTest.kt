@@ -44,6 +44,10 @@ class ApiContractTest {
             serializer<MagicShelfDto>() to "AppMagicShelfSummary",
             serializer<ShelvesAssignmentDto>() to "ShelvesAssignmentRequest",
             serializer<ShelfCreateDto>() to "ShelfCreateRequest",
+            serializer<NotebookBookDto>() to "AppNotebookBookSummary",
+            serializer<NotebookEntryDto>() to "AppNotebookEntry",
+            serializer<NotebookBookPageDto>() to "AppPageResponseAppNotebookBookSummary",
+            serializer<NotebookEntryPageDto>() to "AppPageResponseAppNotebookEntry",
         )
 
     @Test fun dtoFieldsExistInTheSpec() {

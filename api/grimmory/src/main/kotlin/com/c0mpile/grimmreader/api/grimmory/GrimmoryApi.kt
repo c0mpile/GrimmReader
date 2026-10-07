@@ -91,6 +91,21 @@ interface GrimmoryApi {
         @Body body: ShelfCreateDto,
     ): ShelfDto
 
+    /** Books with this user's highlights, notes or bookmarks. */
+    @GET("api/v1/app/notebook/books")
+    suspend fun notebookBooks(
+        @Query("page") page: Int,
+        @Query("size") size: Int,
+        @Query("search") search: String? = null,
+    ): NotebookBookPageDto
+
+    @GET("api/v1/app/notebook/books/{bookId}/entries")
+    suspend fun notebookEntries(
+        @Path("bookId") bookId: Long,
+        @Query("page") page: Int,
+        @Query("size") size: Int,
+    ): NotebookEntryPageDto
+
     /** This user's bookmarks for a book. */
     @GET("api/v1/bookmarks/book/{bookId}")
     suspend fun bookmarks(

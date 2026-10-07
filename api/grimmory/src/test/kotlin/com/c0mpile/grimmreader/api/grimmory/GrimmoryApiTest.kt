@@ -93,6 +93,34 @@ class GrimmoryApiTest {
             assertEquals("/grimmory/api/v1/bookmarks/901", delete.url.encodedPath)
         }
 
+    @Test fun notebookBooksAndEntries() =
+        runTest {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .body(
+                        """{"content":[{"bookId":101,"bookTitle":"Sample A","noteCount":3,"authors":["Ada"]}],"page":0,"hasNext":false}""",
+                    ).build(),
+            )
+            val books = api.notebookBooks(page = 0, size = 50, search = "sea")
+            assertEquals(listOf(101L to 3), books.content.map { it.bookId to it.noteCount })
+            val request = server.takeRequest()
+            assertEquals("/grimmory/api/v1/app/notebook/books", request.url.encodedPath)
+            assertEquals("sea", request.url.queryParameter("search"))
+
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .body(
+                        """{"content":[{"id":5,"type":"HIGHLIGHT","text":"A passage","color":"#FACC15","chapterTitle":"One"}],"hasNext":true}""",
+                    ).build(),
+            )
+            val entries = api.notebookEntries(101, page = 0, size = 50)
+            assertEquals("HIGHLIGHT", entries.content.single().type)
+            assertTrue(entries.hasNext)
+            assertEquals("/grimmory/api/v1/app/notebook/books/101/entries", server.takeRequest().url.encodedPath)
+        }
+
     @Test fun progressWriteSendsPerFormatAndFileProgressWithoutNulls() =
         runTest {
             server.enqueue(MockResponse.Builder().code(200).build())
