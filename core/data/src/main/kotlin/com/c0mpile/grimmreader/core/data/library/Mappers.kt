@@ -4,10 +4,12 @@ import com.c0mpile.grimmreader.api.grimmory.BookSummaryDto
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.BookWithFiles
+import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.Library
 import com.c0mpile.grimmreader.core.model.ReadStatus
 import java.time.Instant
 
@@ -72,7 +74,20 @@ fun BookWithFiles.toDomain(coverModel: (BookEntity) -> String?): Book =
         readStatus = book.readStatus,
         progressPercent = position?.percent ?: book.progressPercent,
         files = files.map { it.toDomain() },
+        libraryId = book.serverLibraryId,
+        addedAt = book.addedAt,
+        lastReadAt = maxOf(book.lastReadAt ?: 0L, position?.localUpdatedAt ?: 0L).takeIf { it > 0L },
     )
+
+private val EBOOK_FORMATS = setOf("EPUB", "MOBI", "AZW3", "FB2")
+
+/** Comic libraries allow CBX and no reflowable ebook format; PDF alone could be either, so it counts as books. */
+internal fun isComicLibrary(formats: Collection<String>): Boolean {
+    val upper = formats.map { it.uppercase() }
+    return "CBX" in upper && upper.none { it in EBOOK_FORMATS }
+}
+
+fun LibraryEntity.toDomain() = Library(serverLibraryId, name, isComicLibrary(formats.split(',').filter { it.isNotBlank() }))
 
 fun BookFileEntity.toDomain() =
     BookFile(

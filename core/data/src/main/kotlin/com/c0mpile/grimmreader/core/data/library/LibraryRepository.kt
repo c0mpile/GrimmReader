@@ -3,20 +3,25 @@ package com.c0mpile.grimmreader.core.data.library
 import android.net.Uri
 import androidx.room.withTransaction
 import com.c0mpile.grimmreader.api.grimmory.GrimmoryUrls
-import com.c0mpile.grimmreader.api.grimmory.LibraryDto
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
+import com.c0mpile.grimmreader.core.database.dao.LibraryDao
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
+import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.files.BookMetadataReader
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.Library
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -31,6 +36,7 @@ class LibraryRepository
         private val db: GrimmDatabase,
         private val bookDao: BookDao,
         private val fileDao: BookFileDao,
+        private val libraryDao: LibraryDao,
         private val session: ServerSession,
         private val files: LocalFileStore,
         @IoDispatcher private val io: CoroutineDispatcher,
@@ -40,7 +46,12 @@ class LibraryRepository
 
         fun observeBook(id: Long): Flow<Book?> = bookDao.observe(id).map { it?.toDomain(::coverModel) }
 
-        suspend fun libraries(): List<LibraryDto> = withContext(io) { session.api()?.libraries().orEmpty() }
+        /** The signed-in server's libraries, in server order; empty in local mode. */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        fun observeLibraries(): Flow<List<Library>> =
+            session.server.flatMapLatest { server ->
+                if (server == null) flowOf(emptyList()) else libraryDao.observe(server.id).map { rows -> rows.map { it.toDomain() } }
+            }
 
         /** Cover for Coil: the local extracted cover, else the server thumbnail (fetched with the authed client). */
         private fun coverModel(book: BookEntity): String? {
@@ -61,6 +72,11 @@ class LibraryRepository
                 val server = session.server.value ?: return@withContext Result.success(0)
                 val api = session.api() ?: return@withContext Result.success(0)
                 runCatching {
+                    val libraries = api.libraries()
+                    libraryDao.replaceAll(
+                        server.id,
+                        libraries.mapIndexed { i, l -> LibraryEntity(server.id, l.id, l.name, l.allowedFormats.joinToString(","), i) },
+                    )
                     val seen = mutableListOf<Long>()
                     var page = 0
                     do {

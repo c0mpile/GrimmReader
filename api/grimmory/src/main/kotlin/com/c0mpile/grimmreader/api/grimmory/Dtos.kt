@@ -71,6 +71,7 @@ data class LibraryDto(
     val id: Long,
     val name: String,
     val icon: String? = null,
+    val allowedFormats: List<String> = emptyList(),
 )
 
 /** `AppPageResponseAppBookSummary` */

@@ -30,4 +30,6 @@ object DatabaseModule {
     @Provides fun outboxDao(db: GrimmDatabase) = db.outboxDao()
 
     @Provides fun downloadDao(db: GrimmDatabase) = db.downloadDao()
+
+    @Provides fun libraryDao(db: GrimmDatabase) = db.libraryDao()
 }

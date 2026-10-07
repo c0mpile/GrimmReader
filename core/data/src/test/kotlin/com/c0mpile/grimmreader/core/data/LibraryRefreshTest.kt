@@ -65,6 +65,9 @@ class LibraryRefreshTest {
         """{"content":[{"id":3,"title":"Sample Comic","libraryId":2,"primaryFileId":13,"primaryFileType":"CBX",
            "primaryFileName":"c.cbz"}],"hasNext":false}"""
 
+    private val libraries =
+        """[{"id":1,"name":"Books","allowedFormats":["EPUB","PDF"]},{"id":2,"name":"Comics","allowedFormats":["CBX","PDF"]}]"""
+
     // Real time and a real scope: Room, DataStore and OkHttp all work on their own threads here.
     @Test fun refreshMirrorsServerBooksAndRefreshesAnExpiredToken() =
         runBlocking {
@@ -80,6 +83,7 @@ class LibraryRefreshTest {
                                 MockResponse.Builder().body("""{"accessToken":"fresh","refreshToken":"r2","expires":7200}""").build()
                             }
                             auth != "Bearer fresh" -> MockResponse.Builder().code(401).build()
+                            request.url.encodedPath.endsWith("/libraries") -> MockResponse.Builder().body(libraries).build()
                             request.url.queryParameter("page") == "0" -> MockResponse.Builder().body(page0).build()
                             else -> MockResponse.Builder().body(page1).build()
                         }
@@ -104,6 +108,7 @@ class LibraryRefreshTest {
                     db,
                     db.bookDao(),
                     db.bookFileDao(),
+                    db.libraryDao(),
                     session,
                     LocalFileStore(ApplicationProvider.getApplicationContext()),
                     Dispatchers.IO,
@@ -116,6 +121,9 @@ class LibraryRefreshTest {
             val books = repo.observeLibrary().first()
             assertEquals(listOf("Sample A", "Sample Comic"), books.map { it.title })
             assertEquals(11L, books[0].files.single().serverFileId)
+            assertEquals(listOf(1L, 2L), books.map { it.libraryId })
+            val libs = repo.observeLibraries().first { it.isNotEmpty() }
+            assertEquals(listOf("Books" to false, "Comics" to true), libs.map { it.name to it.isComics })
             assertEquals(true, secrets.get(ServerSession.tokensKey(serverId))?.contains("\"fresh\""))
             backgroundScope.cancel()
         }
