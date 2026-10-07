@@ -23,6 +23,7 @@ data class BookDetailUiState(
     val book: Book? = null,
     val download: DownloadEntity? = null,
     val canDownload: Boolean = false,
+    val canReadOnline: Boolean = false,
     val loaded: Boolean = false,
 )
 
@@ -43,6 +44,11 @@ class BookDetailViewModel
                     download = all.firstOrNull { it.bookFileId == file?.id },
                     // Without canDownload the server still allows reading, but nothing is kept (PLAN §5).
                     canDownload = book?.source == BookSource.SERVER && permissions.has(Permissions.CAN_DOWNLOAD),
+                    // PDF reading arrives in M1; ebooks and comics (any archive type, extracted by the server) work.
+                    canReadOnline =
+                        book?.source == BookSource.SERVER &&
+                            book.serverId != null &&
+                            file?.format?.let { it.isReflowable || it.isComic } == true,
                     loaded = true,
                 )
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BookDetailUiState())

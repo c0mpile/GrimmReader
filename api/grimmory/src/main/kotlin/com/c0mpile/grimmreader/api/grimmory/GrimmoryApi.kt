@@ -65,6 +65,12 @@ interface GrimmoryApi {
         @Body body: UpdateProgressDto,
     ): Response<Unit>
 
+    /** 1-based page numbers of a comic, extracted on the server (works for CBZ, CB7 and CBR alike). */
+    @GET("api/v1/cbx/{bookId}/pages")
+    suspend fun cbxPages(
+        @Path("bookId") bookId: Long,
+    ): List<Int>
+
     companion object {
         val json =
             Json {
@@ -96,6 +102,13 @@ object GrimmoryUrls {
         base: HttpUrl,
         bookId: Long,
     ): HttpUrl = base.resolveSegments("api", "v1", "books", bookId.toString(), "content")
+
+    /** One comic page image ([page] is 1-based); the server labels every page image/jpeg, so callers sniff. */
+    fun cbxPage(
+        base: HttpUrl,
+        bookId: Long,
+        page: Int,
+    ): HttpUrl = base.resolveSegments("api", "v1", "media", "book", bookId.toString(), "cbx", "pages", page.toString())
 
     /** [coverUpdatedOn] busts caches when the cover changes. */
     fun thumbnail(

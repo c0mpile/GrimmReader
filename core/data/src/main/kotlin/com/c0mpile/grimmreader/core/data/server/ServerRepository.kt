@@ -102,6 +102,7 @@ class ServerRepository
                 val server = serverDao.current() ?: return@withContext
                 runCatching { session.api()?.logout() }
                 session.clearTokens(server.id)
+                files.deleteStreamCache(server.id)
             }
 
         /**

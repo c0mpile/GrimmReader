@@ -48,6 +48,14 @@ class LocalFileStore
 
         fun deleteServerFiles(serverRowId: Long) {
             File(booksDir, "server/$serverRowId").deleteRecursively()
+            deleteStreamCache(serverRowId)
+        }
+
+        /** Evictable copies of books and comic pages read online (never kept as downloads). */
+        val streamDir: File get() = File(context.cacheDir, "stream")
+
+        fun deleteStreamCache(serverRowId: Long) {
+            File(streamDir, serverRowId.toString()).deleteRecursively()
         }
 
         fun importFrom(uri: Uri): ImportedFile {

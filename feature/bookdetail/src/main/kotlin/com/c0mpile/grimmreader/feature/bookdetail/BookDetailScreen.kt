@@ -86,10 +86,19 @@ fun BookDetailScreen(
                 OutlinedButton(onClick = { viewModel.removeLocalCopy(onBack) }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (book.source == BookSource.SERVER) "Remove download" else "Remove from this device")
                 }
-            } else if (state.canDownload) {
-                DownloadSection(state, onDownload = viewModel::download, onCancel = viewModel::cancelDownload)
             } else if (book.source == BookSource.SERVER) {
-                Text("Your account cannot download this book.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Reading online needs no download permission; nothing is kept beyond an evictable cache.
+                if (state.canReadOnline) {
+                    Button(onClick = { onRead(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(LucideIcons.Globe, contentDescription = null)
+                        Text("Read online", Modifier.padding(start = 8.dp))
+                    }
+                }
+                if (state.canDownload) {
+                    DownloadSection(state, onDownload = viewModel::download, onCancel = viewModel::cancelDownload)
+                } else {
+                    Text("Your account cannot download this book.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
@@ -117,7 +126,7 @@ private fun DownloadSection(
             Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Retry download") }
         }
         else ->
-            Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
                 Icon(LucideIcons.Download, contentDescription = null)
                 Text("Download", Modifier.padding(start = 8.dp))
             }
