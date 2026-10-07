@@ -2,6 +2,7 @@ package com.c0mpile.grimmreader.feature.reader
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.c0mpile.grimmreader.core.data.bookmark.BookmarkRepository
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.progress.RemotePosition
@@ -10,6 +11,7 @@ import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.Bookmark
 import com.c0mpile.grimmreader.core.model.Locator
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ReadingDirection
@@ -78,6 +80,10 @@ data class ReaderUiState(
     val percent: Float? = null,
     val location: String? = null,
     val offer: RemotePosition? = null,
+    val bookmarks: List<Bookmark> = emptyList(),
+    /** The bookmark on the current page, if any (drives the filled bookmark icon). */
+    val bookmarkHere: Bookmark? = null,
+    val message: String? = null,
 )
 
 @OptIn(FlowPreview::class)
@@ -89,6 +95,7 @@ class ReaderViewModel
         private val library: LibraryRepository,
         private val progress: ProgressRepository,
         private val online: OnlineReading,
+        private val bookmarkRepo: BookmarkRepository,
         prefs: AppPreferences,
     ) : ViewModel() {
         private val _state = MutableStateFlow(ReaderUiState())
@@ -100,8 +107,18 @@ class ReaderViewModel
         private val pending = MutableStateFlow<Locator?>(null)
         private var source: PageSource? = null
 
+        /** Where the reader is now: the ebook position (and the bookmark CFI the page reported) or the page. */
+        private var ebookAt: Locator.Epub? = null
+        private var ebookChapter: String? = null
+        private var ebookBookmarkCfi: String? = null
+        private var pageAt: Int? = null
+
         init {
             viewModelScope.launch { open() }
+            bookmarkRepo
+                .observe(bookId)
+                .onEach { list -> _state.update { it.copy(bookmarks = list, bookmarkHere = here(list)) } }
+                .launchIn(viewModelScope)
             // Push at most every 2 s of idle time; flush() covers pause and close.
             pending
                 .filterNotNull()
@@ -132,6 +149,7 @@ class ReaderViewModel
                 }
             _state.update { it.copy(content = content) }
             if (content is ReaderContent.Ebook || content is ReaderContent.Paged) {
+                viewModelScope.launch { bookmarkRepo.pull(bookId) }
                 progress.remoteToOffer(bookId)?.let { offer -> _state.update { it.copy(offer = offer) } }
             }
         }
@@ -190,17 +208,74 @@ class ReaderViewModel
             locator: Locator.Epub,
             tocLabel: String?,
             hasPosition: Boolean,
+            bookmarkCfi: String?,
         ) {
-            _state.update { it.copy(location = tocLabel, percent = if (hasPosition) locator.percent else it.percent) }
+            ebookAt = locator
+            ebookChapter = tocLabel ?: ebookChapter
+            ebookBookmarkCfi = bookmarkCfi
+            _state.update {
+                it.copy(location = tocLabel, percent = if (hasPosition) locator.percent else it.percent, bookmarkHere = here(it.bookmarks))
+            }
             if (hasPosition) pending.value = locator
+        }
+
+        /** The ebook page answered a new bookmark list with the bookmark it shows (or none). */
+        fun onEbookBookmarkHere(cfi: String?) {
+            ebookBookmarkCfi = cfi
+            _state.update { it.copy(bookmarkHere = here(it.bookmarks)) }
         }
 
         fun onPage(index: Int) {
             val count = source?.pageCount ?: return
+            pageAt = index + 1
             val locator = Locator.Page(index + 1, count)
-            _state.update { it.copy(location = "${index + 1} / $count", percent = locator.percent) }
+            _state.update { it.copy(location = "${index + 1} / $count", percent = locator.percent, bookmarkHere = here(it.bookmarks)) }
             pending.value = locator
         }
+
+        private fun here(list: List<Bookmark>): Bookmark? =
+            when (_state.value.content) {
+                is ReaderContent.Ebook -> ebookBookmarkCfi?.let { cfi -> list.firstOrNull { it.cfi == cfi } }
+                is ReaderContent.Paged -> pageAt?.let { page -> list.firstOrNull { it.page == page } }
+                else -> null
+            }
+
+        /** Removes the bookmark on this page, or adds one here (titled like the web: chapter, or "Page N"). */
+        fun toggleBookmark() {
+            val existing = _state.value.bookmarkHere
+            viewModelScope.launch {
+                if (existing != null) {
+                    bookmarkRepo.remove(existing.id)
+                    _state.update { it.copy(message = "Bookmark removed") }
+                    return@launch
+                }
+                when (_state.value.content) {
+                    is ReaderContent.Ebook -> {
+                        val at = ebookAt ?: return@launch
+                        // The page reports this bookmark as soon as the list reaches it.
+                        ebookBookmarkCfi = at.cfi
+                        bookmarkRepo.add(bookId, at.cfi, null, ebookChapter ?: "Bookmark", at.percent)
+                    }
+                    is ReaderContent.Paged -> {
+                        val page = pageAt ?: return@launch
+                        bookmarkRepo.add(bookId, null, page, "Page $page", _state.value.percent)
+                    }
+                    else -> return@launch
+                }
+                _state.update { it.copy(message = "Bookmark added") }
+            }
+        }
+
+        fun removeBookmark(bookmark: Bookmark) = viewModelScope.launch { bookmarkRepo.remove(bookmark.id) }
+
+        /** Paged books jump by restarting the pager at [page]; ebooks jump through the page script (screen). */
+        fun goToPage(page: Int) =
+            _state.update { s ->
+                val c = s.content as? ReaderContent.Paged ?: return@update s
+                s.copy(content = c.copy(page = page - 1, restoreKey = c.restoreKey + 1))
+            }
+
+        fun messageShown() = _state.update { it.copy(message = null) }
 
         fun acceptOffer() {
             val offer = _state.value.offer ?: return

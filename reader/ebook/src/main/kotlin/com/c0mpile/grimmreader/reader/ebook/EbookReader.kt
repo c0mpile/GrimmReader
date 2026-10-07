@@ -45,11 +45,20 @@ sealed interface EbookEvent {
         val toc: List<TocEntry>,
     ) : EbookEvent
 
-    /** [hasPosition] is false on cover/image-only pages (no fraction); progress must not be saved there. */
+    /**
+     * [hasPosition] is false on cover/image-only pages (no fraction); progress must not be saved there.
+     * [bookmark] is the CFI of a bookmark on the visible page (see [EbookController.setBookmarks]).
+     */
     data class Relocated(
         val locator: Locator.Epub,
         val tocLabel: String?,
         val hasPosition: Boolean,
+        val bookmark: String? = null,
+    ) : EbookEvent
+
+    /** The bookmark on the visible page changed after [EbookController.setBookmarks]. */
+    data class BookmarkHere(
+        val cfi: String?,
     ) : EbookEvent
 
     data class Failed(
@@ -69,6 +78,9 @@ class EbookController {
     fun goTo(target: String) = call("grimm_api.goTo(${Json.encodeToString(target)})")
 
     fun setStyle(css: String) = call("grimm_api.setStyle(${Json.encodeToString(css)})")
+
+    /** The page answers with [EbookEvent.BookmarkHere]. */
+    fun setBookmarks(cfis: List<String>) = call("grimm_api.setBookmarks(${Json.encodeToString(cfis)})")
 
     /** No-op until the page script defined its API (styles can change before the book is open). */
     private fun call(js: String) {
@@ -268,8 +280,14 @@ internal fun parse(data: String): EbookEvent? {
         "relocate" -> {
             val cfi = o.str("cfi") ?: return null
             val fraction = o["fraction"]?.jsonPrimitive?.floatOrNull
-            EbookEvent.Relocated(Locator.Epub(cfi, o.str("href"), (fraction ?: 0f) * PERCENT), o.str("toc"), hasPosition = fraction != null)
+            EbookEvent.Relocated(
+                Locator.Epub(cfi, o.str("href"), (fraction ?: 0f) * PERCENT),
+                o.str("toc"),
+                hasPosition = fraction != null,
+                bookmark = o.str("bookmark"),
+            )
         }
+        "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")
         else -> null
     }
