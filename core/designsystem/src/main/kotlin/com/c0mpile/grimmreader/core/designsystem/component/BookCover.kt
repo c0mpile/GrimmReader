@@ -21,8 +21,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
-import com.c0mpile.grimmreader.core.designsystem.theme.EinkImageFilter
-import com.c0mpile.grimmreader.core.designsystem.theme.LocalEinkLook
 import kotlin.math.absoluteValue
 
 const val COVER_ASPECT = 5f / 7f
@@ -35,7 +33,6 @@ fun BookCover(
     modifier: Modifier = Modifier,
     shape: Shape = MaterialTheme.shapes.medium,
 ) {
-    val eink = LocalEinkLook.current
     val boxModifier = modifier.aspectRatio(COVER_ASPECT).clip(shape)
     if (model == null) {
         CoverPlaceholder(title, boxModifier)
@@ -46,7 +43,6 @@ fun BookCover(
         contentDescription = null,
         modifier = boxModifier,
         contentScale = ContentScale.Crop,
-        colorFilter = if (eink) EinkImageFilter else null,
         loading = { CoverPlaceholder(title, Modifier.fillMaxSize()) },
         error = { CoverPlaceholder(title, Modifier.fillMaxSize()) },
     )
@@ -58,15 +54,9 @@ fun CoverPlaceholder(
     title: String,
     modifier: Modifier = Modifier,
 ) {
-    val eink = LocalEinkLook.current
     val hue = (title.hashCode().absoluteValue % 360).toFloat()
-    val brush =
-        if (eink) {
-            Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface))
-        } else {
-            Brush.linearGradient(listOf(Color.hsv(hue, 0.55f, 0.55f), Color.hsv((hue + 40f) % 360f, 0.65f, 0.30f)))
-        }
-    val textColor = if (eink) MaterialTheme.colorScheme.onSurface else Color.White
+    val brush = Brush.linearGradient(listOf(Color.hsv(hue, 0.55f, 0.55f), Color.hsv((hue + 40f) % 360f, 0.65f, 0.30f)))
+    val textColor = Color.White
     Box(modifier.background(brush), contentAlignment = Alignment.Center) {
         Text(
             text = title,

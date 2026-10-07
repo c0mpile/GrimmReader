@@ -26,7 +26,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.c0mpile.grimmreader.core.designsystem.theme.EinkImageFilter
-import com.c0mpile.grimmreader.core.designsystem.theme.LocalEinkLook
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineScope
@@ -40,8 +39,8 @@ private const val ZOOM_HEADROOM = 2
 
 /**
  * Page-by-page reader for comics and PDF: one page per screen, pinch/double-tap zoom, tap zones 30/40/30
- * (mirrored for right-to-left), instant page turns when motion is off (E-ink look). [onPage] gets 0-based
- * indices.
+ * (mirrored for right-to-left). [grayscale] and [instantTurns] come from the page theme (E-ink pages); turns
+ * are also instant when system animations are off. [onPage] gets 0-based indices.
  */
 @Composable
 fun PagedReader(
@@ -50,14 +49,16 @@ fun PagedReader(
     onPage: (Int) -> Unit,
     onToggleChrome: () -> Unit,
     modifier: Modifier = Modifier,
+    grayscale: Boolean = false,
+    instantTurns: Boolean = false,
 ) {
     val rtl = source.readingDirection == ReadingDirection.RTL
     val pager = rememberPagerState(initialPage.coerceIn(0, (source.pageCount - 1).coerceAtLeast(0))) { source.pageCount }
     val scope = rememberCoroutineScope()
-    val motion = LocalMotionEnabled.current
+    val motion = LocalMotionEnabled.current && !instantTurns
     LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.collect(onPage) }
     HorizontalPager(state = pager, modifier = modifier.fillMaxSize(), reverseLayout = rtl, beyondViewportPageCount = 1) { index ->
-        Page(source, index) { offset, width ->
+        Page(source, index, grayscale) { offset, width ->
             val forward = if (rtl) offset.x < width * TAP_EDGE else offset.x > width * (1 - TAP_EDGE)
             val backward = if (rtl) offset.x > width * (1 - TAP_EDGE) else offset.x < width * TAP_EDGE
             when {
@@ -82,6 +83,7 @@ private fun CoroutineScope.turn(
 private fun Page(
     source: PageSource,
     index: Int,
+    grayscale: Boolean,
     onTap: (Offset, Float) -> Unit,
 ) {
     val configuration = LocalConfiguration.current
@@ -93,7 +95,6 @@ private fun Page(
     val bitmap by produceState<ImageBitmap?>(null, source, index) { value = source.decode(index, target) }
     val zoom = rememberZoomableState()
     var width by remember { mutableIntStateOf(1) }
-    val eink = LocalEinkLook.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val image = bitmap
         if (image == null) {
@@ -111,7 +112,7 @@ private fun Page(
                 bitmap = image,
                 contentDescription = null,
                 contentScale = ContentScale.Inside,
-                colorFilter = if (eink) EinkImageFilter else null,
+                colorFilter = if (grayscale) EinkImageFilter else null,
                 modifier =
                     Modifier.fillMaxSize().zoomable(
                         zoom,
