@@ -20,7 +20,11 @@ internal fun VersionCatalog.lib(alias: String): Provider<MinimalExternalModuleDe
 
 /** Robolectric's native SQLite and file descriptors need java.io opened and jdk.internal.access exported on JDK 17+. */
 internal fun Project.configureUnitTests() {
-    tasks.withType(Test::class.java).configureEach { jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+    tasks.withType(Test::class.java).configureEach {
+        // Hilt/KSP generate test sources even in modules without tests; that is not a misconfiguration.
+        failOnNoDiscoveredTests.set(false)
+        jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+    }
 }
 
 internal fun Project.configureKotlinToolchain() {

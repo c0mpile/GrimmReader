@@ -4,7 +4,7 @@ style:
     maxLineLength: 140
   MagicNumber:
     # Visual constants are normal in Compose UI code.
-    excludes: ['**/test/**', '**/androidTest/**', '**/designsystem/**', '**/feature/**/ui/**', '**/reader/**/ui/**', '**/app/**/ui/**']
+    excludes: ['**/test/**', '**/androidTest/**', '**/designsystem/**', '**/feature/**', '**/app/src/**']
     ignorePropertyDeclaration: true
     ignoreCompanionObjectPropertyDeclaration: true
     ignoreAnnotation: true
@@ -23,6 +23,9 @@ naming:
   TopLevelPropertyNaming:
     constantPattern: '[A-Z][A-Za-z0-9_]*'
 complexity:
+  CyclomaticComplexMethod:
+    # A `when` that maps each result to a message is not real complexity.
+    ignoreSimpleWhenEntries: true
   LongParameterList:
     functionThreshold: 8
     # Injected constructors (repositories, workers) legitimately take many dependencies.

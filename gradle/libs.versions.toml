@@ -131,3 +131,4 @@ grimm-android-compose = { id = "grimm.android.compose" }
 grimm-hilt = { id = "grimm.hilt" }
 grimm-room = { id = "grimm.room" }
 grimm-jvm-library = { id = "grimm.jvm.library" }
+grimm-android-feature = { id = "grimm.android.feature" }

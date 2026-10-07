@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Static XML cannot name the LAN host or IP a user picks at runtime, so the platform allows cleartext and the app
+  enforces the real policy in one place: the guarded OkHttp client refuses http:// to every host except the one
+  the user explicitly opted into (core/network CleartextGuardInterceptor). Only system CAs are trusted; a
+  self-signed server is accepted only through explicit trust-on-first-use pinning.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -37,6 +37,10 @@ gradlePlugin {
             id = "grimm.room"
             implementationClass = "RoomConventionPlugin"
         }
+        register("androidFeature") {
+            id = "grimm.android.feature"
+            implementationClass = "AndroidFeatureConventionPlugin"
+        }
         register("jvmLibrary") {
             id = "grimm.jvm.library"
             implementationClass = "JvmLibraryConventionPlugin"
