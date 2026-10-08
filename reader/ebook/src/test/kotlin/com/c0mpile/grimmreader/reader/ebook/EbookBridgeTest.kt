@@ -71,4 +71,23 @@ class EbookBridgeTest {
         assertEquals("epubcfi(/6/4!/4/2/1:0)", (moved as EbookEvent.Relocated).bookmark)
         assertEquals(EbookEvent.BookmarkHere(null), parse("""{"t":"bookmark","cfi":null}"""))
     }
+
+    @Test fun readyCarriesSectionStartsInsideTheBook() {
+        val e = parse("""{"t":"ready","toc":[],"sections":[0,0.25,"x",0.5,1.0000001]}""") as EbookEvent.Ready
+        assertEquals(listOf(0.25f, 0.5f), e.sections)
+    }
+
+    @Test fun searchHitsProgressAndDone() {
+        val hits =
+            parse(
+                """{"t":"search","id":3,"label":"Chapter 2","items":[{"cfi":"epubcfi(/6/4!/4/2,/1:3,/1:8)","pre":"a ","match":"word","post":" b"},{"pre":"no cfi"}]}""",
+            ) as EbookEvent.Search
+        assertEquals(3, hits.id)
+        assertEquals("Chapter 2", hits.label)
+        assertEquals(listOf(SearchHit("epubcfi(/6/4!/4/2,/1:3,/1:8)", "a ", "word", " b")), hits.hits)
+        assertFalse(hits.done)
+        assertEquals(0.5f, (parse("""{"t":"search","id":3,"progress":0.5}""") as EbookEvent.Search).progress)
+        assertTrue((parse("""{"t":"search","id":3,"done":true}""") as EbookEvent.Search).done)
+        assertNull(parse("""{"t":"search","items":[]}"""))
+    }
 }
