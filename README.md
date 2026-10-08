@@ -12,7 +12,7 @@ the self-hosted library. A server is optional: without one, GrimmReader is a com
 - Themes: the app is dark or AMOLED black; reading pages have their own theme: E-ink (paper and ink, warm or cool, optional paper grain and refresh flash, grayscale images, instant page turns), light, sepia, dark, night (amber, low-blue text) or AMOLED.
 - Works offline; progress queues and syncs when the server is reachable again.
 
-Planned: OPDS catalogs, bookmarks and annotations, a guided view for comics, and
+Planned: OPDS catalogs, bookmarks and annotations, and
 the rest of the Grimmory web features. There is no audiobook player.
 
 ## Security and privacy
