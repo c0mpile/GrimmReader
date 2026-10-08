@@ -34,7 +34,22 @@ internal object DefinitionHtml {
         Regex("</?(a|img|link|iframe|object|embed|audio|video|source|svg|math|form|input|button|font)\\b[^>]*>", RegexOption.IGNORE_CASE)
     private val comment = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
 
-    fun sanitize(html: String): String = html.replace(comment, "").replace(dropWithContent, "").replace(dropTag, "")
+    /**
+     * Repeated until nothing changes: one pass can leave a working tag behind when markup is nested to hide it
+     * (`<<a>a href=…>` becomes `<a href=…>`). The renderer also ignores link clicks, so this is not the only guard.
+     */
+    fun sanitize(html: String): String {
+        var current = html
+        repeat(MAX_PASSES) {
+            val next = current.replace(comment, "").replace(dropWithContent, "").replace(dropTag, "")
+            if (next == current) return next
+            current = next
+        }
+        // Still changing: give up on markup and keep the text.
+        return current.replace("<", "&lt;").replace(">", "&gt;")
+    }
+
+    private const val MAX_PASSES = 8
 
     private fun newlines(text: String) = text.replace("\r\n", "\n").replace("\n", "<br>")
 

@@ -156,18 +156,20 @@ class DictionariesTest {
         val wiktionary =
             DictionaryCatalog.parseWiktionary(
                 """{"tag_name":"20260101","assets":[
-                  {"name":"en-en.tar.zst","size":100,"browser_download_url":"https://github.com/xxyzz/wiktionary_stardict/releases/download/20260101/en-en.tar.zst","digest":"sha256:ab"},
+                  {"name":"en-en.tar.zst","size":100,"browser_download_url":"https://github.com/xxyzz/wiktionary_stardict/releases/download/20260101/en-en.tar.zst","digest":"sha256:abababababababababababababababababababababababababababababababab"},
                   {"name":"en_images.tar.zst","size":5,"browser_download_url":"https://github.com/xxyzz/wiktionary_stardict/releases/download/20260101/en_images.tar.zst"},
                   {"name":"de-en.tar.zst","size":7,"browser_download_url":"https://elsewhere.example.com/de-en.tar.zst"},
+                  {"name":"fr-fr.tar.zst","size":9,"browser_download_url":"https://github.com/xxyzz/wiktionary_stardict/releases/download/20260101/fr-fr.tar.zst"},
                   {"name":"en.json","size":1,"browser_download_url":"https://github.com/xxyzz/wiktionary_stardict/releases/download/20260101/en.json"}]}""",
             )
         assertEquals(listOf("wiktionary:en-en"), wiktionary.map { it.id })
-        assertEquals("sha256:ab", wiktionary.single().checksum)
+        assertEquals("sha256:" + "ab".repeat(32), wiktionary.single().checksum)
         val freedict =
             DictionaryCatalog.parseFreeDict(
                 """[{"name":"deu-eng","headwords":"1200","releases":[
                     {"platform":"dictd","URL":"https://download.freedict.org/dictionaries/deu-eng/1.0/freedict-deu-eng-1.0.dictd.tar.xz"},
-                    {"platform":"stardict","URL":"https://download.freedict.org/dictionaries/deu-eng/1.0/freedict-deu-eng-1.0.stardict.tar.xz","size":"300","checksum":"cd","version":"1.0"}]},
+                    {"platform":"stardict","URL":"https://download.freedict.org/dictionaries/deu-eng/1.0/freedict-deu-eng-1.0.stardict.tar.xz","size":"300","checksum":"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd","version":"1.0"}]},
+                  {"name":"eng-fra","releases":[{"platform":"stardict","URL":"https://download.freedict.org/dictionaries/eng-fra/1/freedict-eng-fra-1.stardict.tar.xz","checksum":"short"}]},
                   {"software":{}},
                   {"name":"fra-eng","releases":[{"platform":"stardict","URL":"http://download.freedict.org/dictionaries/x.stardict.tar.xz"}]}]""",
             )
@@ -175,7 +177,7 @@ class DictionariesTest {
         with(freedict.single()) {
             assertEquals("freedict:deu-eng", id)
             assertEquals(1200, words)
-            assertEquals("sha512:cd", checksum)
+            assertEquals("sha512:" + "cd".repeat(64), checksum)
             assertEquals("freedict-deu-eng-1.0.stardict.tar.xz", fileName)
         }
     }
@@ -213,7 +215,7 @@ class DictionariesTest {
             val downloads =
                 DictionaryDownloads(context, { GuardedHttpClient.create(localhost, "test") }, dictionaries, Dispatchers.IO, scope)
 
-            downloads.start(entry(archive, "sha256:00"))
+            downloads.start(entry(archive, "sha256:" + "0".repeat(64)))
             val failed = withTimeout(10_000) { downloads.state.first { it["wiktionary:xx-en"] is DictionaryDownload.Failed } }
             assertTrue((failed["wiktionary:xx-en"] as DictionaryDownload.Failed).message.contains("checksum"))
             assertTrue(dictionaries.installed.value.isEmpty())

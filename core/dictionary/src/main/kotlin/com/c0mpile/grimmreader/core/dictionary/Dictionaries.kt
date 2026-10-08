@@ -115,8 +115,11 @@ class Dictionaries
         suspend fun remove(id: String) =
             withContext(io) {
                 lock.withLock {
-                    opened.remove(id)?.close()
-                    File(root, id).takeIf { it.parentFile == root }?.deleteRecursively()
+                    // Ids are the folder names this class creates (digits); nothing else may be deleted.
+                    if (id.isNotEmpty() && id.all { it.isDigit() }) {
+                        opened.remove(id)?.close()
+                        File(root, id).deleteRecursively()
+                    }
                     refresh()
                 }
             }
