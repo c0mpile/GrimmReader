@@ -67,14 +67,12 @@ private const val PERCENT = 100
 
 /**
  * The popover under the settings button (web: dark mode, font size, line spacing, "More Settings"). Page
- * themes take the place of the web's dark mode switch; comics and PDFs only have those, comics also the
- * guided view switch.
+ * themes take the place of the web's dark mode switch; comics and PDFs only have those.
  */
 @Composable
 internal fun QuickSettings(
     prefs: ReaderPrefs,
     textSettings: Boolean,
-    comicSettings: Boolean,
     onChange: (ReaderPrefs) -> Unit,
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
@@ -94,10 +92,6 @@ internal fun QuickSettings(
                 FontSizeRow(prefs, onChange)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
                 LineHeightRow(prefs, onChange, label = "Line Spacing")
-            }
-            if (comicSettings) {
-                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
-                SettingSwitch("Guided view", prefs.guidedView) { onChange(prefs.copy(guidedView = it)) }
             }
             HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 16.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
             val button = RoundedCornerShape(8.dp)
@@ -207,13 +201,12 @@ private enum class SettingsTab(
 
 /**
  * "More Settings": tabs Theme / Typography / Layout like the web dialog, plus Controls (page turning).
- * Comics and PDFs get Theme and Controls (comics with guided view).
+ * Comics and PDFs get Theme and Controls.
  */
 @Composable
 internal fun SettingsDialog(
     prefs: ReaderPrefs,
     textSettings: Boolean,
-    comicSettings: Boolean,
     onChange: (ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -254,7 +247,7 @@ internal fun SettingsDialog(
                         SettingsTab.THEME -> ThemeTab(prefs, onChange)
                         SettingsTab.TYPOGRAPHY -> TypographyTab(prefs, onChange)
                         SettingsTab.LAYOUT -> LayoutTab(prefs, onChange)
-                        SettingsTab.CONTROLS -> ControlsTab(prefs, comicSettings, onChange)
+                        SettingsTab.CONTROLS -> ControlsTab(prefs, onChange)
                     }
                 }
             }
@@ -390,7 +383,6 @@ private fun LayoutTab(
 @Composable
 private fun ControlsTab(
     prefs: ReaderPrefs,
-    comicSettings: Boolean,
     onChange: (ReaderPrefs) -> Unit,
 ) {
     SectionHeader("Page turning")
@@ -408,26 +400,6 @@ private fun ControlsTab(
     Text(
         "Taps and swipes turn the page only in the left and right zones. A tap in the middle shows or hides " +
             "the bars; while they are shown, a tap on the page hides them.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = mutedText(),
-        modifier = Modifier.padding(top = 4.dp),
-    )
-    if (comicSettings) GuidedOptions(prefs, onChange)
-}
-
-@Composable
-private fun GuidedOptions(
-    prefs: ReaderPrefs,
-    onChange: (ReaderPrefs) -> Unit,
-) {
-    SectionHeader("Guided view", Modifier.padding(top = 12.dp))
-    SettingSwitch("Guided view", prefs.guidedView) { onChange(prefs.copy(guidedView = it)) }
-    if (prefs.guidedView) {
-        SettingSwitch("Show full page first", prefs.guidedFullPage) { onChange(prefs.copy(guidedFullPage = it)) }
-    }
-    Text(
-        "Moves through each page panel by panel, left to right, with the same taps and swipes that turn " +
-            "pages. Pages without clear panels are shown whole.",
         style = MaterialTheme.typography.bodyMedium,
         color = mutedText(),
         modifier = Modifier.padding(top = 4.dp),
