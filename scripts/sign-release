@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Signs the release APK so it can be installed (optionally builds it first, optionally installs it).
-#   -b  build the release APK first (scripts/grbuild -r)
+#   -b  build the release APK first (assembleRelease)
 #   -i  install the signed APK on the connected device(s) afterwards
 # The keystore is private and untracked. It is read from GRIMMREADER_KEYSTORE_PROPERTIES, default
 # .local/signing/keystore.properties (storeFile=, alias=, password=). Passwords are never printed.
@@ -27,7 +27,7 @@ KS_PW=$(prop password)
 export KS_PW
 [[ -f $store ]] || { echo "sign-release: keystore $store not found" >&2; exit 1; }
 
-[[ $build == true ]] && scripts/grbuild -r > /dev/null
+[[ $build == true ]] && ./gradlew assembleRelease -q --console=plain > /dev/null
 
 unsigned=$(ls app/build/outputs/apk/release/*-unsigned.apk 2>/dev/null | head -1 || true)
 [[ -n $unsigned ]] || { echo "sign-release: no unsigned release APK; run with -b" >&2; exit 1; }
