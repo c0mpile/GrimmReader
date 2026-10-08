@@ -196,9 +196,13 @@ private enum class SettingsTab(
     THEME("Theme"),
     TYPOGRAPHY("Typography"),
     LAYOUT("Layout"),
+    CONTROLS("Controls"),
 }
 
-/** "More Settings": tabs Theme / Typography / Layout like the web dialog. Comics and PDFs get Theme only. */
+/**
+ * "More Settings": tabs Theme / Typography / Layout like the web dialog, plus Controls (page turning).
+ * Comics and PDFs get Theme and Controls.
+ */
 @Composable
 internal fun SettingsDialog(
     prefs: ReaderPrefs,
@@ -206,7 +210,7 @@ internal fun SettingsDialog(
     onChange: (ReaderPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val tabs = if (textSettings) SettingsTab.entries else listOf(SettingsTab.THEME)
+    val tabs = if (textSettings) SettingsTab.entries else listOf(SettingsTab.THEME, SettingsTab.CONTROLS)
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val tab = tabs.getOrElse(selected) { SettingsTab.THEME }
     // One height for every tab, like the web dialog.
@@ -243,6 +247,7 @@ internal fun SettingsDialog(
                         SettingsTab.THEME -> ThemeTab(prefs, onChange)
                         SettingsTab.TYPOGRAPHY -> TypographyTab(prefs, onChange)
                         SettingsTab.LAYOUT -> LayoutTab(prefs, onChange)
+                        SettingsTab.CONTROLS -> ControlsTab(prefs, onChange)
                     }
                 }
             }
@@ -374,6 +379,52 @@ private fun LayoutTab(
     SettingSwitch("Justify Text", prefs.justify) { onChange(prefs.copy(justify = it)) }
     SettingSwitch("Hyphenate", prefs.hyphenate) { onChange(prefs.copy(hyphenate = it)) }
 }
+
+@Composable
+private fun ControlsTab(
+    prefs: ReaderPrefs,
+    onChange: (ReaderPrefs) -> Unit,
+) {
+    SectionHeader("Page turning")
+    SettingSwitch("Tap to turn", prefs.tapToTurn) { onChange(prefs.copy(tapToTurn = it)) }
+    SettingSwitch("Swipe to turn", prefs.swipeToTurn) { onChange(prefs.copy(swipeToTurn = it)) }
+    Text("Turn zone width", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+    CardGrid(TURN_ZONES, columns = TURN_ZONES.size) { zone, modifier ->
+        OptionCard(prefs.turnZone == zone, { onChange(prefs.copy(turnZone = zone)) }, modifier) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                ZoneSketch(zone)
+                Text("$zone%", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+    }
+    Text(
+        "Taps and swipes turn the page only in the left and right zones. A tap in the middle shows or hides " +
+            "the bars; while they are shown, a tap on the page hides them.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = mutedText(),
+        modifier = Modifier.padding(top = 4.dp),
+    )
+}
+
+/** A page with its two turn zones shaded. */
+@Composable
+private fun ZoneSketch(zone: Int) {
+    val accent = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+    Row(
+        Modifier
+            .width(40.dp)
+            .height(28.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)),
+    ) {
+        val edge = zone / PERCENT.toFloat()
+        Spacer(Modifier.weight(edge).height(28.dp).background(accent))
+        Spacer(Modifier.weight(1 - 2 * edge))
+        Spacer(Modifier.weight(edge).height(28.dp).background(accent))
+    }
+}
+
+private val TURN_ZONES = listOf(15, 20, 25, 33)
 
 /** Equal-width cards in rows; 3 per row on wide dialogs, 2 on narrow ones, unless [columns] is given. */
 @Composable

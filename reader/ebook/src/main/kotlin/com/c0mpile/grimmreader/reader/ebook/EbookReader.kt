@@ -7,8 +7,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -18,11 +16,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.c0mpile.grimmreader.core.designsystem.component.PageTurns
+import com.c0mpile.grimmreader.core.designsystem.component.PageZone
+import com.c0mpile.grimmreader.core.designsystem.component.pageGestures
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.Locator
 import kotlinx.serialization.Serializable
@@ -139,7 +139,6 @@ class EbookController {
 }
 
 internal const val ORIGIN = "https://appassets.androidplatform.net"
-private const val TAP_EDGE = 0.3f
 
 /**
  * foliate-js in a WebView that can only reach app-local content: the reader page, foliate itself and the
@@ -154,6 +153,7 @@ fun EbookReader(
     css: String,
     layout: EbookLayout,
     animated: Boolean,
+    turns: PageTurns,
     controller: EbookController,
     onEvent: (EbookEvent) -> Unit,
     onToggleChrome: () -> Unit,
@@ -166,7 +166,7 @@ fun EbookReader(
             modifier = Modifier.fillMaxSize(),
             factory = { context -> readerWebView(context, book, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
-        TapZones(controller, onToggleChrome)
+        TapZones(turns, controller, onToggleChrome)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
     LaunchedEffect(animated) { controller.setAnimated(animated) }
@@ -229,39 +229,30 @@ private fun readerWebView(
     }
 }
 
-/** Tap zones 30/40/30 and horizontal swipes, like the web reader. */
+/** Takes every touch (the WebView gets none): taps and swipes in the edge zones turn, the middle toggles the bars. */
 @Composable
 private fun TapZones(
+    turns: PageTurns,
     controller: EbookController,
     onToggleChrome: () -> Unit,
 ) {
+    val toggle by rememberUpdatedState(onToggleChrome)
     Box(
         Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    when {
-                        offset.x < size.width * TAP_EDGE -> controller.prev()
-                        offset.x > size.width * (1 - TAP_EDGE) -> controller.next()
-                        else -> onToggleChrome()
+            .pageGestures(
+                turns,
+                onTap = { zone ->
+                    when (zone) {
+                        PageZone.LEFT -> controller.prev()
+                        PageZone.RIGHT -> controller.next()
+                        PageZone.MIDDLE -> toggle()
                     }
-                }
-            }.pointerInput(Unit) {
-                var total = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragEnd = {
-                        when {
-                            total < -SWIPE_PX -> controller.next()
-                            total > SWIPE_PX -> controller.prev()
-                        }
-                    },
-                ) { _, amount -> total += amount }
-            },
+                },
+                onSwipe = { toLeft -> if (toLeft) controller.next() else controller.prev() },
+            ),
     )
 }
-
-private const val SWIPE_PX = 60f
 
 /**
  * foliate renders untrusted book content in same-origin frames with scripts allowed (WebKit bug 218086), so
