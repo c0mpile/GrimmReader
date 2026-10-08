@@ -110,6 +110,12 @@ private fun SidebarContent(
                         onSelect(SidebarDestination.Notebook)
                     }
                 }
+                if (state.hasServer || state.hasDownloads) {
+                    val active = state.activeDownloads.takeIf { it > 0 }
+                    entry(LucideIcons.Download, "Downloads", active, selected == SidebarDestination.Downloads) {
+                        onSelect(SidebarDestination.Downloads)
+                    }
+                }
             }
             section("Libraries", collapsed) {
                 state.libraries.forEach { (library, count) ->

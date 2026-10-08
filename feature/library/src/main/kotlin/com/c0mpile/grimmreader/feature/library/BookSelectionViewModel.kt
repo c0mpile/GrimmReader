@@ -60,10 +60,11 @@ class BookSelectionViewModel
         private val messages = MutableStateFlow<String?>(null)
         val message: StateFlow<String?> = messages.asStateFlow()
 
-        internal fun download(summary: SelectionSummary) {
-            summary.toDownload.mapNotNull { it.primaryFile }.forEach { downloads.enqueue(it.id) }
-            messages.value = "${countLabel(summary.toDownload.size)} queued for download"
-        }
+        internal fun download(summary: SelectionSummary) =
+            viewModelScope.launch {
+                summary.toDownload.mapNotNull { it.primaryFile }.forEach { downloads.enqueue(it.id) }
+                messages.value = "${countLabel(summary.toDownload.size)} queued for download"
+            }
 
         internal fun delete(summary: SelectionSummary) =
             viewModelScope.launch {

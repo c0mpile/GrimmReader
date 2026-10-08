@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.data.download
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.c0mpile.grimmreader.api.grimmory.GrimmoryUrls
@@ -21,10 +22,13 @@ import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.BookFormat
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
@@ -57,8 +61,20 @@ class DownloadWorker
             val serverRowId = book.serverRowId ?: return Result.failure()
             val serverBookId = book.serverBookId ?: return Result.failure()
             val target = store.downloadTarget(serverRowId, serverBookId, fileId)
-            update(fileId, DownloadState.QUEUED, File(target.path + ".part").length(), null)
-            return slots.withPermit { transfer(file, book, GrimmoryUrls.content(base, serverBookId), target) }
+            val part = File(target.path + ".part")
+            // Rows are created by DownloadRepository.enqueue; this covers work queued before that existed.
+            downloads.insert(DownloadEntity(bookFileId = fileId, updatedAt = System.currentTimeMillis()))
+            update(fileId, DownloadState.QUEUED, part.length(), null)
+            return try {
+                slots.withPermit { transfer(file, book, GrimmoryUrls.content(base, serverBookId), target) }
+            } catch (e: CancellationException) {
+                // Stopped by the system (network lost, constraints): it runs again later, so show it as waiting.
+                // Cancelled by the user: DownloadRepository.cancel has removed the row already.
+                if (stopReason != WorkInfo.STOP_REASON_CANCELLED_BY_APP) {
+                    withContext(NonCancellable) { update(fileId, DownloadState.QUEUED, part.length(), null) }
+                }
+                throw e
+            }
         }
 
         private suspend fun transfer(
@@ -186,20 +202,7 @@ class DownloadWorker
             done: Long,
             total: Long?,
             error: String? = null,
-        ) {
-            val existing = downloads.forFile(fileId)
-            downloads.upsert(
-                DownloadEntity(
-                    id = existing?.id ?: 0,
-                    bookFileId = fileId,
-                    state = state,
-                    bytesDone = done,
-                    bytesTotal = total ?: existing?.bytesTotal,
-                    error = error,
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
-        }
+        ) = downloads.update(fileId, state, done, total, error, System.currentTimeMillis())
 
         companion object {
             private const val MAX_NAME = 120

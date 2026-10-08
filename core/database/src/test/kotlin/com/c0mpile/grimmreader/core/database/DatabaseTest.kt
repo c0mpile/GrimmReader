@@ -5,6 +5,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
+import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
+import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
@@ -115,5 +117,37 @@ class DatabaseTest {
             db.outboxDao().replace(OutboxOpEntity(kind = "progress", entityId = 5, payload = "b", createdAt = 2))
             db.outboxDao().replace(OutboxOpEntity(kind = "progress", entityId = 6, payload = "c", createdAt = 3))
             assertEquals(listOf("b", "c"), db.outboxDao().due(now = 10).map { it.payload })
+        }
+
+    @Test fun downloadQueueJoinsTheBookAndUpdatesNeverRecreateACancelledRow() =
+        runTest {
+            val book = db.bookDao().insert(BookEntity(source = BookSource.SERVER, serverBookId = 7, title = "ebook sample 1"))
+            val file = db.bookFileDao().upsert(BookFileEntity(bookId = book, format = BookFormat.CBZ))
+            db.downloadDao().insert(DownloadEntity(bookFileId = file, updatedAt = 1))
+            db.downloadDao().update(file, DownloadState.RUNNING, done = 10, total = 40, error = null, now = 2)
+            db.downloadDao().update(file, DownloadState.RUNNING, done = 20, total = null, error = null, now = 3)
+
+            val row =
+                db
+                    .downloadDao()
+                    .observeQueue()
+                    .first()
+                    .single()
+            assertEquals("ebook sample 1", row.title)
+            assertEquals(book, row.bookId)
+            assertEquals(BookFormat.CBZ, row.format)
+            assertEquals(7L, row.serverBookId)
+            assertEquals(20L, row.download.bytesDone)
+            assertEquals(40L, row.download.bytesTotal)
+
+            db.downloadDao().delete(file)
+            db.downloadDao().update(file, DownloadState.RUNNING, done = 30, total = 40, error = null, now = 4)
+            assertTrue(
+                db
+                    .downloadDao()
+                    .observeQueue()
+                    .first()
+                    .isEmpty(),
+            )
         }
 }

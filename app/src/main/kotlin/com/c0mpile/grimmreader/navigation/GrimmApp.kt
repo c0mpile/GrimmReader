@@ -36,6 +36,7 @@ import com.c0mpile.grimmreader.core.designsystem.component.LocalOpenSidebar
 import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.feature.bookdetail.BookDetailScreen
+import com.c0mpile.grimmreader.feature.downloads.DownloadsScreen
 import com.c0mpile.grimmreader.feature.library.BookGroupScreen
 import com.c0mpile.grimmreader.feature.library.DashboardScreen
 import com.c0mpile.grimmreader.feature.library.GroupKind
@@ -62,6 +63,8 @@ import kotlinx.serialization.Serializable
 @Serializable data object SettingsKey : NavKey
 
 @Serializable data object NotebookKey : NavKey
+
+@Serializable data object DownloadsKey : NavKey
 
 @Serializable data class NotebookBookKey(
     val serverBookId: Long,
@@ -104,6 +107,7 @@ private fun NavKey.destination(): SidebarDestination? =
         DashboardKey -> SidebarDestination.Dashboard
         SettingsKey -> SidebarDestination.Settings
         NotebookKey -> SidebarDestination.Notebook
+        DownloadsKey -> SidebarDestination.Downloads
         is BrowseKey -> SidebarDestination.Browse(LibraryScope.decode(scope), mode)
         else -> null
     }
@@ -114,6 +118,7 @@ private fun SidebarDestination.key(): NavKey =
         SidebarDestination.Settings -> SettingsKey
         SidebarDestination.Search -> BrowseKey(LibraryScope.All.encode(), search = true)
         SidebarDestination.Notebook -> NotebookKey
+        SidebarDestination.Downloads -> DownloadsKey
         is SidebarDestination.Browse -> BrowseKey(scope.encode(), mode)
     }
 
@@ -211,6 +216,7 @@ private fun Screens(
                         onOpenBook = { backStack.add(BookKey(it)) },
                     )
                 }
+                entry<DownloadsKey> { DownloadsScreen(onOpenBook = { backStack.add(BookKey(it)) }) }
                 entry<SettingsKey> { SettingsScreen(versionName, onConnectServer = { backStack.add(SetupKey) }) }
                 entry<SetupKey> { SetupScreen(devServerUrl = devServerUrl, onDone = { go(SidebarDestination.Dashboard) }) }
                 entry<BookKey> { key ->

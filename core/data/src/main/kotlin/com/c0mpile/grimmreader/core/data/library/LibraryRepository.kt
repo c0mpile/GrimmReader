@@ -68,13 +68,19 @@ class LibraryRepository
             }
 
         /** Cover for Coil: the local extracted cover, else the server thumbnail (fetched with the authed client). */
-        private fun coverModel(book: BookEntity): String? {
-            val local = files.coverFile(book.id)
+        private fun coverModel(book: BookEntity): String? = coverModel(book.id, book.serverRowId, book.serverBookId, book.coverUpdatedOn)
+
+        fun coverModel(
+            bookId: Long,
+            serverRowId: Long?,
+            serverBookId: Long?,
+            coverUpdatedOn: String?,
+        ): String? {
+            val local = files.coverFile(bookId)
             if (local.exists()) return local.absolutePath
             val base = session.baseUrl() ?: return null
-            val serverId = book.serverBookId ?: return null
-            if (book.serverRowId == null) return null
-            return GrimmoryUrls.thumbnail(base, serverId, book.coverUpdatedOn).toString()
+            if (serverBookId == null || serverRowId == null) return null
+            return GrimmoryUrls.thumbnail(base, serverBookId, coverUpdatedOn).toString()
         }
 
         /**
@@ -219,7 +225,10 @@ class LibraryRepository
                 val row = bookDao.get(bookId) ?: return@withContext
                 row.files.mapNotNull { it.localUri }.forEach(files::deleteBookFile)
                 if (row.book.source == BookSource.SERVER) {
-                    row.files.forEach { fileDao.setLocal(it.id, null, it.sizeBytes, it.partialMd5) }
+                    row.files.forEach {
+                        fileDao.setLocal(it.id, null, it.sizeBytes, it.partialMd5)
+                        db.downloadDao().delete(it.id)
+                    }
                 } else {
                     files.coverFile(bookId).delete()
                     bookDao.delete(bookId)
