@@ -2,8 +2,15 @@
 # Signs the release APK so it can be installed (optionally builds it first, optionally installs it).
 #   -b  build the release APK first (assembleRelease)
 #   -i  install the signed APK on the connected device(s) afterwards
-# The keystore is private and untracked. It is read from GRIMMREADER_KEYSTORE_PROPERTIES, default
-# .local/signing/keystore.properties (storeFile=, alias=, password=). Passwords are never printed.
+# The signing key is private and never tracked. Preferred source is the system keyring (Secret
+# Service), service GRIMMREADER_KEYRING_SERVICE (default grimmreader-signing), with one entry per
+# field (username=FIELD), as filled by bw-keyring-sync from a Bitwarden item's custom fields:
+#   KEYSTORE_B64      the keystore file, base64 on one line (base64 -w0 release.jks)
+#   KEY_ALIAS         key alias
+#   KEYSTORE_PASSWORD store and key password
+# The keystore is written to a private temp file on tmpfs for the signing only, then removed.
+# Fallback while migrating: GRIMMREADER_KEYSTORE_PROPERTIES, default .local/signing/keystore.properties
+# (storeFile=, alias=, password=). Passwords are never printed.
 # Output: .local/apk/GrimmReader-<version>-<commit>-release.apk
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
@@ -18,14 +25,33 @@ while getopts "bi" opt; do
     esac
 done
 
-props="${GRIMMREADER_KEYSTORE_PROPERTIES:-.local/signing/keystore.properties}"
-[[ -f $props ]] || { echo "sign-release: $props not found" >&2; exit 1; }
-prop() { grep -m1 "^$1=" "$props" | cut -d= -f2-; }
-store=$(prop storeFile)
-alias_name=$(prop alias)
-KS_PW=$(prop password)
+service="${GRIMMREADER_KEYRING_SERVICE:-grimmreader-signing}"
+secret() { timeout 10 secret-tool lookup service "$service" username "$1" 2>/dev/null || true; }
+
+aligned=
+tmp_store=
+trap 'rm -f "$aligned" "$tmp_store"' EXIT
+
+store_b64=$(secret KEYSTORE_B64)
+if [[ -n $store_b64 ]]; then
+    alias_name=$(secret KEY_ALIAS)
+    KS_PW=$(secret KEYSTORE_PASSWORD)
+    [[ -n $alias_name && -n $KS_PW ]] || { echo "sign-release: keyring service $service lacks KEY_ALIAS or KEYSTORE_PASSWORD" >&2; exit 1; }
+    umask 077
+    tmp_store=$(mktemp -p "${XDG_RUNTIME_DIR:-/dev/shm}" --suffix=.jks)
+    base64 -d <<<"$store_b64" > "$tmp_store" || { echo "sign-release: KEYSTORE_B64 is not valid base64" >&2; exit 1; }
+    store=$tmp_store
+else
+    props="${GRIMMREADER_KEYSTORE_PROPERTIES:-.local/signing/keystore.properties}"
+    [[ -f $props ]] || { echo "sign-release: no signing key in keyring service $service and $props not found" >&2; exit 1; }
+    echo "sign-release: keyring has no key; falling back to $props" >&2
+    prop() { grep -m1 "^$1=" "$props" | cut -d= -f2-; }
+    store=$(prop storeFile)
+    alias_name=$(prop alias)
+    KS_PW=$(prop password)
+    [[ -f $store ]] || { echo "sign-release: keystore $store not found" >&2; exit 1; }
+fi
 export KS_PW
-[[ -f $store ]] || { echo "sign-release: keystore $store not found" >&2; exit 1; }
 
 [[ $build == true ]] && ./gradlew assembleRelease -q --console=plain > /dev/null
 
@@ -36,7 +62,6 @@ version=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/
 out=".local/apk/GrimmReader-${version:-dev}-$(git rev-parse --short HEAD)-release.apk"
 mkdir -p .local/apk
 aligned=$(mktemp --suffix=.apk)
-trap 'rm -f "$aligned"' EXIT
 rm -f "$aligned" "$out"
 zipalign -P 16 -f 4 "$unsigned" "$aligned"
 apksigner sign --ks "$store" --ks-key-alias "$alias_name" \
