@@ -2,24 +2,26 @@ package com.c0mpile.grimmreader.feature.reader
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.c0mpile.grimmreader.reader.ebook.FontCategory
 import com.c0mpile.grimmreader.reader.ebook.ReaderFonts
 
 private const val REGULAR = 400
 
-/** Bundled reader fonts by group, each chip set in its own font, plus the book's own fonts. */
+/** Web-style font cards ("Aa" set in the font, name under it): the book's own fonts, then bundled ones by group. */
 @Composable
 internal fun FontPicker(
     selectedId: String,
@@ -29,23 +31,43 @@ internal fun FontPicker(
     val selected = ReaderFonts.resolve(selectedId)
     val previews = rememberFontPreviews()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Font", style = MaterialTheme.typography.titleSmall)
-        FilterChip(
-            selected = selected == null,
-            onClick = { onSelect(ReaderFonts.PUBLISHER) },
-            label = { Text("Publisher") },
-        )
+        CardGrid(listOf(null)) { _, cardModifier ->
+            FontCard("Publisher's", null, selected == null, cardModifier) { onSelect(ReaderFonts.PUBLISHER) }
+        }
         FontCategory.entries.forEach { category ->
-            Text(category.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReaderFonts.all.filter { it.category == category }.forEach { font ->
-                    FilterChip(
-                        selected = selected == font,
-                        onClick = { onSelect(font.id) },
-                        label = { Text(font.id, fontFamily = previews[font.id]) },
-                    )
-                }
+            Text(
+                category.label,
+                style = MaterialTheme.typography.labelLarge,
+                color = mutedText(),
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            CardGrid(ReaderFonts.all.filter { it.category == category }) { font, cardModifier ->
+                FontCard(font.id, previews[font.id], selected == font, cardModifier) { onSelect(font.id) }
             }
+        }
+    }
+}
+
+@Composable
+private fun FontCard(
+    name: String,
+    family: FontFamily?,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    OptionCard(selected, onClick, modifier) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Aa", fontFamily = family, fontSize = 26.sp)
+            Text(
+                name,
+                fontFamily = family,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
     }
 }
