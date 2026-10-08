@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -91,6 +93,11 @@ sealed interface EbookEvent {
         val bookmark: String? = null,
     ) : EbookEvent
 
+    /** A long press landed on [word], now highlighted until [EbookController.clearLookup]. */
+    data class Lookup(
+        val word: String,
+    ) : EbookEvent
+
     /** The bookmark on the visible page changed after [EbookController.setBookmarks]. */
     data class BookmarkHere(
         val cfi: String?,
@@ -132,6 +139,14 @@ class EbookController {
     /** The page answers with [EbookEvent.BookmarkHere]. */
     fun setBookmarks(cfis: List<String>) = call("grimm_api.setBookmarks(${Json.encodeToString(cfis)})")
 
+    /** Finds the word at [x], [y] (CSS px of the reader view); the page answers with [EbookEvent.Lookup] if there is one. */
+    fun lookupAt(
+        x: Float,
+        y: Float,
+    ) = call("grimm_api.lookupAt($x, $y)")
+
+    fun clearLookup() = call("grimm_api.clearLookup()")
+
     /** No-op until the page script defined its API (styles can change before the book is open). */
     private fun call(js: String) {
         webView?.evaluateJavascript("window.grimm_api && $js", null)
@@ -160,13 +175,16 @@ fun EbookReader(
     modifier: Modifier = Modifier,
 ) {
     val events by rememberUpdatedState(onEvent)
+    val density = LocalDensity.current.density
+    // Long press: look the word up; the WebView's CSS px are dp at the default zoom.
+    val lookup: (Offset) -> Unit = { at -> controller.lookupAt(at.x / density, at.y / density) }
     val startUrl = remember(book) { startUrl(fileName, initialCfi, css, layout, animated) }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context -> readerWebView(context, book, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
-        TapZones(turns, controller, onToggleChrome)
+        TapZones(turns, controller, onToggleChrome, lookup)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
     LaunchedEffect(animated) { controller.setAnimated(animated) }
@@ -229,12 +247,16 @@ private fun readerWebView(
     }
 }
 
-/** Takes every touch (the WebView gets none): taps and swipes in the edge zones turn, the middle toggles the bars. */
+/**
+ * Takes every touch (the WebView gets none): taps and swipes in the edge zones turn, the middle toggles the bars,
+ * a long press anywhere goes to [onLongPress].
+ */
 @Composable
 private fun TapZones(
     turns: PageTurns,
     controller: EbookController,
     onToggleChrome: () -> Unit,
+    onLongPress: ((Offset) -> Unit)?,
 ) {
     val toggle by rememberUpdatedState(onToggleChrome)
     Box(
@@ -250,6 +272,7 @@ private fun TapZones(
                     }
                 },
                 onSwipe = { toLeft -> if (toLeft) controller.next() else controller.prev() },
+                onLongPress = onLongPress,
             ),
     )
 }
@@ -345,6 +368,12 @@ internal fun parse(data: String): EbookEvent? {
             )
         }
         "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
+        "lookup" ->
+            o
+                .str("word")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() && it.length <= MAX_LOOKUP_CHARS }
+                ?.let { EbookEvent.Lookup(it) }
         "search" -> parseSearch(o)
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")
         else -> null
@@ -375,3 +404,4 @@ private fun parseSearch(o: JsonObject): EbookEvent.Search? {
 private fun JsonObject.str(key: String) = this[key]?.jsonPrimitive?.contentOrNull
 
 private const val PERCENT = 100f
+private const val MAX_LOOKUP_CHARS = 64

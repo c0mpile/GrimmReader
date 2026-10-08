@@ -46,6 +46,7 @@ import com.c0mpile.grimmreader.feature.library.SidebarDestination
 import com.c0mpile.grimmreader.feature.notebook.NotebookBookScreen
 import com.c0mpile.grimmreader.feature.notebook.NotebookScreen
 import com.c0mpile.grimmreader.feature.reader.ReaderScreen
+import com.c0mpile.grimmreader.feature.settings.DictionariesScreen
 import com.c0mpile.grimmreader.feature.settings.SettingsScreen
 import com.c0mpile.grimmreader.feature.setup.SetupScreen
 import kotlinx.coroutines.launch
@@ -61,6 +62,8 @@ import kotlinx.serialization.Serializable
 ) : NavKey
 
 @Serializable data object SettingsKey : NavKey
+
+@Serializable data object DictionariesKey : NavKey
 
 @Serializable data object NotebookKey : NavKey
 
@@ -217,7 +220,14 @@ private fun Screens(
                     )
                 }
                 entry<DownloadsKey> { DownloadsScreen(onOpenBook = { backStack.add(BookKey(it)) }) }
-                entry<SettingsKey> { SettingsScreen(versionName, onConnectServer = { backStack.add(SetupKey) }) }
+                entry<SettingsKey> {
+                    SettingsScreen(
+                        versionName,
+                        onConnectServer = { backStack.add(SetupKey) },
+                        onOpenDictionaries = { backStack.add(DictionariesKey) },
+                    )
+                }
+                entry<DictionariesKey> { DictionariesScreen(onBack = { backStack.removeLastOrNull() }) }
                 entry<SetupKey> { SetupScreen(devServerUrl = devServerUrl, onDone = { go(SidebarDestination.Dashboard) }) }
                 entry<BookKey> { key ->
                     BookDetailScreen(
@@ -226,7 +236,13 @@ private fun Screens(
                         onRead = { backStack.add(ReaderKey(it)) },
                     )
                 }
-                entry<ReaderKey> { key -> ReaderScreen(key.bookId, onBack = { backStack.removeLastOrNull() }) }
+                entry<ReaderKey> { key ->
+                    ReaderScreen(
+                        key.bookId,
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenDictionaries = { backStack.add(DictionariesKey) },
+                    )
+                }
             },
     )
 }

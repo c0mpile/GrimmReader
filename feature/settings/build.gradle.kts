@@ -7,5 +7,6 @@ android {
 }
 
 dependencies {
+    implementation(projects.core.dictionary)
     implementation(libs.androidx.activity.compose)
 }

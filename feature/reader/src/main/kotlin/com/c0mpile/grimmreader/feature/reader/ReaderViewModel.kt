@@ -9,6 +9,7 @@ import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.progress.RemotePosition
 import com.c0mpile.grimmreader.core.data.stream.OnlineReading
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
+import com.c0mpile.grimmreader.core.dictionary.Dictionaries
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.model.BookFile
@@ -114,6 +115,7 @@ class ReaderViewModel
         private val online: OnlineReading,
         private val documents: DocumentStore,
         private val bookmarkRepo: BookmarkRepository,
+        private val dictionaries: Dictionaries,
         notebook: NotebookRepository,
         prefs: AppPreferences,
     ) : ViewModel() {
@@ -134,6 +136,9 @@ class ReaderViewModel
         private var ebookChapter: String? = null
         private var ebookBookmarkCfi: String? = null
         private var pageAt: Int? = null
+
+        /** The dictionary sheet for long-pressed words. */
+        val lookups = WordLookups(viewModelScope, dictionaries)
 
         /** Search and the server notebook, for the side panels. */
         val panels = PanelData(viewModelScope, notebook)
