@@ -58,10 +58,16 @@ class DocumentStore
          * Book files under [tree], subfolders included (hidden ones skipped, at most [MAX_DEPTH] deep). Throws
          * [IOException] when the folder can't be listed, so callers never mistake that for an empty folder.
          */
-        fun listBooks(tree: String): List<FolderDocument> {
+        fun listBooks(tree: String): List<FolderDocument> = listFiles(tree) { isBookName(it) }
+
+        /** Like [listBooks], for the files whose name [accept] takes. */
+        fun listFiles(
+            tree: String,
+            accept: (String) -> Boolean,
+        ): List<FolderDocument> {
             val uri = Uri.parse(tree)
             val found = mutableListOf<FolderDocument>()
-            walk(uri, DocumentsContract.getTreeDocumentId(uri), 0, found)
+            walk(uri, DocumentsContract.getTreeDocumentId(uri), 0, accept, found)
             return found
         }
 
@@ -69,6 +75,7 @@ class DocumentStore
             tree: Uri,
             parentId: String,
             depth: Int,
+            accept: (String) -> Boolean,
             found: MutableList<FolderDocument>,
         ) {
             val dirs = mutableListOf<String>()
@@ -76,11 +83,11 @@ class DocumentStore
                 if (child.name.startsWith(".")) continue
                 if (child.isDir) {
                     dirs += child.id
-                } else if (isBookName(child.name)) {
+                } else if (accept(child.name)) {
                     found += FolderDocument(DocumentsContract.buildDocumentUriUsingTree(tree, child.id).toString(), child.name, child.size)
                 }
             }
-            if (depth < MAX_DEPTH) dirs.forEach { walk(tree, it, depth + 1, found) }
+            if (depth < MAX_DEPTH) dirs.forEach { walk(tree, it, depth + 1, accept, found) }
         }
 
         private class Child(
