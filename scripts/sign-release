@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Signs the release APK so it can be installed (optionally builds it first, optionally installs it).
+#   -b  build the release APK first (scripts/grbuild -r)
+#   -i  install the signed APK on the connected device(s) afterwards
+# The keystore is private and untracked. It is read from GRIMMREADER_KEYSTORE_PROPERTIES, default
+# .local/signing/keystore.properties (storeFile=, alias=, password=). Passwords are never printed.
+# Output: .local/apk/GrimmReader-<version>-<commit>-release.apk
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")/.."
+
+build=false
+install=false
+while getopts "bi" opt; do
+    case "$opt" in
+        b) build=true ;;
+        i) install=true ;;
+        *) echo "usage: sign-release [-b] [-i]" >&2; exit 2 ;;
+    esac
+done
+
+props="${GRIMMREADER_KEYSTORE_PROPERTIES:-.local/signing/keystore.properties}"
+[[ -f $props ]] || { echo "sign-release: $props not found" >&2; exit 1; }
+prop() { grep -m1 "^$1=" "$props" | cut -d= -f2-; }
+store=$(prop storeFile)
+alias_name=$(prop alias)
+KS_PW=$(prop password)
+export KS_PW
+[[ -f $store ]] || { echo "sign-release: keystore $store not found" >&2; exit 1; }
+
+[[ $build == true ]] && scripts/grbuild -r > /dev/null
+
+unsigned=$(ls app/build/outputs/apk/release/*-unsigned.apk 2>/dev/null | head -1 || true)
+[[ -n $unsigned ]] || { echo "sign-release: no unsigned release APK; run with -b" >&2; exit 1; }
+
+version=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/' || true)
+out=".local/apk/GrimmReader-${version:-dev}-$(git rev-parse --short HEAD)-release.apk"
+mkdir -p .local/apk
+aligned=$(mktemp --suffix=.apk)
+trap 'rm -f "$aligned"' EXIT
+rm -f "$aligned" "$out"
+zipalign -P 16 -f 4 "$unsigned" "$aligned"
+apksigner sign --ks "$store" --ks-key-alias "$alias_name" \
+    --ks-pass env:KS_PW --key-pass env:KS_PW --out "$out" "$aligned"
+apksigner verify "$out" > /dev/null
+rm -f "$out.idsig"
+ls -lh "$out"
+
+if [[ $install == true ]]; then
+    adb install -r "$out"
+fi
