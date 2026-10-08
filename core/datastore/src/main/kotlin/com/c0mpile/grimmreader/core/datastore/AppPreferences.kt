@@ -51,6 +51,8 @@ class AppPreferences(
                 tapToTurn = p[TAP_TO_TURN] ?: defaults.tapToTurn,
                 swipeToTurn = p[SWIPE_TO_TURN] ?: defaults.swipeToTurn,
                 turnZone = p[TURN_ZONE] ?: defaults.turnZone,
+                guidedView = p[GUIDED_VIEW] ?: defaults.guidedView,
+                guidedFullPage = p[GUIDED_FULL_PAGE] ?: defaults.guidedFullPage,
             )
         }
 
@@ -123,6 +125,8 @@ class AppPreferences(
             it[TAP_TO_TURN] = prefs.tapToTurn
             it[SWIPE_TO_TURN] = prefs.swipeToTurn
             it[TURN_ZONE] = prefs.turnZone
+            it[GUIDED_VIEW] = prefs.guidedView
+            it[GUIDED_FULL_PAGE] = prefs.guidedFullPage
         }
     }
 
@@ -155,6 +159,8 @@ class AppPreferences(
         val TAP_TO_TURN = booleanPreferencesKey("reader_tap_to_turn")
         val SWIPE_TO_TURN = booleanPreferencesKey("reader_swipe_to_turn")
         val TURN_ZONE = intPreferencesKey("reader_turn_zone")
+        val GUIDED_VIEW = booleanPreferencesKey("reader_guided_view")
+        val GUIDED_FULL_PAGE = booleanPreferencesKey("reader_guided_full_page")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
