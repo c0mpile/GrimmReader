@@ -138,6 +138,17 @@ data class DownloadEntity(
     val updatedAt: Long,
 )
 
+/** A download joined with the book it belongs to (with what the cover lookup needs). */
+data class DownloadWithBook(
+    @Embedded val download: DownloadEntity,
+    val bookId: Long,
+    val title: String,
+    val serverRowId: Long?,
+    val serverBookId: Long?,
+    val coverUpdatedOn: String?,
+    val format: BookFormat,
+)
+
 data class BookWithFiles(
     @Embedded val book: BookEntity,
     @Relation(parentColumn = "id", entityColumn = "bookId") val files: List<BookFileEntity>,

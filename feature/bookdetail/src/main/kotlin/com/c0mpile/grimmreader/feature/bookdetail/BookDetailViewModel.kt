@@ -64,17 +64,19 @@ class BookDetailViewModel
                 )
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BookDetailUiState())
 
-        fun download() {
-            state.value.book
-                ?.primaryFile
-                ?.let { downloads.enqueue(it.id) }
-        }
+        fun download() =
+            viewModelScope.launch {
+                state.value.book
+                    ?.primaryFile
+                    ?.let { downloads.enqueue(it.id) }
+            }
 
-        fun cancelDownload() {
-            state.value.book
-                ?.primaryFile
-                ?.let { downloads.cancel(it.id) }
-        }
+        fun cancelDownload() =
+            viewModelScope.launch {
+                state.value.book
+                    ?.primaryFile
+                    ?.let { downloads.cancel(it.id) }
+            }
 
         fun removeLocalCopy(onRemoved: () -> Unit) =
             viewModelScope.launch {

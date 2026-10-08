@@ -2,9 +2,11 @@ package com.c0mpile.grimmreader.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.c0mpile.grimmreader.core.data.download.DownloadRepository
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
+import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.Library
 import com.c0mpile.grimmreader.core.model.LibraryScope
@@ -31,6 +33,8 @@ sealed interface SidebarDestination {
 
     data object Notebook : SidebarDestination
 
+    data object Downloads : SidebarDestination
+
     data object Settings : SidebarDestination
 }
 
@@ -44,6 +48,9 @@ data class SidebarState(
     val onDevice: Int = 0,
     val unshelved: Int = 0,
     val shelves: List<Shelf> = emptyList(),
+    /** Downloads running or waiting; the Downloads entry shows while there is a server or any download. */
+    val activeDownloads: Int = 0,
+    val hasDownloads: Boolean = false,
 )
 
 @HiltViewModel
@@ -52,6 +59,7 @@ class SidebarViewModel
     constructor(
         library: LibraryRepository,
         session: ServerSession,
+        downloads: DownloadRepository,
         private val shelfRepo: ShelfRepository,
     ) : ViewModel() {
         val state: StateFlow<SidebarState> =
@@ -60,7 +68,8 @@ class SidebarViewModel
                 library.observeLibraries(),
                 shelfRepo.observe(),
                 session.server,
-            ) { books, libraries, shelves, server ->
+                downloads.observe(),
+            ) { books, libraries, shelves, server, queue ->
                 SidebarState(
                     hasServer = server != null,
                     userName = server?.username,
@@ -71,6 +80,8 @@ class SidebarViewModel
                     onDevice = books.inScope(LibraryScope.OnDevice).size,
                     unshelved = books.inScope(LibraryScope.Unshelved).size,
                     shelves = shelves,
+                    activeDownloads = queue.count { it.state in ACTIVE },
+                    hasDownloads = queue.isNotEmpty(),
                 )
             }.flowOn(Dispatchers.Default)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SidebarState())
@@ -81,5 +92,6 @@ class SidebarViewModel
 
         private companion object {
             const val STOP_TIMEOUT_MS = 5_000L
+            val ACTIVE = setOf(DownloadState.QUEUED, DownloadState.RUNNING, DownloadState.PAUSED)
         }
     }

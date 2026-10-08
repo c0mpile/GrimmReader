@@ -12,6 +12,8 @@ import com.c0mpile.grimmreader.core.database.entity.BookShelfEntity
 import com.c0mpile.grimmreader.core.database.entity.BookWithFiles
 import com.c0mpile.grimmreader.core.database.entity.BookmarkEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
+import com.c0mpile.grimmreader.core.database.entity.DownloadState
+import com.c0mpile.grimmreader.core.database.entity.DownloadWithBook
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
@@ -229,6 +231,38 @@ interface DownloadDao {
 
     @Query("SELECT * FROM download ORDER BY id")
     fun observeAll(): Flow<List<DownloadEntity>>
+
+    /** Every download with its book, for the download queue. */
+    @Query(
+        """
+        SELECT download.*, book.id AS bookId, book.title AS title, book.serverRowId AS serverRowId,
+        book.serverBookId AS serverBookId, book.coverUpdatedOn AS coverUpdatedOn, book_file.format AS format
+        FROM download
+        JOIN book_file ON book_file.id = download.bookFileId
+        JOIN book ON book.id = book_file.bookId
+        ORDER BY download.id
+        """,
+    )
+    fun observeQueue(): Flow<List<DownloadWithBook>>
+
+    /** Updates an existing row only, so a worker never brings back a download that was cancelled meanwhile. */
+    @Query(
+        """
+        UPDATE download SET state = :state, bytesDone = :done, bytesTotal = COALESCE(:total, bytesTotal), error = :error,
+        updatedAt = :now WHERE bookFileId = :bookFileId
+        """,
+    )
+    suspend fun update(
+        bookFileId: Long,
+        state: DownloadState,
+        done: Long,
+        total: Long?,
+        error: String?,
+        now: Long,
+    )
+
+    @Query("DELETE FROM download WHERE state = 'DONE'")
+    suspend fun deleteFinished()
 
     @Query("DELETE FROM download WHERE bookFileId = :bookFileId")
     suspend fun delete(bookFileId: Long)
