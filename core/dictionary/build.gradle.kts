@@ -6,6 +6,7 @@ plugins {
 
 android {
     namespace = "com.c0mpile.grimmreader.core.dictionary"
+    defaultConfig { consumerProguardFiles("consumer-rules.pro") }
 }
 
 dependencies {

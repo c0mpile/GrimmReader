@@ -82,6 +82,9 @@ class DictionaryDownloads
                         throw e
                     } catch (e: IOException) {
                         set(entry.id, DictionaryDownload.Failed(e.message?.takeIf { it.isNotBlank() } ?: "Download failed"))
+                    } catch (e: LinkageError) {
+                        // A decompressor's native code failed to load; report it instead of crashing the app.
+                        set(entry.id, DictionaryDownload.Failed("Unpacking is not supported on this device (${e.javaClass.simpleName})."))
                     } finally {
                         file.delete()
                     }
