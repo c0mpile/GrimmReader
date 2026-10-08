@@ -66,6 +66,8 @@ internal fun BookSummaryDto.toEntity(
         lastReadAt = parseInstant(lastReadTime) ?: existing?.lastReadAt,
     )
 
+internal fun BookEntity.withoutProgress() = copy(progressPercent = null, lastReadAt = null, readStatus = ReadStatus.UNREAD)
+
 fun BookWithFiles.toDomain(coverModel: (BookEntity) -> String?): Book =
     Book(
         id = book.id,

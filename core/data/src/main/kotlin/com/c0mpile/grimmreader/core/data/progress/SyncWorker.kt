@@ -31,13 +31,22 @@ class SyncWorker
     ) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
             val api = session.api() ?: return Result.success()
-            for (op in outbox.due(System.currentTimeMillis())) {
+            val ops = outbox.due(System.currentTimeMillis())
+            val sent = HashSet<Long>()
+            for (op in ops) {
+                if (op.id in sent) continue
+                // Every queued reset goes together (in bulk when allowed). Moving them ahead is safe: a reset drops
+                // its book's older progress op, so any progress op for the same book comes after it anyway.
+                val batch =
+                    if (op.kind == ProgressRepository.KIND_RESET) ops.filter { it.kind == op.kind && it.id !in sent } else listOf(op)
                 val done =
                     try {
                         when (op.kind) {
-                            ProgressRepository.KIND_PROGRESS -> pushProgress(op, api)
-                            ShelfRepository.KIND_ASSIGN -> shelves.push(op, api)
-                            else -> bookmarks.push(op, api)
+                            ProgressRepository.KIND_PROGRESS -> batch.takeIf { pushProgress(op, api) }.orEmpty()
+                            ProgressRepository.KIND_RESET ->
+                                ProgressRepository.pushResets(batch, api, session.permissions.value.canBulkResetProgress)
+                            ShelfRepository.KIND_ASSIGN -> batch.takeIf { shelves.push(op, api) }.orEmpty()
+                            else -> batch.takeIf { bookmarks.push(op, api) }.orEmpty()
                         }
                     } catch (_: IOException) {
                         session.reportOffline(true)
@@ -45,8 +54,11 @@ class SyncWorker
                     } catch (_: HttpException) {
                         return Result.retry()
                     }
-                if (!done) return Result.retry()
-                outbox.delete(op.id)
+                done.forEach {
+                    outbox.delete(it.id)
+                    sent += it.id
+                }
+                if (done.size < batch.size) return Result.retry()
             }
             session.reportOffline(false)
             return Result.success()
