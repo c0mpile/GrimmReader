@@ -7,6 +7,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import dagger.Lazy
@@ -42,6 +43,7 @@ class GrimmApplication :
         ImageLoader
             .Builder(context)
             .components { add(OkHttpNetworkFetcherFactory(callFactory = { session.get().authedClient() })) }
+            .memoryCache { MemoryCache.Builder().maxSizePercent(context, MEMORY_CACHE_PERCENT).build() }
             .diskCache {
                 DiskCache
                     .Builder()
@@ -51,6 +53,8 @@ class GrimmApplication :
             }.build()
 
     private companion object {
+        // Coil's default is 25 %: a library of hundreds of covers does not fit, so covers scrolled past reload.
+        const val MEMORY_CACHE_PERCENT = 0.4
         const val COVER_CACHE_BYTES = 512L * 1024 * 1024
     }
 }
