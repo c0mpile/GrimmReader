@@ -37,6 +37,9 @@ class DocumentStore
             runCatching { resolver.releasePersistableUriPermission(Uri.parse(tree), FLAGS) }
         }
 
+        /** Every folder the app holds a persisted grant for. */
+        fun grantedTrees(): List<String> = resolver.persistedUriPermissions.map { it.uri.toString() }
+
         /** False once the user revoked the grant or the volume is gone. */
         fun hasAccess(tree: String): Boolean = resolver.persistedUriPermissions.any { it.uri.toString() == tree && it.isReadPermission }
 

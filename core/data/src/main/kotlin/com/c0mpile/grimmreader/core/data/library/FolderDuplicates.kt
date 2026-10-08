@@ -16,7 +16,8 @@ import javax.inject.Inject
  * owns (an imported file or a server download in app storage, or a download it saved to the download folder),
  * the folder file is kept and the app's copy deleted. A server book stays the entry and now reads the folder
  * file, so its sync keeps working; between two local entries the one read most recently stays. Files in book
- * folders are the user's and are never deleted here, even when two of them are identical.
+ * folders are the user's and are never deleted here, even when two of them are identical. A server book that is
+ * not downloaded but whose content is known (an earlier download or merge) is linked to the folder file too.
  */
 class FolderDuplicates
     @Inject
@@ -40,16 +41,17 @@ class FolderDuplicates
                 val copy =
                     fileDao
                         .byPartialMd5(folderFile.partialMd5!!)
-                        .firstOrNull { it.id != folderFile.id && isAppCopy(it, bookFolders, downloadFolder) }
-                        ?: continue
-                val copyIsServer = bookDao.get(copy.bookId)?.book?.source == BookSource.SERVER
-                if (copyIsServer || lastRead(copy.bookId) >= lastRead(folderFile.bookId)) {
+                        .firstOrNull {
+                            it.id != folderFile.id &&
+                                (isAppCopy(it, bookFolders, downloadFolder) || (it.localUri == null && isServer(it)))
+                        } ?: continue
+                if (isServer(copy) || lastRead(copy.bookId) >= lastRead(folderFile.bookId)) {
                     fileDao.setLocal(copy.id, folderFile.localUri, folderFile.sizeBytes, folderFile.partialMd5)
                     forget(folderFile.bookId)
                 } else {
                     forget(copy.bookId)
                 }
-                files.deleteBookFile(copy.localUri!!)
+                copy.localUri?.let(files::deleteBookFile)
                 merged++
             }
             return merged
@@ -71,6 +73,8 @@ class FolderDuplicates
             files.coverFile(bookId).delete()
             bookDao.delete(bookId)
         }
+
+        private suspend fun isServer(file: BookFileEntity) = bookDao.get(file.bookId)?.book?.source == BookSource.SERVER
 
         private suspend fun isLocal(file: BookFileEntity) = bookDao.get(file.bookId)?.book?.source == BookSource.LOCAL
 
