@@ -8,4 +8,6 @@ data class Bookmark(
     val title: String,
     /** 0..100 when known (made on this device). */
     val percent: Float?,
+    /** Epoch ms. */
+    val createdAt: Long = 0,
 )

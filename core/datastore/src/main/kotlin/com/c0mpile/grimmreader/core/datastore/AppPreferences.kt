@@ -40,6 +40,9 @@ class AppPreferences(
                 justify = p[JUSTIFY] ?: defaults.justify,
                 hyphenate = p[HYPHENATE] ?: defaults.hyphenate,
                 maxColumnCount = p[COLUMNS] ?: defaults.maxColumnCount,
+                gap = p[GAP] ?: defaults.gap,
+                maxInlineSize = p[MAX_INLINE] ?: defaults.maxInlineSize,
+                maxBlockSize = p[MAX_BLOCK] ?: defaults.maxBlockSize,
                 theme = p[READER_THEME] ?: defaults.theme,
                 pageTheme = enumOr(p[PAGE_THEME], defaults.pageTheme),
                 einkTint = enumOr(p[EINK_TINT], defaults.einkTint),
@@ -106,6 +109,9 @@ class AppPreferences(
             it[JUSTIFY] = prefs.justify
             it[HYPHENATE] = prefs.hyphenate
             it[COLUMNS] = prefs.maxColumnCount
+            it[GAP] = prefs.gap
+            it[MAX_INLINE] = prefs.maxInlineSize
+            it[MAX_BLOCK] = prefs.maxBlockSize
             it[READER_THEME] = prefs.theme
             it[PAGE_THEME] = prefs.pageTheme.name
             it[EINK_TINT] = prefs.einkTint.name
@@ -127,7 +133,12 @@ class AppPreferences(
         val LINE_HEIGHT = floatPreferencesKey("reader_line_height")
         val JUSTIFY = booleanPreferencesKey("reader_justify")
         val HYPHENATE = booleanPreferencesKey("reader_hyphenate")
-        val COLUMNS = intPreferencesKey("reader_columns")
+
+        // New key: the old "reader_columns" held 1 without being applied (foliate used its own 2).
+        val COLUMNS = intPreferencesKey("reader_max_columns")
+        val GAP = floatPreferencesKey("reader_gap")
+        val MAX_INLINE = intPreferencesKey("reader_max_inline_size")
+        val MAX_BLOCK = intPreferencesKey("reader_max_block_size")
         val READER_THEME = stringPreferencesKey("reader_theme")
         val PAGE_THEME = stringPreferencesKey("reader_page_theme")
 

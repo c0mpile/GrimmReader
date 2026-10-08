@@ -23,7 +23,12 @@ data class ReaderPrefs(
     val lineHeight: Float = 1.5f,
     val justify: Boolean = true,
     val hyphenate: Boolean = true,
-    val maxColumnCount: Int = 1,
+    /** Page layout (foliate paginator): columns side by side when wide enough, gap between them (0..1). */
+    val maxColumnCount: Int = 2,
+    val gap: Float = 0.05f,
+    /** Largest text column width and page height in CSS px. */
+    val maxInlineSize: Int = 720,
+    val maxBlockSize: Int = 1440,
     val theme: String = "default",
     val pageTheme: PageTheme = PageTheme.DARK,
     /** E-ink page options, used only when [pageTheme] is [PageTheme.EINK]. */

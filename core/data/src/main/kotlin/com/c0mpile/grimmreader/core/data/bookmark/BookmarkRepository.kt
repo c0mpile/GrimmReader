@@ -50,7 +50,7 @@ class BookmarkRepository
                 rows
                     .sortedWith(
                         compareBy<BookmarkEntity, Int?>(nullsLast()) { it.page }.thenBy(nullsLast()) { it.percent }.thenBy { it.createdAt },
-                    ).map { Bookmark(it.id, it.cfi, it.page, it.title, it.percent) }
+                    ).map { Bookmark(it.id, it.cfi, it.page, it.title, it.percent, it.createdAt) }
             }
 
         /** Adds a bookmark at [cfi] (ebooks) or [page] (1-based). */

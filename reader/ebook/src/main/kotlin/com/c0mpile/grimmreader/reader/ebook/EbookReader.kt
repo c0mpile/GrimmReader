@@ -25,9 +25,11 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.Locator
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.intOrNull
@@ -42,9 +44,37 @@ data class TocEntry(
     val depth: Int = 0,
 )
 
+/** Paginator layout (the web's `gap`, `maxColumnCount`, `maxInlineSize`, `maxBlockSize`). */
+@Serializable
+data class EbookLayout(
+    val gap: Float,
+    val columns: Int,
+    val maxInlineSize: Int,
+    val maxBlockSize: Int,
+)
+
+/** One search hit: [match] with some text before and after it. */
+data class SearchHit(
+    val cfi: String,
+    val pre: String,
+    val match: String,
+    val post: String,
+)
+
 sealed interface EbookEvent {
+    /** [sections] are where the book's sections start, as fractions 0..1 of the whole book. */
     data class Ready(
         val toc: List<TocEntry>,
+        val sections: List<Float> = emptyList(),
+    ) : EbookEvent
+
+    /** Search progress for search [id]: hits in one chapter ([label]), [progress] 0..1, or [done]. */
+    data class Search(
+        val id: Int,
+        val label: String? = null,
+        val hits: List<SearchHit> = emptyList(),
+        val progress: Float? = null,
+        val done: Boolean = false,
     ) : EbookEvent
 
     /**
@@ -86,6 +116,16 @@ class EbookController {
 
     fun setAnimated(on: Boolean) = call("grimm_api.setAnimated($on)")
 
+    fun setLayout(layout: EbookLayout) = call("grimm_api.setLayout(${Json.encodeToString(layout)})")
+
+    /** Searches the whole book; results arrive as [EbookEvent.Search] carrying [id]. */
+    fun search(
+        query: String,
+        id: Int,
+    ) = call("grimm_api.search(${Json.encodeToString(query)}, $id)")
+
+    fun clearSearch() = call("grimm_api.clearSearch()")
+
     /** The page answers with [EbookEvent.BookmarkHere]. */
     fun setBookmarks(cfis: List<String>) = call("grimm_api.setBookmarks(${Json.encodeToString(cfis)})")
 
@@ -109,6 +149,7 @@ fun EbookReader(
     fileName: String,
     initialCfi: String?,
     css: String,
+    layout: EbookLayout,
     animated: Boolean,
     controller: EbookController,
     onEvent: (EbookEvent) -> Unit,
@@ -116,7 +157,7 @@ fun EbookReader(
     modifier: Modifier = Modifier,
 ) {
     val events by rememberUpdatedState(onEvent)
-    val startUrl = remember(book) { startUrl(fileName, initialCfi, css, animated) }
+    val startUrl = remember(book) { startUrl(fileName, initialCfi, css, layout, animated) }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -126,6 +167,7 @@ fun EbookReader(
     }
     LaunchedEffect(css) { controller.setStyle(css) }
     LaunchedEffect(animated) { controller.setAnimated(animated) }
+    LaunchedEffect(layout) { controller.setLayout(layout) }
     DisposableEffect(Unit) {
         onDispose {
             controller.webView?.destroy()
@@ -138,6 +180,7 @@ private fun startUrl(
     fileName: String,
     initialCfi: String?,
     css: String,
+    layout: EbookLayout,
     animated: Boolean,
 ): String =
     Uri
@@ -147,6 +190,7 @@ private fun startUrl(
         .appendQueryParameter("animated", if (animated) "1" else "0")
         .apply { if (initialCfi != null) appendQueryParameter("cfi", initialCfi) }
         .appendQueryParameter("css", css)
+        .appendQueryParameter("layout", Json.encodeToString(layout))
         .build()
         .toString()
 
@@ -290,6 +334,11 @@ internal fun parse(data: String): EbookEvent? {
                             item["depth"]?.jsonPrimitive?.intOrNull ?: 0,
                         )
                     }.orEmpty(),
+                o["sections"]
+                    ?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.floatOrNull }
+                    ?.filter { it > 0f && it < 1f }
+                    .orEmpty(),
             )
         "relocate" -> {
             val cfi = o.str("cfi") ?: return null
@@ -302,9 +351,31 @@ internal fun parse(data: String): EbookEvent? {
             )
         }
         "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
+        "search" -> parseSearch(o)
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")
         else -> null
     }
+}
+
+private fun parseSearch(o: JsonObject): EbookEvent.Search? {
+    val id = o["id"]?.jsonPrimitive?.intOrNull ?: return null
+    val hits =
+        o["items"]?.jsonArray?.mapNotNull { e ->
+            val item = e as? JsonObject ?: return@mapNotNull null
+            SearchHit(
+                item.str("cfi") ?: return@mapNotNull null,
+                item.str("pre").orEmpty(),
+                item.str("match").orEmpty(),
+                item.str("post").orEmpty(),
+            )
+        }
+    return EbookEvent.Search(
+        id = id,
+        label = o.str("label"),
+        hits = hits.orEmpty(),
+        progress = o["progress"]?.jsonPrimitive?.floatOrNull,
+        done = o["done"]?.jsonPrimitive?.booleanOrNull == true,
+    )
 }
 
 private fun JsonObject.str(key: String) = this[key]?.jsonPrimitive?.contentOrNull
