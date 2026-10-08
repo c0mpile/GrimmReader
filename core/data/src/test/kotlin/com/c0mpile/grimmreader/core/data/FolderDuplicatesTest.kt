@@ -39,7 +39,7 @@ class FolderDuplicatesTest {
 
     private suspend fun book(
         source: BookSource,
-        localUri: String,
+        localUri: String?,
         md5: String = "same",
         readAt: Long? = null,
     ): Long {
@@ -117,6 +117,35 @@ class FolderDuplicatesTest {
 
             assertEquals(1, merger(downloadFolder = downloads).merge(listOf(books)))
             assertEquals(inFolder, uriOf(serverId))
+        }
+
+    @Test fun serverBookNotDownloadedAnyMoreIsLinkedAgain() =
+        runTest {
+            val serverId = book(BookSource.SERVER, localUri = null)
+            val folderId = book(BookSource.LOCAL, inFolder)
+
+            assertEquals(1, merger().merge(listOf(books)))
+
+            assertEquals(inFolder, uriOf(serverId))
+            assertNull(db.bookDao().get(folderId))
+        }
+
+    @Test fun serverBookReadingAnotherUserFileIsLeftAlone() =
+        runTest {
+            val elsewhere = "content://com.android.externalstorage.documents/tree/primary%3AOther/document/primary%3AOther%2Fa.epub"
+            val serverId = book(BookSource.SERVER, elsewhere)
+            val folderId = book(BookSource.LOCAL, inFolder)
+
+            assertEquals(0, merger().merge(listOf(books)))
+            assertEquals(elsewhere, uriOf(serverId))
+            assertEquals(
+                folderId,
+                db
+                    .bookDao()
+                    .get(folderId)
+                    ?.book
+                    ?.id,
+            )
         }
 
     @Test fun userFilesAndOtherContentAreNeverMerged() =

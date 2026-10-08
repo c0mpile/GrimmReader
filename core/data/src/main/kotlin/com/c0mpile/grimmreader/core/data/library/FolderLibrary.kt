@@ -70,13 +70,16 @@ class FolderLibrary
                 .map { it?.let { uri -> BookFolder(uri, documents.folderName(uri), documents.hasAccess(uri)) } }
                 .flowOn(io)
 
-        /** New downloads go to [tree], or app storage when null. Earlier downloads stay where they are. */
+        /**
+         * New downloads go to [tree], or app storage when null. Earlier downloads stay where they are, so the old
+         * folder keeps its grant while any of them is there.
+         */
         suspend fun setDownloadFolder(tree: Uri?) =
             withContext(io) {
                 val old = prefs.downloadFolder.first()
                 tree?.let { documents.persist(it) }
                 prefs.setDownloadFolder(tree?.toString())
-                if (old != null && old != tree?.toString() && old !in prefs.bookFolders.first()) documents.release(old)
+                old?.let { releaseIfUnused(it) }
             }
 
         suspend fun add(tree: Uri): ScanResult {
@@ -88,7 +91,9 @@ class FolderLibrary
         /**
          * Stops scanning [tree] and removes its books from the library; the files themselves stay. A book that
          * another added folder also reaches (a subfolder of [tree]) is kept and moved to that folder's URI, since
-         * [tree]'s grant is released.
+         * [tree]'s grant is released. A server book that read its file from [tree] (a merged duplicate) goes back
+         * to not downloaded, so it offers reading online or downloading again, unless [tree] is also the download
+         * folder (whose grant stays).
          */
         suspend fun remove(tree: String) =
             lock.withLock {
@@ -100,20 +105,28 @@ class FolderLibrary
                             .filter { documents.hasAccess(it) }
                             .flatMap { runCatching { documents.listBooks(it) }.getOrDefault(emptyList()) }
                             .associateBy { documentId(it.uri) }
+                    val downloadFolder = prefs.downloadFolder.first()
                     fileDao
                         .documents()
-                        .filter { file -> inFolder(file, tree) && isLocal(file) }
+                        .filter { file -> inFolder(file, tree) }
                         .forEach { file ->
                             val other = stillReached[documentId(file.localUri!!)]
-                            if (other != null) {
-                                fileDao.setLocal(file.id, other.uri, file.sizeBytes, file.partialMd5)
-                            } else {
-                                library.forgetLocal(file.bookId)
+                            when {
+                                other != null -> fileDao.setLocal(file.id, other.uri, file.sizeBytes, file.partialMd5)
+                                isLocal(file) -> library.forgetLocal(file.bookId)
+                                tree != downloadFolder -> fileDao.setLocal(file.id, null, file.sizeBytes, file.partialMd5)
                             }
                         }
-                    if (prefs.downloadFolder.first() != tree) documents.release(tree)
+                    releaseIfUnused(tree)
                 }
             }
+
+        /** Gives up the grant on [tree] once no folder setting and no book file needs it any more. */
+        private suspend fun releaseIfUnused(tree: String) {
+            if (tree in prefs.bookFolders.first() || tree == prefs.downloadFolder.first()) return
+            if (fileDao.documents().any { inFolder(it, tree) }) return
+            documents.release(tree)
+        }
 
         @Volatile private var lastScanAt = 0L
 
@@ -150,6 +163,8 @@ class FolderLibrary
                     }
                     missing.forEach { library.forgetLocal(it.bookId) }
                     val merged = duplicates.merge(listed.keys)
+                    // Grants kept for earlier downloads go once their last file is removed.
+                    documents.grantedTrees().forEach { releaseIfUnused(it) }
                     lastScanAt = System.currentTimeMillis()
                     ScanResult(added, missing.size, folders.size - listed.size, merged)
                 }
