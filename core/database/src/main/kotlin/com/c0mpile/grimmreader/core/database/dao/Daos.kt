@@ -114,6 +114,9 @@ interface BookFileDao {
     @Query("SELECT * FROM book_file WHERE localUri LIKE 'content://%'")
     suspend fun documents(): List<BookFileEntity>
 
+    @Query("SELECT * FROM book_file WHERE partialMd5 = :md5")
+    suspend fun byPartialMd5(md5: String): List<BookFileEntity>
+
     /** A server's downloads saved to a picked download folder. */
     @Query(
         "SELECT f.* FROM book_file f JOIN book b ON b.id = f.bookId " +

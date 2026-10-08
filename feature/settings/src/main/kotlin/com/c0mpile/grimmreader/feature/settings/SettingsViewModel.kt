@@ -74,6 +74,7 @@ class SettingsViewModel
             listOfNotNull(
                 "$added book(s) added".takeIf { added > 0 },
                 "$removed removed".takeIf { removed > 0 },
+                "$merged duplicate(s) merged".takeIf { merged > 0 },
                 "$unreadableFolders folder(s) could not be read".takeIf { unreadableFolders > 0 },
             ).joinToString(", ").ifEmpty { "No changes" }
 
