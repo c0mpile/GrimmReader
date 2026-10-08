@@ -51,7 +51,7 @@ fun BookCard(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = if (selected || checked == true) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Column(Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
