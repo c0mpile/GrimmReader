@@ -83,6 +83,7 @@ class DatabaseTest {
                     .map { it.book.title }
             assertEquals(listOf("Remote", "Shown"), titles)
             assertEquals(listOf(aside), db.bookFileDao().setAside().map { it.bookId })
+            assertEquals(1, db.bookFileDao().observeSetAsideCount().first())
         }
 
     @Test fun removingServerDetachesBooks() =

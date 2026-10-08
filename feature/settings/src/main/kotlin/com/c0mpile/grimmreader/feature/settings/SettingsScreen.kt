@@ -57,6 +57,7 @@ fun SettingsScreen(
                 onAddBookFolder = viewModel::addBookFolder,
                 onRemoveBookFolder = viewModel::removeBookFolder,
                 onRescan = viewModel::rescan,
+                onForgetRemoved = viewModel::forgetRemovedBooks,
             )
             HorizontalDivider()
             Section("Server")

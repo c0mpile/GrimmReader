@@ -125,6 +125,12 @@ interface BookFileDao {
     )
     suspend fun setAside(): List<BookFileEntity>
 
+    @Query(
+        "SELECT COUNT(DISTINCT f.bookId) FROM book_file f JOIN book b ON b.id = f.bookId " +
+            "WHERE b.source = 'LOCAL' AND f.localUri IS NULL AND f.partialMd5 IS NOT NULL",
+    )
+    fun observeSetAsideCount(): Flow<Int>
+
     @Query("SELECT * FROM book_file WHERE partialMd5 = :md5")
     suspend fun byPartialMd5(md5: String): List<BookFileEntity>
 
