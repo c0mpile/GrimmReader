@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.bookmark.BookmarkRepository
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.notebook.NotebookRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.progress.RemotePosition
 import com.c0mpile.grimmreader.core.data.stream.OnlineReading
@@ -80,6 +81,8 @@ sealed interface ReaderContent {
 
 data class ReaderUiState(
     val title: String = "",
+    val authors: String? = null,
+    val coverUri: String? = null,
     val content: ReaderContent = ReaderContent.Loading,
     val percent: Float? = null,
     val location: String? = null,
@@ -93,6 +96,8 @@ data class ReaderUiState(
     /** Ebook chapters (empty for comics and PDFs) and the label of the chapter being read. */
     val toc: List<TocEntry> = emptyList(),
     val chapter: String? = null,
+    /** Ebooks: where sections start (0..1), marked on the position slider. */
+    val sections: List<Float> = emptyList(),
     /** Comics and PDFs: current 1-based page and page count. */
     val page: Int? = null,
     val pageCount: Int? = null,
@@ -109,6 +114,7 @@ class ReaderViewModel
         private val online: OnlineReading,
         private val documents: DocumentStore,
         private val bookmarkRepo: BookmarkRepository,
+        notebook: NotebookRepository,
         prefs: AppPreferences,
     ) : ViewModel() {
         private val _state = MutableStateFlow(ReaderUiState())
@@ -129,6 +135,9 @@ class ReaderViewModel
         private var ebookBookmarkCfi: String? = null
         private var pageAt: Int? = null
 
+        /** Search and the server notebook, for the side panels. */
+        val panels = PanelData(viewModelScope, notebook)
+
         init {
             viewModelScope.launch { open() }
             bookmarkRepo
@@ -146,7 +155,15 @@ class ReaderViewModel
         private suspend fun open() {
             val book = library.observeBook(bookId).first() ?: return
             val file = book.primaryFile
-            _state.update { it.copy(title = book.title, percent = book.progressPercent) }
+            panels.serverBookId = book.serverId
+            _state.update {
+                it.copy(
+                    title = book.title,
+                    authors = book.authors.joinToString(", ").ifBlank { null },
+                    coverUri = book.coverUri,
+                    percent = book.progressPercent,
+                )
+            }
             val local = progress.local(bookId)
             val content =
                 try {
@@ -247,7 +264,10 @@ class ReaderViewModel
             if (hasPosition) pending.value = locator
         }
 
-        fun onEbookReady(toc: List<TocEntry>) = _state.update { it.copy(toc = toc) }
+        fun onEbookReady(
+            toc: List<TocEntry>,
+            sections: List<Float>,
+        ) = _state.update { it.copy(toc = toc, sections = sections) }
 
         /** The ebook page answered a new bookmark list with the bookmark it shows (or none). */
         fun onEbookBookmarkHere(cfi: String?) {

@@ -1,63 +1,82 @@
 package com.c0mpile.grimmreader.feature.reader
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -69,23 +88,35 @@ import com.c0mpile.grimmreader.core.designsystem.theme.colorFilter
 import com.c0mpile.grimmreader.core.designsystem.theme.palette
 import com.c0mpile.grimmreader.core.designsystem.theme.paperGrain
 import com.c0mpile.grimmreader.core.model.Bookmark
-import com.c0mpile.grimmreader.core.model.EinkTint
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.reader.ebook.EbookController
 import com.c0mpile.grimmreader.reader.ebook.EbookCss
 import com.c0mpile.grimmreader.reader.ebook.EbookEvent
+import com.c0mpile.grimmreader.reader.ebook.EbookLayout
 import com.c0mpile.grimmreader.reader.ebook.EbookReader
 import com.c0mpile.grimmreader.reader.ebook.PageColors
-import com.c0mpile.grimmreader.reader.ebook.TocEntry
 import com.c0mpile.grimmreader.reader.paged.PagedReader
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private const val MIN_FONT = 12
-private const val MAX_FONT = 36
+/** What the reader shows over the page besides its bars; one at a time. */
+private sealed interface Overlay {
+    data object None : Overlay
 
-@OptIn(ExperimentalMaterial3Api::class)
+    data object QuickSettings : Overlay
+
+    data object Settings : Overlay
+
+    data class Left(
+        val tab: LeftTab,
+    ) : Overlay
+
+    data class Right(
+        val tab: RightTab,
+    ) : Overlay
+}
+
 @Composable
 fun ReaderScreen(
     bookId: Long,
@@ -95,10 +126,11 @@ fun ReaderScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.readerPrefs.collectAsStateWithLifecycle()
     var chrome by rememberSaveable { mutableStateOf(true) }
-    var sheet by remember { mutableStateOf<Sheet?>(null) }
+    var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
     val motion = LocalMotionEnabled.current
     val snackbar = remember { SnackbarHostState() }
-    // One controller per ebook view, hoisted so the sheets and the position bar can jump through it.
+    // One controller per ebook view, hoisted so the panels and the position bar can jump through it.
     val ebook = state.content as? ReaderContent.Ebook
     val controller = remember(ebook?.book, ebook?.restoreKey) { EbookController() }
     var pageReady by remember(controller) { mutableStateOf(false) }
@@ -111,25 +143,55 @@ fun ReaderScreen(
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
+    ImmersiveMode(fullscreen)
+    val textSettings = state.content !is ReaderContent.Paged
+    val panelOpen = overlay is Overlay.Left || overlay is Overlay.Right
+    val close = { overlay = Overlay.None }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Content(state.content, prefs, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = { chrome = !chrome })
-        PageOverlays(state, prefs)
+        Box(Modifier.fillMaxSize().then(if (panelOpen) Modifier.blur(PANEL_BLUR) else Modifier)) {
+            Content(state.content, prefs, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = {
+                chrome = !chrome
+                if (overlay == Overlay.QuickSettings) overlay = Overlay.None
+            })
+            PageOverlays(state, prefs)
+        }
         AnimatedVisibility(chrome, enter = if (motion) fadeIn() else fadeIn(snap()), exit = if (motion) fadeOut() else fadeOut(snap())) {
             Chrome(
                 state,
-                onBack = onBack,
-                onToggleBookmark = viewModel::toggleBookmark,
-                onSheet = { sheet = it },
-                onSeekFraction = controller::goToFraction,
-                onSeekPage = viewModel::goToPage,
-            )
+                fullscreen = fullscreen,
+                quickSettings = overlay == Overlay.QuickSettings,
+                actions =
+                    ChromeActions(
+                        onClose = onBack,
+                        onToggleBookmark = viewModel::toggleBookmark,
+                        onOverlay = { overlay = if (overlay == it) Overlay.None else it },
+                        onFullscreen = { fullscreen = !fullscreen },
+                        onPrev = { turnPage(-1, state, controller, viewModel) },
+                        onNext = { turnPage(1, state, controller, viewModel) },
+                        onSeekFraction = controller::goToFraction,
+                        onSeekPage = viewModel::goToPage,
+                    ),
+            ) {
+                QuickSettings(
+                    prefs,
+                    textSettings,
+                    onChange = viewModel::setReaderPrefs,
+                    onMore = { overlay = Overlay.Settings },
+                )
+            }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 48.dp))
+        Panels(
+            overlay,
+            state,
+            viewModel,
+            controller,
+            searchable = ebook != null,
+            onOverlay = { overlay = it },
+        )
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 64.dp))
     }
-    sheet?.let { open ->
-        ModalBottomSheet(onDismissRequest = { sheet = null }) {
-            SheetContent(open, state, prefs, viewModel, controller, onClose = { sheet = null })
-        }
+    if (overlay == Overlay.Settings) {
+        SettingsDialog(prefs, textSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
     }
     state.offer?.let { offer ->
         AlertDialog(
@@ -142,9 +204,109 @@ fun ReaderScreen(
     }
 }
 
-private fun <T> snap() =
-    androidx.compose.animation.core
-        .snap<T>()
+/** The left (contents, bookmarks, highlights) and right (search, notes) panels. */
+@Composable
+private fun BoxScope.Panels(
+    overlay: Overlay,
+    state: ReaderUiState,
+    viewModel: ReaderViewModel,
+    controller: EbookController,
+    searchable: Boolean,
+    onOverlay: (Overlay) -> Unit,
+) {
+    val search by viewModel.panels.search.collectAsStateWithLifecycle()
+    val annotations by viewModel.panels.annotations.collectAsStateWithLifecycle()
+    val close = { onOverlay(Overlay.None) }
+    SidePanel(overlay is Overlay.Left, PanelSide.LEFT, maxWidth = LEFT_PANEL_WIDTH, onDismiss = close) {
+        LeftPanel(
+            state,
+            annotations,
+            tab = (overlay as? Overlay.Left)?.tab ?: LeftTab.CONTENTS,
+            onTab = { onOverlay(Overlay.Left(it)) },
+            onChapter = { entry ->
+                close()
+                controller.goTo(entry.href)
+            },
+            onBookmark = { bookmark ->
+                close()
+                openBookmark(bookmark, controller, viewModel)
+            },
+            onDeleteBookmark = viewModel::removeBookmark,
+            onLoadAnnotations = viewModel.panels::loadAnnotations,
+        )
+    }
+    SidePanel(overlay is Overlay.Right, PanelSide.RIGHT, maxWidth = RIGHT_PANEL_WIDTH, onDismiss = close) {
+        RightPanel(
+            search,
+            annotations,
+            tab = (overlay as? Overlay.Right)?.tab ?: RightTab.SEARCH,
+            canSearch = searchable,
+            onTab = { onOverlay(Overlay.Right(it)) },
+            onSearch = { query -> controller.search(query, viewModel.panels.startSearch(query)) },
+            onClearSearch = {
+                viewModel.panels.clearSearch()
+                controller.clearSearch()
+            },
+            onHit = { hit ->
+                close()
+                controller.goTo(hit.cfi)
+            },
+            onLoadAnnotations = viewModel.panels::loadAnnotations,
+        )
+    }
+}
+
+private val PANEL_BLUR = 6.dp
+private val LEFT_PANEL_WIDTH = 360.dp
+private val RIGHT_PANEL_WIDTH = 400.dp
+
+/** The bottom bar's arrows: ebooks turn through the page script, comics and PDFs restart the pager. */
+private fun turnPage(
+    by: Int,
+    state: ReaderUiState,
+    controller: EbookController,
+    viewModel: ReaderViewModel,
+) {
+    when {
+        state.content is ReaderContent.Ebook -> if (by < 0) controller.prev() else controller.next()
+        else -> state.page?.let { page -> viewModel.goToPage((page + by).coerceIn(1, state.pageCount ?: page)) }
+    }
+}
+
+private fun openBookmark(
+    bookmark: Bookmark,
+    controller: EbookController,
+    viewModel: ReaderViewModel,
+) {
+    val cfi = bookmark.cfi
+    val page = bookmark.page
+    if (cfi != null) {
+        controller.goTo(cfi)
+    } else if (page != null) {
+        viewModel.goToPage(page)
+    }
+}
+
+/** Fullscreen hides the system bars (a swipe from the edge shows them briefly); restored on leaving. */
+@Composable
+private fun ImmersiveMode(on: Boolean) {
+    val activity = LocalContext.current.findActivity() ?: return
+    DisposableEffect(activity, on) {
+        val insets = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        if (on) {
+            insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insets.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose { if (on) insets.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
 
 @Composable
 private fun Content(
@@ -160,6 +322,7 @@ private fun Content(
         is ReaderContent.Ebook -> {
             val page = prefs.pageTheme.palette(prefs.einkTint)
             val css = EbookCss.build(prefs, PageColors(page.background.hex(), page.text.hex(), page.link.hex(), page.images.css()))
+            val layout = EbookLayout(prefs.gap, prefs.maxColumnCount, prefs.maxInlineSize, prefs.maxBlockSize)
             key(content.book, content.restoreKey) {
                 // The page colour also fills the safe-area margins around the book.
                 EbookReader(
@@ -167,17 +330,19 @@ private fun Content(
                     fileName = content.fileName,
                     initialCfi = content.cfi,
                     css = css,
+                    layout = layout,
                     animated = LocalMotionEnabled.current && !page.instantTurns,
                     controller = controller,
                     onEvent = { event ->
                         when (event) {
                             is EbookEvent.Ready -> {
-                                viewModel.onEbookReady(event.toc)
+                                viewModel.onEbookReady(event.toc, event.sections)
                                 onPageReady()
                             }
                             is EbookEvent.Relocated ->
                                 viewModel.onEbookPosition(event.locator, event.tocLabel, event.hasPosition, event.bookmark)
                             is EbookEvent.BookmarkHere -> viewModel.onEbookBookmarkHere(event.cfi)
+                            is EbookEvent.Search -> viewModel.panels.onSearch(event)
                             is EbookEvent.Failed -> Unit
                         }
                     },
@@ -228,303 +393,266 @@ private fun Message(text: String) {
     ) { Text(text, style = MaterialTheme.typography.bodyLarge) }
 }
 
-/** Reader chrome is dark in every theme, like the web reader. */
+private class ChromeActions(
+    val onClose: () -> Unit,
+    val onToggleBookmark: () -> Unit,
+    val onOverlay: (Overlay) -> Unit,
+    val onFullscreen: () -> Unit,
+    val onPrev: () -> Unit,
+    val onNext: () -> Unit,
+    val onSeekFraction: (Float) -> Unit,
+    val onSeekPage: (Int) -> Unit,
+)
+
+/**
+ * The web reader's bars, dark in every page theme. Top: contents, bookmark, search | title | notes,
+ * fullscreen, settings, close. Bottom: previous, position, slider with section marks, next. The quick
+ * settings popover hangs under the settings button.
+ */
 @Composable
 private fun Chrome(
     state: ReaderUiState,
-    onBack: () -> Unit,
-    onToggleBookmark: () -> Unit,
-    onSheet: (Sheet) -> Unit,
-    onSeekFraction: (Float) -> Unit,
-    onSeekPage: (Int) -> Unit,
+    fullscreen: Boolean,
+    quickSettings: Boolean,
+    actions: ChromeActions,
+    popover: @Composable () -> Unit,
 ) {
     val canRead = state.content is ReaderContent.Ebook || state.content is ReaderContent.Paged
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(Color(0xE6171717))
-                .safeDrawingPadding()
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) { Icon(LucideIcons.ArrowLeft, contentDescription = "Back", tint = Color.White) }
-            Text(state.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (canRead) {
-                val marked = state.bookmarkHere != null
-                IconButton(onClick = onToggleBookmark) {
-                    Icon(
-                        if (marked) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
-                        contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
-                        tint = if (marked) CHROME_ACCENT else Color.White,
-                    )
-                }
-                IconButton(onClick = { onSheet(Sheet.BOOKMARKS) }) {
-                    Icon(LucideIcons.BookBookmark, contentDescription = "Bookmarks", tint = Color.White)
-                }
-            }
-            if (state.toc.isNotEmpty()) {
-                IconButton(
-                    onClick = { onSheet(Sheet.CONTENTS) },
-                ) { Icon(LucideIcons.List, contentDescription = "Chapters", tint = Color.White) }
-            }
-            IconButton(onClick = { onSheet(Sheet.SETTINGS) }) {
-                Icon(LucideIcons.Settings, contentDescription = "Reading settings", tint = Color.White)
+        TopBar(state, fullscreen, quickSettings, actions)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (quickSettings) {
+                // Taps outside the popover close it instead of turning the page.
+                Box(
+                    Modifier.fillMaxSize().clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { actions.onOverlay(Overlay.QuickSettings) },
+                )
+                Box(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp)) { popover() }
             }
         }
-        Box(Modifier.weight(1f))
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Color(0xE6171717))
-                .safeDrawingPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            PositionBar(state, onSeekFraction, onSeekPage)
+        if (canRead) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(CHROME_BG)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+                    .height(56.dp)
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ChromeButton(LucideIcons.ChevronLeft, "Previous page", onClick = actions.onPrev)
+                PositionBar(state, actions.onSeekFraction, actions.onSeekPage, Modifier.weight(1f))
+                ChromeButton(LucideIcons.ChevronRight, "Next page", onClick = actions.onNext)
+            }
         }
     }
 }
 
+/** Contents, bookmark, search | title and chapter | notes, fullscreen, settings, close. */
+@Composable
+private fun TopBar(
+    state: ReaderUiState,
+    fullscreen: Boolean,
+    quickSettings: Boolean,
+    actions: ChromeActions,
+) {
+    val canRead = state.content is ReaderContent.Ebook || state.content is ReaderContent.Paged
+    val ebook = state.content is ReaderContent.Ebook
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(CHROME_BG)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .height(52.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (canRead) {
+            ChromeButton(LucideIcons.Menu, "Contents and bookmarks") { actions.onOverlay(Overlay.Left(LeftTab.CONTENTS)) }
+            val marked = state.bookmarkHere != null
+            ChromeButton(
+                if (marked) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
+                if (marked) "Remove bookmark" else "Add bookmark",
+                tint = if (marked) CHROME_ACCENT else CHROME_FG,
+                onClick = actions.onToggleBookmark,
+            )
+            if (ebook) ChromeButton(LucideIcons.Search, "Search") { actions.onOverlay(Overlay.Right(RightTab.SEARCH)) }
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                state.title,
+                color = CHROME_FG,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            state.location?.takeIf { it.isNotBlank() && ebook }?.let {
+                Text(
+                    it,
+                    color = CHROME_MUTED,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (canRead) {
+            ChromeButton(LucideIcons.FileText, "Notes") { actions.onOverlay(Overlay.Right(RightTab.NOTES)) }
+            ChromeButton(
+                if (fullscreen) LucideIcons.Minimize else LucideIcons.Maximize,
+                if (fullscreen) "Exit fullscreen" else "Fullscreen",
+                onClick = actions.onFullscreen,
+            )
+            ChromeButton(
+                LucideIcons.Settings,
+                "Reading settings",
+                tint = if (quickSettings) CHROME_ACCENT else CHROME_FG,
+            ) { actions.onOverlay(Overlay.QuickSettings) }
+        }
+        ChromeButton(LucideIcons.X, "Close book", onClick = actions.onClose)
+    }
+}
+
+@Composable
+private fun ChromeButton(
+    icon: ImageVector,
+    description: String,
+    tint: Color = CHROME_FG,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
+        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(22.dp))
+    }
+}
+
 /**
- * Where the reader is, with a slider to jump: by page for comics and PDFs, by position (0..100 %) for ebooks.
- * While dragging, the labels show the target; the jump happens on release.
+ * Position box ("11%", or "3 / 40" for comics and PDFs) and a slider to jump; ebooks mark where sections
+ * start. While dragging, the box shows the target; the jump happens on release.
  */
 @Composable
 private fun PositionBar(
     state: ReaderUiState,
     onSeekFraction: (Float) -> Unit,
     onSeekPage: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var drag by remember { mutableStateOf<Float?>(null) }
     val pages = state.pageCount?.takeIf { state.content is ReaderContent.Paged && it > 1 }
-    val (left, right) = positionLabels(state, drag, pages)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(left, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        right?.let { Text(it, color = Color.White.copy(alpha = 0.7f)) }
-    }
-    when {
-        pages != null ->
-            SeekSlider(drag ?: (state.page ?: 1).toFloat(), 1f..pages.toFloat(), steps = (pages - 2).coerceAtLeast(0), { drag = it }) {
-                drag?.let { onSeekPage(it.roundToInt()) }
+    val fraction =
+        when {
+            pages != null -> ((state.page ?: 1) - 1f) / (pages - 1)
+            else -> (state.percent ?: 0f) / PERCENT
+        }
+    val shown = drag ?: fraction
+    val label =
+        if (pages != null) {
+            "${(shown * (pages - 1)).roundToInt() + 1} / $pages"
+        } else {
+            "${(shown * PERCENT).roundToInt()}%"
+        }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        val shape = RoundedCornerShape(6.dp)
+        Text(
+            label,
+            color = CHROME_FG,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier =
+                Modifier
+                    .widthIn(min = 64.dp)
+                    .clip(shape)
+                    .background(Color.White.copy(alpha = 0.06f))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+        PositionTrack(
+            value = shown,
+            marks = if (pages == null) state.sections else emptyList(),
+            onDrag = { drag = it },
+            onRelease = {
+                drag?.let { target ->
+                    if (pages != null) onSeekPage((target * (pages - 1)).roundToInt() + 1) else onSeekFraction(target)
+                }
                 drag = null
-            }
-        state.content is ReaderContent.Ebook ->
-            SeekSlider(drag ?: ((state.percent ?: 0f) / PERCENT), 0f..1f, steps = 0, { drag = it }) {
-                drag?.let(onSeekFraction)
-                drag = null
-            }
+            },
+            modifier = Modifier.weight(1f).padding(start = 12.dp, end = 4.dp),
+        )
     }
 }
 
-/** Left and right labels: the current location, or the target while dragging. */
-private fun positionLabels(
-    state: ReaderUiState,
-    target: Float?,
-    pages: Int?,
-): Pair<String, String?> =
-    when {
-        target == null && pages != null -> state.location.orEmpty() to null
-        target == null -> state.location.orEmpty() to state.percent?.let { "%.0f %%".format(it) }
-        pages != null -> "Page ${target.roundToInt()} / $pages" to null
-        else -> "Go to %.0f %%".format(target * PERCENT) to null
-    }
-
+/** Thin track with section marks and a round thumb (web reader slider); tap or drag to pick 0..1. */
 @Composable
-private fun SeekSlider(
+private fun PositionTrack(
     value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    steps: Int,
+    marks: List<Float>,
     onDrag: (Float) -> Unit,
     onRelease: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Slider(
-        value = value,
-        onValueChange = onDrag,
-        onValueChangeFinished = onRelease,
-        valueRange = range,
-        steps = steps,
-        colors =
-            SliderDefaults.colors(
-                thumbColor = CHROME_ACCENT,
-                activeTrackColor = CHROME_ACCENT,
-                inactiveTrackColor = Color.White.copy(alpha = 0.24f),
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
+    val drag by rememberUpdatedState(onDrag)
+    val release by rememberUpdatedState(onRelease)
+    Box(
+        modifier
+            .height(40.dp)
+            .semantics {
+                contentDescription = "Position in book"
+                progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
+                setProgress { target ->
+                    drag(target.coerceIn(0f, 1f))
+                    release()
+                    true
+                }
+            }.pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    drag((offset.x / size.width).coerceIn(0f, 1f))
+                    release()
+                }
+            }.pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { drag((it.x / size.width).coerceIn(0f, 1f)) },
+                    onDragEnd = { release() },
+                    onDragCancel = { release() },
+                ) { change, _ -> drag((change.position.x / size.width).coerceIn(0f, 1f)) }
+            }.drawBehind {
+                val y = size.height / 2
+                val track = TRACK_DP.dp.toPx()
+                drawRoundRect(
+                    CHROME_TRACK,
+                    topLeft = Offset(0f, y - track / 2),
+                    size = Size(size.width, track),
+                    cornerRadius = CornerRadius(track / 2),
+                )
+                val mark = MARK_DP.dp.toPx()
+                marks.forEach { m ->
+                    drawLine(
+                        CHROME_MARK,
+                        Offset(m * size.width, y - mark / 2),
+                        Offset(m * size.width, y + mark / 2),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+                drawCircle(CHROME_ACCENT, radius = THUMB_DP.dp.toPx(), center = Offset(value.coerceIn(0f, 1f) * size.width, y))
+            },
     )
 }
 
 private const val PERCENT = 100f
+private const val TRACK_DP = 4
+private const val MARK_DP = 12
+private const val THUMB_DP = 9
 
-/** The bottom sheets of the reader; one at a time. */
-private enum class Sheet { SETTINGS, BOOKMARKS, CONTENTS }
-
-@Composable
-private fun SheetContent(
-    sheet: Sheet,
-    state: ReaderUiState,
-    prefs: ReaderPrefs,
-    viewModel: ReaderViewModel,
-    controller: EbookController,
-    onClose: () -> Unit,
-) {
-    when (sheet) {
-        Sheet.SETTINGS ->
-            ReaderSettings(prefs, textSettings = state.content !is ReaderContent.Paged, onChange = viewModel::setReaderPrefs)
-        Sheet.BOOKMARKS ->
-            BookmarkList(
-                bookmarks = state.bookmarks,
-                current = state.bookmarkHere,
-                onOpen = { bookmark ->
-                    onClose()
-                    val cfi = bookmark.cfi
-                    val page = bookmark.page
-                    if (cfi != null) {
-                        controller.goTo(cfi)
-                    } else if (page != null) {
-                        viewModel.goToPage(page)
-                    }
-                },
-                onDelete = viewModel::removeBookmark,
-            )
-        Sheet.CONTENTS ->
-            ContentsList(state.toc, state.chapter) { entry ->
-                onClose()
-                controller.goTo(entry.href)
-            }
-    }
-}
-
-/** Chapters, nested ones indented; opens scrolled to the chapter being read, which is highlighted. */
-@Composable
-private fun ContentsList(
-    toc: List<TocEntry>,
-    current: String?,
-    onOpen: (TocEntry) -> Unit,
-) {
-    val currentIndex = toc.indexOfLast { it.label == current }
-    val list = rememberLazyListState(initialFirstVisibleItemIndex = (currentIndex - 2).coerceAtLeast(0))
-    Column(Modifier.padding(bottom = 24.dp)) {
-        Text("Chapters", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-        LazyColumn(state = list) {
-            itemsIndexed(toc) { index, entry ->
-                val here = index == currentIndex
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            entry.label,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            color = if (here) MaterialTheme.colorScheme.primary else Color.Unspecified,
-                            fontWeight = if (here) FontWeight.SemiBold else null,
-                        )
-                    },
-                    modifier = Modifier.clickable { onOpen(entry) }.padding(start = (entry.depth * TOC_INDENT).dp),
-                )
-            }
-        }
-    }
-}
-
-private const val TOC_INDENT = 16
-
-/** Accent on the always-dark reader chrome (web: primary-400). */
+/** Reader chrome colours (web: black bars, white icons, primary-400 accent). */
+private val CHROME_BG = Color(0xF20A0A0A)
+private val CHROME_FG = Color.White.copy(alpha = 0.85f)
+private val CHROME_MUTED = Color.White.copy(alpha = 0.5f)
+private val CHROME_TRACK = Color.White.copy(alpha = 0.15f)
+private val CHROME_MARK = Color.White.copy(alpha = 0.35f)
 private val CHROME_ACCENT = Color(0xFFFF8904)
-
-@Composable
-private fun BookmarkList(
-    bookmarks: List<Bookmark>,
-    current: Bookmark?,
-    onOpen: (Bookmark) -> Unit,
-    onDelete: (Bookmark) -> Unit,
-) {
-    Column(Modifier.padding(bottom = 24.dp)) {
-        Text("Bookmarks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-        if (bookmarks.isEmpty()) {
-            Text(
-                "No bookmarks yet. Tap the bookmark icon at the top to mark the current page.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-            )
-            return
-        }
-        LazyColumn {
-            items(bookmarks, key = { it.id }) { bookmark ->
-                ListItem(
-                    headlineContent = { Text(bookmark.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = bookmarkDetail(bookmark)?.let { detail -> { Text(detail) } },
-                    leadingContent = {
-                        Icon(
-                            if (bookmark.id == current?.id) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    trailingContent = {
-                        IconButton(onClick = { onDelete(bookmark) }) { Icon(LucideIcons.Trash, contentDescription = "Delete bookmark") }
-                    },
-                    modifier = Modifier.clickable { onOpen(bookmark) },
-                )
-            }
-        }
-    }
-}
-
-/** "Page 12" unless the title already says so; else the position when known. */
-private fun bookmarkDetail(bookmark: Bookmark): String? {
-    val page = bookmark.page?.let { "Page $it" }
-    return when {
-        page != null && page != bookmark.title -> page
-        page == null -> bookmark.percent?.let { "%.0f %%".format(it) }
-        else -> null
-    }
-}
-
-@Composable
-private fun ReaderSettings(
-    prefs: ReaderPrefs,
-    textSettings: Boolean,
-    onChange: (ReaderPrefs) -> Unit,
-) {
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Page colours only; menus keep the app theme.
-        Text("Page", style = MaterialTheme.typography.titleSmall)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PageTheme.entries.forEach { theme ->
-                val swatch = theme.palette(prefs.einkTint)
-                FilterChip(
-                    selected = prefs.pageTheme == theme,
-                    onClick = { onChange(prefs.copy(pageTheme = theme)) },
-                    label = { Text(theme.label()) },
-                    leadingIcon = {
-                        Box(
-                            Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .background(swatch.background)
-                                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
-                        )
-                    },
-                )
-            }
-        }
-        if (prefs.pageTheme == PageTheme.EINK) EinkOptions(prefs, onChange)
-        // Comics and PDFs are images: only the page settings apply.
-        if (!textSettings) return@Column
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Font size", Modifier.weight(1f))
-            TextButton(onClick = { onChange(prefs.copy(fontSize = (prefs.fontSize - 1).coerceAtLeast(MIN_FONT))) }) { Text("A−") }
-            Text("${prefs.fontSize}")
-            TextButton(onClick = { onChange(prefs.copy(fontSize = (prefs.fontSize + 1).coerceAtMost(MAX_FONT))) }) { Text("A+") }
-        }
-        FontPicker(prefs.fontFamily, onSelect = { onChange(prefs.copy(fontFamily = it)) })
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Justify text", Modifier.weight(1f))
-            Switch(checked = prefs.justify, onCheckedChange = { onChange(prefs.copy(justify = it)) })
-        }
-    }
-}
 
 /** E-ink paper grain and refresh flash over the page. They only draw; touches go through to the page. */
 @Composable
@@ -557,50 +685,8 @@ private fun refreshFlash(
     return flash
 }
 
-/** Shown only for E-ink pages. */
-@Composable
-private fun EinkOptions(
-    prefs: ReaderPrefs,
-    onChange: (ReaderPrefs) -> Unit,
-) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        EinkTint.entries.forEach { tint ->
-            FilterChip(
-                selected = prefs.einkTint == tint,
-                onClick = { onChange(prefs.copy(einkTint = tint)) },
-                label = { Text(if (tint == EinkTint.WARM) "Warm paper" else "Cool paper") },
-            )
-        }
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Paper grain", Modifier.weight(1f))
-        Switch(checked = prefs.einkGrain, onCheckedChange = { onChange(prefs.copy(einkGrain = it)) })
-    }
-    Text("Refresh flash", style = MaterialTheme.typography.bodyMedium)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FLASH_CHOICES.forEach { n ->
-            FilterChip(
-                selected = prefs.einkFlashEvery == n,
-                onClick = { onChange(prefs.copy(einkFlashEvery = n)) },
-                label = { Text(if (n == 0) "Off" else "Every $n pages") },
-            )
-        }
-    }
-}
-
-private val FLASH_CHOICES = listOf(0, 5, 10, 20)
 private const val FLASH_INK_MS = 120L
 private const val FLASH_PAPER_MS = 90L
-
-private fun PageTheme.label() =
-    when (this) {
-        PageTheme.EINK -> "E-ink"
-        PageTheme.LIGHT -> "Light"
-        PageTheme.SEPIA -> "Sepia"
-        PageTheme.DARK -> "Dark"
-        PageTheme.NIGHT -> "Night"
-        PageTheme.AMOLED -> "AMOLED"
-    }
 
 /** CSS filter for pictures inside ebooks, matching the bitmap filters used for comic/PDF pages. */
 private fun PageImages.css(): String? =
