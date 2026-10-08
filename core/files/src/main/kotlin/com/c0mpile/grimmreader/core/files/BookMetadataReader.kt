@@ -11,6 +11,8 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.time.LocalDate
+import java.time.YearMonth
 
 /** Metadata found inside a local file. Everything is optional; the file name is the last resort title. */
 data class LocalMetadata(
@@ -19,11 +21,19 @@ data class LocalMetadata(
     val series: String? = null,
     val seriesNumber: Float? = null,
     val readingDirection: ReadingDirection? = null,
+    /** Plain text ([HtmlText.plain] applied). */
+    val description: String? = null,
+    val publisher: String? = null,
+    /** ISO date, year-month or year, as the file gives it. */
+    val publishedDate: String? = null,
     /** Cover image bytes (any image format). */
     val cover: ByteArray? = null,
 )
 
-/** Reads title, authors and cover from EPUB (OPF) and CBZ (ComicInfo.xml, first page) files, and a PDF's first page. */
+/**
+ * Reads title, authors, description, publisher, date and cover from EPUB (OPF) and CBZ (ComicInfo.xml, first page)
+ * files, and a PDF's first page.
+ */
 object BookMetadataReader {
     fun read(
         file: File,
@@ -54,7 +64,14 @@ object BookMetadataReader {
                 coverHref?.let { zip.getEntry(it.decodePercent()) }?.let { e ->
                     zip.getInputStream(e).use { it.readBounded(ReadLimits.IMAGE_BYTES) }
                 }
-            LocalMetadata(title = parsed.title, authors = parsed.authors, cover = cover)
+            LocalMetadata(
+                title = parsed.title,
+                authors = parsed.authors,
+                description = parsed.description,
+                publisher = parsed.publisher,
+                publishedDate = parsed.date,
+                cover = cover,
+            )
         }
 
     private fun cbz(book: BookHandle): LocalMetadata =
@@ -87,6 +104,9 @@ object BookMetadataReader {
         val title: String?,
         val authors: List<String>,
         val coverHref: String?,
+        val description: String?,
+        val publisher: String?,
+        val date: String?,
     )
 
     private fun parseOpf(input: InputStream): Opf {
@@ -96,7 +116,14 @@ object BookMetadataReader {
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType == XmlPullParser.START_TAG) state.onTag(parser)
         }
-        return Opf(state.title, state.authors, state.coverByProperty ?: state.coverId?.let(state.items::get))
+        return Opf(
+            state.title,
+            state.authors,
+            state.coverByProperty ?: state.coverId?.let(state.items::get),
+            state.description?.let(HtmlText::plain),
+            state.publisher,
+            state.date,
+        )
     }
 
     private class OpfState {
@@ -105,10 +132,16 @@ object BookMetadataReader {
         var coverId: String? = null
         val items = mutableMapOf<String, String>()
         var coverByProperty: String? = null
+        var description: String? = null
+        var publisher: String? = null
+        var date: String? = null
 
         fun onTag(parser: XmlPullParser) {
             when (parser.name.substringAfter(':')) {
                 "title" -> if (title == null) title = parser.nextText().trim().ifEmpty { null }
+                "description" -> if (description == null) description = parser.text()
+                "publisher" -> if (publisher == null) publisher = parser.text()
+                "date" -> if (date == null) date = parser.text()
                 "creator" ->
                     parser
                         .nextText()
@@ -126,6 +159,9 @@ object BookMetadataReader {
             if (id != null) items[id] = href
             if (parser.getAttributeValue(null, "properties")?.split(' ')?.contains("cover-image") == true) coverByProperty = href
         }
+
+        /** The element's text; null when empty or when it holds markup instead of text (not allowed, but seen). */
+        private fun XmlPullParser.text(): String? = runCatching { nextText().trim() }.getOrNull()?.ifEmpty { null }
     }
 
     private fun parseComicInfo(input: InputStream): LocalMetadata {
@@ -144,6 +180,9 @@ object BookMetadataReader {
             series = values["Series"]?.ifEmpty { null },
             seriesNumber = values["Number"]?.toFloatOrNull(),
             readingDirection = if (rtl) ReadingDirection.RTL else null,
+            description = values["Summary"]?.let(HtmlText::plain),
+            publisher = values["Publisher"]?.ifEmpty { null },
+            publishedDate = comicDate(values),
         )
     }
 
@@ -157,4 +196,14 @@ object BookMetadataReader {
     ): String? = Regex("<$tag\\b[^>]*\\b$name=\"([^\"]+)\"").find(xml)?.groupValues?.get(1)
 
     private fun String.decodePercent(): String = java.net.URLDecoder.decode(replace("+", "%2B"), "UTF-8")
+}
+
+/** ComicInfo Year/Month/Day as an ISO date, year-month or year (Month and Day are often missing or 0). */
+private fun comicDate(values: Map<String, String>): String? {
+    val year = values["Year"]?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+    val month = values["Month"]?.toIntOrNull()
+    val day = values["Day"]?.toIntOrNull()
+    return runCatching { LocalDate.of(year, month!!, day!!).toString() }.getOrNull()
+        ?: runCatching { YearMonth.of(year, month!!).toString() }.getOrNull()
+        ?: year.toString()
 }

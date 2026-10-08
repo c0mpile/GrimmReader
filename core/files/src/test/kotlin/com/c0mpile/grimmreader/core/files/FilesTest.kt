@@ -53,7 +53,7 @@ class FilesTest {
             "<item id=\"c\" href=\"images/cover%20art.png\" media-type=\"image/png\" properties=\"cover-image\"/>" +
             "</manifest></package>"
 
-    private fun epub() =
+    private fun epub(opf: String = this.opf) =
         zip(
             "sample.bin",
             "mimetype" to "application/epub+zip".toByteArray(),
@@ -82,6 +82,35 @@ class FilesTest {
         assertEquals("Sample Ebook", meta.title)
         assertEquals(listOf("Ada Example"), meta.authors)
         assertArrayEquals(png, meta.cover)
+        // Fields the file does not have stay null (the drawer leaves them out).
+        assertEquals(null, meta.description)
+        assertEquals(null, meta.publisher)
+        assertEquals(null, meta.publishedDate)
+    }
+
+    @Test fun epubDescriptionPublisherAndDate() {
+        val full =
+            "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata>" +
+                "<dc:title>Sample Ebook</dc:title>" +
+                "<dc:description>&lt;p&gt;First &amp;amp; best.&lt;/p&gt;&lt;p&gt;Second  part.&lt;/p&gt;</dc:description>" +
+                "<dc:publisher>Sample Press</dc:publisher><dc:date>2010-05-01T00:00:00Z</dc:date><dc:date>2011</dc:date>" +
+                "<dc:subject>  </dc:subject></metadata><manifest/></package>"
+        val meta = BookMetadataReader.read(epub(full), BookFormat.EPUB)
+        assertEquals("First & best.\n\nSecond part.", meta.description)
+        assertEquals("Sample Press", meta.publisher)
+        assertEquals("2010-05-01T00:00:00Z", meta.publishedDate)
+        // An empty or markup-only description is left out instead of failing the whole read.
+        val odd = full.replace(Regex("<dc:description>.*</dc:description>"), "<dc:description><b>x</b></dc:description>")
+        val oddMeta = BookMetadataReader.read(epub(odd), BookFormat.EPUB)
+        assertEquals("Sample Ebook", oddMeta.title)
+        assertEquals(null, oddMeta.description)
+        assertEquals("Sample Press", oddMeta.publisher)
+    }
+
+    @Test fun htmlTextIsPlainAndNullWhenBlank() {
+        assertEquals("a b\n\nc", HtmlText.plain("<div>a&nbsp; b</div><p>c</p><img src=\"https://grimmory.example.com/x.png\">"))
+        assertEquals("Line one\nLine two", HtmlText.plain("Line one\nLine two"))
+        assertEquals(null, HtmlText.plain("<p> </p>"))
     }
 
     @Test fun cbzPagesInNaturalOrderAndComicInfo() {
@@ -96,7 +125,8 @@ class FilesTest {
                 "ComicInfo.xml" to
                     (
                         "<ComicInfo><Series>Sample Series</Series><Number>3</Number><Writer>A. Writer, B. Writer</Writer>" +
-                            "<Manga>YesAndRightToLeft</Manga></ComicInfo>"
+                            "<Manga>YesAndRightToLeft</Manga><Summary>A sample summary.</Summary><Publisher>Sample Comics</Publisher>" +
+                            "<Year>1999</Year><Month>7</Month><Day>0</Day></ComicInfo>"
                     ).toByteArray(),
             )
         BookHandle.open(comic).use { book ->
@@ -111,6 +141,9 @@ class FilesTest {
         assertEquals("Sample Series #3", meta.title)
         assertEquals(listOf("A. Writer", "B. Writer"), meta.authors)
         assertEquals(ReadingDirection.RTL, meta.readingDirection)
+        assertEquals("A sample summary.", meta.description)
+        assertEquals("Sample Comics", meta.publisher)
+        assertEquals("1999-07", meta.publishedDate)
     }
 
     @Test fun filePartialMd5MatchesByteVersion() {

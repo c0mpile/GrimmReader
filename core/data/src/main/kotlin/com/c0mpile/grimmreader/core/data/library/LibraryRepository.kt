@@ -248,6 +248,10 @@ class LibraryRepository
                                 seriesNumber = meta.seriesNumber,
                                 readingDirection = meta.readingDirection,
                                 addedAt = System.currentTimeMillis(),
+                                description = meta.description,
+                                publisher = meta.publisher,
+                                publishedDate = meta.publishedDate,
+                                detailsLoadedAt = System.currentTimeMillis(),
                             ),
                         )
                     fileDao.upsert(

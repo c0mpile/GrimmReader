@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.feature.bookdetail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.download.DownloadRepository
+import com.c0mpile.grimmreader.core.data.library.BookDetails
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
@@ -43,7 +44,13 @@ class BookDetailViewModel
         private val downloads: DownloadRepository,
         private val shelfRepo: ShelfRepository,
         session: ServerSession,
+        details: BookDetails,
     ) : ViewModel() {
+        init {
+            // Description, publisher and date are not in the library list; Room updates [state] when they arrive.
+            viewModelScope.launch { details.load(bookId) }
+        }
+
         val state: StateFlow<BookDetailUiState> =
             combine(
                 library.observeBook(bookId),
