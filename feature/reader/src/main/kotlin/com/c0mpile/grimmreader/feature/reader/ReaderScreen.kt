@@ -87,6 +87,7 @@ import com.c0mpile.grimmreader.reader.ebook.EbookEvent
 import com.c0mpile.grimmreader.reader.ebook.EbookLayout
 import com.c0mpile.grimmreader.reader.ebook.EbookReader
 import com.c0mpile.grimmreader.reader.ebook.PageColors
+import com.c0mpile.grimmreader.reader.paged.GuidedReader
 import com.c0mpile.grimmreader.reader.paged.PagedReader
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -136,6 +137,7 @@ fun ReaderScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
     ImmersiveMode(fullscreen)
     val textSettings = state.content !is ReaderContent.Paged
+    val comicSettings = (state.content as? ReaderContent.Paged)?.panels != null
     val panelOpen = overlay is Overlay.Left || overlay is Overlay.Right
     val close = { overlay = Overlay.None }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -168,6 +170,7 @@ fun ReaderScreen(
                 QuickSettings(
                     prefs,
                     textSettings,
+                    comicSettings,
                     onChange = viewModel::setReaderPrefs,
                     onMore = { overlay = Overlay.Settings },
                 )
@@ -184,7 +187,7 @@ fun ReaderScreen(
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 64.dp))
     }
     if (overlay == Overlay.Settings) {
-        SettingsDialog(prefs, textSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
+        SettingsDialog(prefs, textSettings, comicSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
     }
     state.offer?.let { offer ->
         AlertDialog(
@@ -365,17 +368,33 @@ private fun Content(
         }
         is ReaderContent.Paged -> {
             val page = prefs.pageTheme.palette(prefs.einkTint)
+            val panels = content.panels
             key(content.restoreKey) {
-                PagedReader(
-                    content.source,
-                    content.page,
-                    onPage = viewModel::onPage,
-                    onToggleChrome = onToggleChrome,
-                    modifier = Modifier.background(page.background),
-                    turns = turns,
-                    imageFilter = page.images.colorFilter,
-                    instantTurns = page.instantTurns,
-                )
+                if (panels != null && prefs.guidedView) {
+                    GuidedReader(
+                        content.source,
+                        panels,
+                        content.page,
+                        onPage = viewModel::onPage,
+                        onToggleChrome = onToggleChrome,
+                        modifier = Modifier.background(page.background),
+                        turns = turns,
+                        fullPageFirst = prefs.guidedFullPage,
+                        imageFilter = page.images.colorFilter,
+                        instantTurns = page.instantTurns,
+                    )
+                } else {
+                    PagedReader(
+                        content.source,
+                        content.page,
+                        onPage = viewModel::onPage,
+                        onToggleChrome = onToggleChrome,
+                        modifier = Modifier.background(page.background),
+                        turns = turns,
+                        imageFilter = page.images.colorFilter,
+                        instantTurns = page.instantTurns,
+                    )
+                }
             }
         }
         is ReaderContent.Unsupported -> Message("${content.format.name} files cannot be read.")

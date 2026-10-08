@@ -19,11 +19,9 @@ interface PageSource : Closeable {
 }
 
 /**
- * Turns a page into a sequence of "stops" (rectangles in page coordinates, 0..1) for the camera to frame.
- * Full-page reading has one stop per page; guided view (M4) has one per panel and falls back to the full page.
+ * Panels of a page for guided view: rectangles in page coordinates (0..1) in reading order. When nothing
+ * reliable is found the list holds one rectangle for the whole page.
  */
-fun interface NavigationModel {
-    fun stops(index: Int): List<Rect>
+fun interface PanelProvider {
+    suspend fun panels(index: Int): List<Rect>
 }
-
-val FullPageNavigation = NavigationModel { listOf(Rect(0f, 0f, 1f, 1f)) }
