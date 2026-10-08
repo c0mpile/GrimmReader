@@ -12,6 +12,7 @@ import com.c0mpile.grimmreader.core.files.FolderDocument
 import com.c0mpile.grimmreader.core.files.FormatSniffer
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.ReadStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -43,8 +44,10 @@ data class ScanResult(
 
 /**
  * Local books read in place from folders the user picked. A scan adds new book files, follows moved or renamed
- * ones (same partial MD5, so position and bookmarks stay), and drops books whose file is gone. A folder that
- * cannot be listed (revoked, SD card out) is left untouched rather than treated as empty.
+ * ones (same partial MD5, so position and bookmarks stay), and drops books whose file is gone. A dropped book
+ * that was read is set aside instead (hidden, file link cleared, position, bookmarks and status kept), and comes
+ * back when a scan finds its content again, say after its folder is added back. A folder that cannot be listed
+ * (revoked, SD card out) is left untouched rather than treated as empty.
  */
 @Singleton
 class FolderLibrary
@@ -89,7 +92,8 @@ class FolderLibrary
         }
 
         /**
-         * Stops scanning [tree] and removes its books from the library; the files themselves stay. A book that
+         * Stops scanning [tree] and removes its books from the library (read ones are set aside, see the class
+         * comment); the files themselves stay. A book that
          * another added folder also reaches (a subfolder of [tree]) is kept and moved to that folder's URI, since
          * [tree]'s grant is released. A server book that read its file from [tree] (a merged duplicate) goes back
          * to not downloaded, so it offers reading online or downloading again, unless [tree] is also the download
@@ -113,7 +117,7 @@ class FolderLibrary
                             val other = stillReached[documentId(file.localUri!!)]
                             when {
                                 other != null -> fileDao.setLocal(file.id, other.uri, file.sizeBytes, file.partialMd5)
-                                isLocal(file) -> library.forgetLocal(file.bookId)
+                                isLocal(file) -> drop(file)
                                 tree != downloadFolder -> fileDao.setLocal(file.id, null, file.sizeBytes, file.partialMd5)
                             }
                         }
@@ -156,34 +160,39 @@ class FolderLibrary
                             .filter { file -> listed.keys.any { inFolder(file, it) } && documentId(file.localUri!!) !in foundIds }
                             .filter { isLocal(it) }
                             .toMutableList()
+                    val followable = (missing + fileDao.setAside()).toMutableList()
                     var added = 0
                     for (doc in found) {
                         if (documentId(doc.uri) in knownIds) continue
-                        if (addOrFollow(doc, missing)) added++
+                        if (addOrFollow(doc, followable)) added++
                     }
-                    missing.forEach { library.forgetLocal(it.bookId) }
+                    val gone = missing.filter { it in followable }
+                    gone.forEach { drop(it) }
                     val merged = duplicates.merge(listed.keys)
                     // Grants kept for earlier downloads go once their last file is removed.
                     documents.grantedTrees().forEach { releaseIfUnused(it) }
                     lastScanAt = System.currentTimeMillis()
-                    ScanResult(added, missing.size, folders.size - listed.size, merged)
+                    ScanResult(added, gone.size, folders.size - listed.size, merged)
                 }
             }
 
-        /** True when [doc] became a new book; a moved file (same content) updates its old book instead. */
+        /**
+         * True when [doc] is a new book or one set aside coming back; a file with the same content as one of
+         * [followable] (missing in this scan, or set aside) updates that book instead of adding one.
+         */
         private suspend fun addOrFollow(
             doc: FolderDocument,
-            missing: MutableList<BookFileEntity>,
+            followable: MutableList<BookFileEntity>,
         ): Boolean =
             try {
                 documents.open(doc.uri).use { opened ->
                     val format = FormatSniffer.sniff(opened, doc.name) ?: return false
                     val md5 = LocalFileStore.partialMd5(opened)
-                    val moved = missing.firstOrNull { it.partialMd5 == md5 }
+                    val moved = followable.firstOrNull { it.partialMd5 == md5 }
                     if (moved != null) {
-                        missing.remove(moved)
+                        followable.remove(moved)
                         fileDao.setLocal(moved.id, doc.uri, doc.sizeBytes, md5)
-                        false
+                        moved.localUri == null
                     } else {
                         library.addLocalBook(opened, format, doc.name, doc.uri, doc.sizeBytes, md5)
                         true
@@ -197,6 +206,20 @@ class FolderLibrary
                 // A damaged file must not stop the rest of the scan.
                 false
             }
+
+        /**
+         * Takes a local book whose file is no longer reached out of the library: one that was read is set aside
+         * (see the class comment), an unread one is forgotten, as a later scan would add it as it was anyway. A
+         * file without a known MD5 could never be matched again, so its book is forgotten too.
+         */
+        private suspend fun drop(file: BookFileEntity) {
+            val row = bookDao.get(file.bookId) ?: return
+            if (file.partialMd5 != null && (row.position != null || row.book.readStatus != ReadStatus.UNREAD)) {
+                fileDao.setLocal(file.id, null, file.sizeBytes, file.partialMd5)
+            } else {
+                library.forgetLocal(file.bookId)
+            }
+        }
 
         private suspend fun isLocal(file: BookFileEntity) = bookDao.get(file.bookId)?.book?.source == BookSource.LOCAL
 

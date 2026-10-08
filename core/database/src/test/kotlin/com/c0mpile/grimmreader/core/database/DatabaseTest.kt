@@ -63,6 +63,28 @@ class DatabaseTest {
             assertEquals(kept, db.bookDao().byServerId(server, 1)?.id)
         }
 
+    @Test fun localBooksWithoutAFileAreSetAside() =
+        runTest {
+            val shown = db.bookDao().insert(BookEntity(source = BookSource.LOCAL, title = "Shown"))
+            db.bookFileDao().upsert(
+                BookFileEntity(bookId = shown, format = BookFormat.EPUB, localUri = "books/local/a.epub", partialMd5 = "a"),
+            )
+            val aside = db.bookDao().insert(BookEntity(source = BookSource.LOCAL, title = "Aside"))
+            db.bookFileDao().upsert(BookFileEntity(bookId = aside, format = BookFormat.EPUB, localUri = null, partialMd5 = "b"))
+            val server = db.serverDao().upsert(ServerEntity(baseUrl = "https://grimmory.example.com"))
+            val remote = serverBook(server, 1, "Remote")
+            db.bookFileDao().upsert(BookFileEntity(bookId = remote, format = BookFormat.EPUB, localUri = null, partialMd5 = "c"))
+
+            val titles =
+                db
+                    .bookDao()
+                    .observeLibrary(null)
+                    .first()
+                    .map { it.book.title }
+            assertEquals(listOf("Remote", "Shown"), titles)
+            assertEquals(listOf(aside), db.bookFileDao().setAside().map { it.bookId })
+        }
+
     @Test fun removingServerDetachesBooks() =
         runTest {
             val server = db.serverDao().upsert(ServerEntity(baseUrl = "https://grimmory.example.com"))
