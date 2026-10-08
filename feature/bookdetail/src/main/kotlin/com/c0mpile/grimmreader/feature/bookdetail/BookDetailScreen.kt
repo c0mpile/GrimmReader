@@ -18,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +49,7 @@ fun BookDetailScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -58,6 +60,7 @@ fun BookDetailScreen(
         },
     ) { padding ->
         if (picking) ShelfPicker(state, viewModel::setShelved, viewModel::createShelfWithBook) { picking = false }
+        if (moving) LibraryPicker(state, viewModel::moveToLibrary) { moving = false }
         val book = state.book
         if (book == null) {
             if (state.loaded) Text("This book is no longer in the library.", Modifier.padding(padding).padding(24.dp))
@@ -76,6 +79,7 @@ fun BookDetailScreen(
                 }
             }
             if (state.shelves.isNotEmpty()) ShelvesRow(state, onPick = { picking = true })
+            if (state.localLibraries.isNotEmpty()) LibraryRow(state, onPick = { moving = true })
             BookActions(state, book, onRead, onRemoved = onBack, viewModel)
         }
     }
@@ -100,6 +104,63 @@ private fun ShelvesRow(
             Text("Shelves", Modifier.padding(start = 8.dp))
         }
     }
+}
+
+/** The on-device library a local book is in and a button to change it. */
+@Composable
+private fun LibraryRow(
+    state: BookDetailUiState,
+    onPick: () -> Unit,
+) {
+    val current = state.localLibraries.firstOrNull { it.id == state.book?.localLibraryId }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            current?.let { "In ${it.name}" } ?: "In no library",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onPick) {
+            Icon(LucideIcons.Library, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("Library", Modifier.padding(start = 8.dp))
+        }
+    }
+}
+
+/** One choice among the on-device libraries (or none) for a local book. */
+@Composable
+internal fun LibraryPicker(
+    state: BookDetailUiState,
+    onSelect: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val current = state.book?.localLibraryId
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Library") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                (listOf<Long?>(null) + state.localLibraries.map { it.id }).forEach { id ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelect(id)
+                                onDismiss()
+                            }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = id == current, onClick = null)
+                        Text(
+                            state.localLibraries.firstOrNull { it.id == id }?.name ?: "None",
+                            Modifier.weight(1f).padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Checkboxes for the user's shelves, plus a field to create one with this book on it. */

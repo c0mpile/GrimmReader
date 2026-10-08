@@ -55,8 +55,9 @@ fun SettingsScreen(
             StorageSettings(
                 state,
                 onDownloadFolder = viewModel::setDownloadFolder,
-                onAddBookFolder = viewModel::addBookFolder,
-                onRemoveBookFolder = viewModel::removeBookFolder,
+                onAddLibrary = viewModel::addLibrary,
+                onLibraryFolder = viewModel::setLibraryFolder,
+                onDeleteLibrary = viewModel::deleteLibrary,
                 onRescan = viewModel::rescan,
                 onForgetRemoved = viewModel::forgetRemovedBooks,
             )

@@ -8,6 +8,7 @@ import com.c0mpile.grimmreader.core.data.library.FolderDuplicates
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
+import com.c0mpile.grimmreader.core.database.entity.LocalLibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.files.DocumentStore
@@ -53,12 +54,13 @@ class FolderDuplicatesTest {
 
     private suspend fun merger(downloadFolder: String? = null): FolderDuplicates {
         val prefs = AppPreferences(PreferenceDataStoreFactory.create { File(tmp.root, "p.preferences_pb") })
-        prefs.setBookFolders(setOf(books))
+        db.localLibraryDao().insert(LocalLibraryEntity(name = "Books", folderUri = books))
         prefs.setDownloadFolder(downloadFolder)
         return FolderDuplicates(
             prefs,
             db.bookDao(),
             db.bookFileDao(),
+            db.localLibraryDao(),
             db.readingPositionDao(),
             LocalFileStore(context, DocumentStore(context)),
         )

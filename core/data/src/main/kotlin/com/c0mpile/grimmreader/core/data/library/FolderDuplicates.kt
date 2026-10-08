@@ -2,6 +2,7 @@ package com.c0mpile.grimmreader.core.data.library
 
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
+import com.c0mpile.grimmreader.core.database.dao.LocalLibraryDao
 import com.c0mpile.grimmreader.core.database.dao.ReadingPositionDao
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
@@ -25,12 +26,13 @@ class FolderDuplicates
         private val prefs: AppPreferences,
         private val bookDao: BookDao,
         private val fileDao: BookFileDao,
+        private val libraryDao: LocalLibraryDao,
         private val positionDao: ReadingPositionDao,
         private val files: LocalFileStore,
     ) {
         /** Merges the duplicates of the folder books under [folders]; returns how many entries were dropped. */
         suspend fun merge(folders: Collection<String>): Int {
-            val bookFolders = prefs.bookFolders.first()
+            val bookFolders = libraryDao.all().mapNotNull { it.folderUri }
             val downloadFolder = prefs.downloadFolder.first()
             var merged = 0
             val folderFiles =

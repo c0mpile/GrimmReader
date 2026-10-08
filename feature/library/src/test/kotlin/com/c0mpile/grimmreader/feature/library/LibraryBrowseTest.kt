@@ -17,6 +17,7 @@ class LibraryBrowseTest {
         series: String? = null,
         number: Float? = null,
         library: Long? = 1,
+        localLibrary: Long? = null,
         source: BookSource = BookSource.SERVER,
         downloaded: Boolean = false,
         added: Long = 0,
@@ -29,6 +30,7 @@ class LibraryBrowseTest {
         seriesName = series,
         seriesNumber = number,
         libraryId = library,
+        localLibraryId = localLibrary,
         addedAt = added,
         lastReadAt = read,
         files = listOf(BookFile(id, id, BookFormat.EPUB, localUri = if (downloaded) "/f" else null)),
@@ -39,14 +41,17 @@ class LibraryBrowseTest {
             book(1, "Zeta", listOf("Émile Ash"), added = 3),
             book(2, "Alpha", listOf("Bea Cole", "Émile Ash"), series = "Saga", number = 2f, read = 50),
             book(3, "Beta", series = "Saga", number = 1f, library = 2),
-            book(4, "Gamma", listOf("Bea Cole"), library = 2, downloaded = true, added = 9),
-            book(5, "Local", listOf("Dee"), library = null, source = BookSource.LOCAL),
+            book(4, "Gamma", listOf("Bea Cole"), library = 2, localLibrary = 20, downloaded = true, added = 9),
+            book(5, "Local", listOf("Dee"), library = null, localLibrary = 20, source = BookSource.LOCAL),
         )
 
     @Test fun scopes() {
         assertEquals(listOf(1L, 2L), books.inScope(LibraryScope.Server(1)).map { it.id })
         assertEquals(listOf(3L, 4L), books.inScope(LibraryScope.Server(2)).map { it.id })
-        assertEquals(listOf(4L, 5L), books.inScope(LibraryScope.OnDevice).map { it.id })
+        // A local library: its own books plus downloads of the server library it mirrors; not-downloaded server books stay out.
+        assertEquals(listOf(4L, 5L), books.inScope(LibraryScope.Local(20)).map { it.id })
+        val loose = book(6, "Loose", library = null, source = BookSource.LOCAL)
+        assertEquals(listOf(6L), (books + loose).inScope(LibraryScope.Unsorted).map { it.id })
         assertEquals(5, books.inScope(LibraryScope.All).size)
     }
 

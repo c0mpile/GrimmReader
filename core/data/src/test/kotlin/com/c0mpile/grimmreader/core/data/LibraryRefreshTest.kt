@@ -8,6 +8,7 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import com.c0mpile.grimmreader.api.grimmory.TokenDto
 import com.c0mpile.grimmreader.core.data.library.BookDetails
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.library.LocalLibraryRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.server.NetworkPolicyImpl
 import com.c0mpile.grimmreader.core.data.server.ServerSession
@@ -140,16 +141,25 @@ class LibraryRefreshTest {
             // Wait until the session loaded the stored token.
             while (!policy.isCleartextAllowed(server.hostName)) kotlinx.coroutines.delay(10)
             WorkManagerTestInitHelper.initializeTestWorkManager(ApplicationProvider.getApplicationContext())
+            val prefs = AppPreferences(PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "p.preferences_pb") })
+            val localLibraries =
+                LocalLibraryRepository(
+                    db.localLibraryDao(),
+                    db.bookDao(),
+                    prefs,
+                    DocumentStore(ApplicationProvider.getApplicationContext()),
+                    Dispatchers.IO,
+                )
             val repo =
                 LibraryRepository(
                     ApplicationProvider.getApplicationContext(),
                     db,
                     db.bookDao(),
-                    db.bookFileDao(),
                     session,
                     LocalFileStore(ApplicationProvider.getApplicationContext(), DocumentStore(ApplicationProvider.getApplicationContext())),
-                    AppPreferences(PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "p.preferences_pb") }),
+                    prefs,
                     ShelfMirror(db.shelfDao(), db.bookDao(), db.outboxDao()),
+                    localLibraries,
                     Dispatchers.IO,
                 )
 
@@ -166,6 +176,10 @@ class LibraryRefreshTest {
             assertEquals(listOf("Favorites", "To read", "Comics in progress"), db.shelfDao().forServer(serverId).map { it.name })
             val libs = repo.observeLibraries().first { it.isNotEmpty() }
             assertEquals(listOf("Books" to false, "Comics" to true), libs.map { it.name to it.isComics })
+            // Every server library has an on-device library, and the books follow it.
+            val local = db.localLibraryDao().all()
+            assertEquals(listOf("Books" to 1L, "Comics" to 2L), local.map { it.name to it.serverLibraryId })
+            assertEquals(local.map { it.id }, books.map { it.localLibraryId })
             assertEquals(true, secrets.get(ServerSession.tokensKey(serverId))?.contains("\"fresh\""))
 
             // The automatic refresh skips a library mirrored recently, and runs again once it is stale.

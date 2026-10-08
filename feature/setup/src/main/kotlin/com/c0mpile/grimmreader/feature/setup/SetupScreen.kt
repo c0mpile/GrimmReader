@@ -61,6 +61,15 @@ fun SetupScreen(
             ServerForm(state, viewModel)
         }
     }
+    CertificateDialog(state, viewModel)
+}
+
+/** Asks whether to trust the certificate the connection test found, if it did. */
+@Composable
+internal fun CertificateDialog(
+    state: SetupUiState,
+    viewModel: SetupViewModel,
+) {
     state.certificate?.let { cert ->
         AlertDialog(
             onDismissRequest = viewModel::rejectCertificate,
@@ -82,7 +91,7 @@ fun SetupScreen(
 }
 
 @Composable
-private fun ServerForm(
+internal fun ServerForm(
     state: SetupUiState,
     viewModel: SetupViewModel,
 ) {

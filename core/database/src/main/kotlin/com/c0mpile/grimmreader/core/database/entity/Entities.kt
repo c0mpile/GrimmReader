@@ -43,13 +43,32 @@ data class LibraryEntity(
 )
 
 /**
+ * A library kept on this device. Every server library gets one ([serverLibraryId], no foreign key: the server
+ * library rows are replaced on each refresh); the user can add others. [folderUri] is the optional watch folder
+ * (SAF tree): books in it belong to this library.
+ */
+@Entity(tableName = "local_library", indices = [Index("serverLibraryId")])
+data class LocalLibraryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val serverLibraryId: Long? = null,
+    val folderUri: String? = null,
+    val position: Int = 0,
+)
+
+/**
  * A book in the unified library. Server books carry [serverRowId] + [serverBookId]; when a server is removed
  * but downloads are kept they become [BookSource.LOCAL] and keep [serverBookId] for a later re-link.
  */
 @Entity(
     tableName = "book",
     foreignKeys = [ForeignKey(ServerEntity::class, ["id"], ["serverRowId"], onDelete = ForeignKey.SET_NULL)],
-    indices = [Index(value = ["serverRowId", "serverBookId"], unique = true), Index("serverLibraryId"), Index("sortTitle")],
+    indices = [
+        Index(value = ["serverRowId", "serverBookId"], unique = true),
+        Index("serverLibraryId"),
+        Index("sortTitle"),
+        Index("localLibraryId"),
+    ],
 )
 data class BookEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -57,6 +76,8 @@ data class BookEntity(
     val serverRowId: Long? = null,
     val serverBookId: Long? = null,
     val serverLibraryId: Long? = null,
+    /** The [LocalLibraryEntity] the book is in; null = in none. Server books follow their server library. */
+    val localLibraryId: Long? = null,
     val title: String,
     val sortTitle: String = title.lowercase(),
     /** Author names joined with [AUTHOR_SEPARATOR]. */

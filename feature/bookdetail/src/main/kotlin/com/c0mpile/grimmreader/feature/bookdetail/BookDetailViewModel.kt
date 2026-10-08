@@ -5,11 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.download.DownloadRepository
 import com.c0mpile.grimmreader.core.data.library.BookDetails
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.library.LocalLibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 import com.c0mpile.grimmreader.core.model.Permissions
 import com.c0mpile.grimmreader.core.model.Shelf
 import dagger.assisted.Assisted
@@ -30,6 +32,8 @@ data class BookDetailUiState(
     val loaded: Boolean = false,
     /** User shelves (not magic); empty for local books, which cannot be shelved. */
     val shelves: List<Shelf> = emptyList(),
+    /** The on-device libraries a local book can be put in; empty for server books, which follow their server library. */
+    val localLibraries: List<LocalLibrary> = emptyList(),
 ) {
     val favorites: Shelf? get() = shelves.firstOrNull { it.isFavorites }
     val isFavorite: Boolean get() = favorites?.let { book?.shelves?.contains(it.id) } == true
@@ -43,6 +47,7 @@ class BookDetailViewModel
         private val library: LibraryRepository,
         private val downloads: DownloadRepository,
         private val shelfRepo: ShelfRepository,
+        private val localLibraries: LocalLibraryRepository,
         session: ServerSession,
         details: BookDetails,
     ) : ViewModel() {
@@ -57,7 +62,8 @@ class BookDetailViewModel
                 downloads.observe(),
                 session.permissions,
                 shelfRepo.observe(),
-            ) { book, all, permissions, shelves ->
+                localLibraries.libraries,
+            ) { book, all, permissions, shelves, libraries ->
                 val file = book?.primaryFile
                 BookDetailUiState(
                     book = book,
@@ -68,6 +74,7 @@ class BookDetailViewModel
                     canReadOnline = book?.source == BookSource.SERVER && book.serverId != null && file != null,
                     loaded = true,
                     shelves = if (book?.source == BookSource.SERVER) shelves.filter { !it.magic } else emptyList(),
+                    localLibraries = if (book?.source == BookSource.LOCAL) libraries else emptyList(),
                 )
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BookDetailUiState())
 
@@ -91,6 +98,9 @@ class BookDetailViewModel
                 library.deleteLocal(book.id)
                 if (book.source != BookSource.SERVER) onRemoved()
             }
+
+        /** Puts a local book into [libraryId] (null = none). */
+        fun moveToLibrary(libraryId: Long?) = viewModelScope.launch { localLibraries.assign(bookId, libraryId) }
 
         fun toggleFavorite() {
             val shelf = state.value.favorites ?: return

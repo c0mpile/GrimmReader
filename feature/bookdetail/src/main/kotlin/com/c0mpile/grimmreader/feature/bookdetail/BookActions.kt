@@ -66,7 +66,9 @@ fun BookDrawer(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
     if (picking) ShelfPicker(state, viewModel::setShelved, viewModel::createShelfWithBook) { picking = false }
+    if (moving) LibraryPicker(state, viewModel::moveToLibrary) { moving = false }
     val book = state.book
     if (book == null) {
         if (state.loaded) LaunchedEffect(Unit) { onClose() }
@@ -93,6 +95,9 @@ fun BookDrawer(
                 state.favorites?.let { FavoriteButton(state.isFavorite, viewModel::toggleFavorite) }
                 if (state.shelves.isNotEmpty()) {
                     IconButton(onClick = { picking = true }) { Icon(LucideIcons.Bookmark, contentDescription = "Shelves") }
+                }
+                if (state.localLibraries.isNotEmpty()) {
+                    IconButton(onClick = { moving = true }) { Icon(LucideIcons.Library, contentDescription = "Library") }
                 }
             }
             book.description?.let { Description(it) }

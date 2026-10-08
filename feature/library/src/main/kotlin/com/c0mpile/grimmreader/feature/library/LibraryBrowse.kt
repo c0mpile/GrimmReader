@@ -25,12 +25,16 @@ private val collator: Collator = Collator.getInstance(Locale.getDefault()).apply
 internal fun List<Book>.inScope(scope: LibraryScope): List<Book> =
     when (scope) {
         LibraryScope.All -> this
-        LibraryScope.OnDevice -> filter { it.source != BookSource.SERVER || it.primaryFile?.isAvailableOffline == true }
+        LibraryScope.Unsorted -> filter { it.onDevice && it.localLibraryId == null }
+        is LibraryScope.Local -> filter { it.onDevice && it.localLibraryId == scope.libraryId }
         is LibraryScope.Server -> filter { it.source == BookSource.SERVER && it.libraryId == scope.libraryId }
         LibraryScope.Unshelved -> filter { it.source == BookSource.SERVER && it.shelves.isEmpty() }
         is LibraryScope.Shelf -> filter { scope.shelfId in it.shelves }
         is LibraryScope.MagicShelf -> filter { scope.shelfId in it.magicShelves }
     }
+
+/** Local books, and server books downloaded to this device. */
+private val Book.onDevice: Boolean get() = source != BookSource.SERVER || primaryFile?.isAvailableOffline == true
 
 /** Case- and accent-insensitive match on title, authors and series. */
 internal fun List<Book>.matching(query: String): List<Book> {

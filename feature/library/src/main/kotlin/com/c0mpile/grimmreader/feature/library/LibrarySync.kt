@@ -85,27 +85,30 @@ class LibrarySync(
             }
     }
 
-    fun import(uris: List<Uri>) =
-        scope.launch {
-            var unsupported = 0
-            var failed = 0
-            for (uri in uris) {
-                try {
-                    library.importLocal(uri)
-                } catch (_: UnsupportedFormatException) {
-                    unsupported++
-                } catch (_: IOException) {
-                    failed++
-                }
+    /** Copies the picked files into the app; they go into [libraryId] (null = no library). */
+    fun import(
+        uris: List<Uri>,
+        libraryId: Long? = null,
+    ) = scope.launch {
+        var unsupported = 0
+        var failed = 0
+        for (uri in uris) {
+            try {
+                library.importLocal(uri, libraryId)
+            } catch (_: UnsupportedFormatException) {
+                unsupported++
+            } catch (_: IOException) {
+                failed++
             }
-            val message =
-                listOfNotNull(
-                    "$unsupported file(s) not supported. Books: EPUB, MOBI/AZW3, FB2, PDF; comics: CBZ only."
-                        .takeIf { unsupported > 0 },
-                    "$failed file(s) could not be imported.".takeIf { failed > 0 },
-                ).joinToString(" ")
-            if (message.isNotEmpty()) _flags.update { it.copy(message = message) }
         }
+        val message =
+            listOfNotNull(
+                "$unsupported file(s) not supported. Books: EPUB, MOBI/AZW3, FB2, PDF; comics: CBZ only."
+                    .takeIf { unsupported > 0 },
+                "$failed file(s) could not be imported.".takeIf { failed > 0 },
+            ).joinToString(" ")
+        if (message.isNotEmpty()) _flags.update { it.copy(message = message) }
+    }
 
     fun messageShown() = _flags.update { it.copy(message = null) }
 }

@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.data.library
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.c0mpile.grimmreader.core.common.IoDispatcher
+import com.c0mpile.grimmreader.core.data.safeName
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.dao.DownloadDao
@@ -27,7 +28,7 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** A picked folder; [accessible] is false once the grant was revoked or the volume is gone. */
+/** A picked folder (the download folder); [accessible] is false once the grant was revoked or the volume is gone. */
 data class BookFolder(
     val uri: String,
     val name: String,
@@ -44,7 +45,8 @@ data class ScanResult(
 )
 
 /**
- * Local books read in place from folders the user picked. A scan adds new book files, follows moved or renamed
+ * Local books read in place from the watch folders of the on-device libraries (see [LocalLibraryRepository]):
+ * a book found in a library's folder is filed into that library. A scan adds new book files, follows moved or renamed
  * ones (same partial MD5, so position and bookmarks stay), and drops books whose file is gone. A dropped book
  * that was read is set aside instead (hidden, file link cleared, position, bookmarks and status kept), and comes
  * back when a scan finds its content again, say after its folder is added back. A folder that cannot be listed
@@ -59,16 +61,12 @@ class FolderLibrary
         private val bookDao: BookDao,
         private val fileDao: BookFileDao,
         private val downloads: DownloadDao,
+        private val localLibraries: LocalLibraryRepository,
         private val library: LibraryRepository,
         private val duplicates: FolderDuplicates,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
         private val lock = Mutex()
-
-        val folders: Flow<List<BookFolder>> =
-            prefs.bookFolders
-                .map { list -> list.map { BookFolder(it, documents.folderName(it), documents.hasAccess(it)) } }
-                .flowOn(io)
 
         val downloadFolder: Flow<BookFolder?> =
             prefs.downloadFolder
@@ -100,54 +98,97 @@ class FolderLibrary
                 tree?.let { documents.persist(it) }
                 prefs.setDownloadFolder(tree?.toString())
                 old?.let { releaseIfUnused(it) }
+                if (tree != null) createLibrarySubfolders(tree.toString())
             }
 
-        suspend fun add(tree: Uri): ScanResult {
-            withContext(io) { documents.persist(tree) }
-            prefs.setBookFolders(prefs.bookFolders.first().toSet() + tree.toString())
+        /** One subfolder per server library in the download folder, so they are there before the first download. */
+        private suspend fun createLibrarySubfolders(tree: String) {
+            localLibraries
+                .all()
+                .filter { it.serverLibraryId != null }
+                .forEach { runCatching { documents.ensureFolder(tree, safeName(it.name, FALLBACK_LIBRARY)) } }
+        }
+
+        /**
+         * Gives [libraryId] the watch folder [tree] (null = none) and scans it. The previous folder's books leave
+         * the library (see [detach]).
+         */
+        suspend fun setLibraryFolder(
+            libraryId: Long,
+            tree: Uri?,
+        ): ScanResult {
+            lock.withLock {
+                withContext(io) {
+                    val old = localLibraries.get(libraryId)?.folderUri
+                    tree?.let { documents.persist(it) }
+                    localLibraries.setFolderUri(libraryId, tree?.toString())
+                    if (old != null && old != tree?.toString()) detach(old)
+                }
+            }
             return scan()
         }
 
         /**
-         * Stops scanning [tree] and removes its books from the library (read ones are set aside, see the class
-         * comment); the files themselves stay. A book that
-         * another added folder also reaches (a subfolder of [tree]) is kept and moved to that folder's URI, since
+         * Deletes a library of the user's own. Books read in place from its folder leave the app's library (the
+         * files stay); imported copies and the like fall back to being in no library. A library mirroring a
+         * server library comes back with the next refresh, so it can only lose its folder.
+         */
+        suspend fun deleteLibrary(libraryId: Long) {
+            lock.withLock {
+                withContext(io) {
+                    val row = localLibraries.get(libraryId) ?: return@withContext
+                    if (row.serverLibraryId != null) return@withContext
+                    localLibraries.delete(libraryId)
+                    row.folderUri?.let { detach(it) }
+                    bookDao.clearLocalLibrary(libraryId)
+                }
+            }
+        }
+
+        /**
+         * Stops scanning [tree] (no library lists it as its folder any more) and removes its books from the library
+         * (read ones are set aside, see the class comment); the files themselves stay. A book that another
+         * library's folder also reaches (a subfolder of [tree]) is kept and moved to that folder's URI, since
          * [tree]'s grant is released. A server book that read its file from [tree] (a merged duplicate) goes back
          * to not downloaded, so it offers reading online or downloading again, unless [tree] is also the download
          * folder (whose grant stays).
          */
-        suspend fun remove(tree: String) =
-            lock.withLock {
-                withContext(io) {
-                    val remaining = prefs.bookFolders.first().toSet() - tree
-                    prefs.setBookFolders(remaining)
-                    val stillReached =
-                        remaining
-                            .filter { documents.hasAccess(it) }
-                            .flatMap { runCatching { documents.listBooks(it) }.getOrDefault(emptyList()) }
-                            .associateBy { documentId(it.uri) }
-                    val downloadFolder = prefs.downloadFolder.first()
-                    fileDao
-                        .documents()
-                        .filter { file -> inFolder(file, tree) }
-                        .forEach { file ->
-                            val other = stillReached[documentId(file.localUri!!)]
-                            when {
-                                other != null -> fileDao.setLocal(file.id, other.uri, file.sizeBytes, file.partialMd5)
-                                isLocal(file) -> drop(file)
-                                tree != downloadFolder -> fileDao.setLocal(file.id, null, file.sizeBytes, file.partialMd5)
-                            }
-                        }
-                    releaseIfUnused(tree)
+        private suspend fun detach(tree: String) {
+            val remaining = roots().map { it.tree }.toSet() - tree
+            val stillReached =
+                remaining
+                    .filter { documents.hasAccess(it) }
+                    .flatMap { runCatching { documents.listBooks(it) }.getOrDefault(emptyList()) }
+                    .associateBy { documentId(it.uri) }
+            val downloadFolder = prefs.downloadFolder.first()
+            fileDao
+                .documents()
+                .filter { file -> inFolder(file, tree) }
+                .forEach { file ->
+                    val other = stillReached[documentId(file.localUri!!)]
+                    when {
+                        other != null -> fileDao.setLocal(file.id, other.uri, file.sizeBytes, file.partialMd5)
+                        isLocal(file) -> drop(file)
+                        tree != downloadFolder -> fileDao.setLocal(file.id, null, file.sizeBytes, file.partialMd5)
+                    }
                 }
-            }
+            releaseIfUnused(tree)
+        }
 
-        /** Gives up the grant on [tree] once no folder setting and no book file needs it any more. */
+        /** Gives up the grant on [tree] once no library folder, no download folder and no book file needs it any more. */
         private suspend fun releaseIfUnused(tree: String) {
-            if (tree in prefs.bookFolders.first() || tree == prefs.downloadFolder.first()) return
+            if (roots().any { it.tree == tree } || tree == prefs.downloadFolder.first()) return
             if (fileDao.documents().any { inFolder(it, tree) }) return
             documents.release(tree)
         }
+
+        /** The library folders in library order, each with the library its books go to. */
+        private suspend fun roots(): List<Root> = localLibraries.all().mapNotNull { l -> l.folderUri?.let { Root(l.id, it) } }
+
+        private data class Root(
+            val libraryId: Long,
+            val tree: String,
+        )
 
         @Volatile private var lastScanAt = 0L
 
@@ -158,16 +199,19 @@ class FolderLibrary
         suspend fun scan(): ScanResult =
             lock.withLock {
                 withContext(io) {
-                    val folders = prefs.bookFolders.first()
+                    val roots = roots()
                     val listed = mutableMapOf<String, List<FolderDocument>>()
-                    for (folder in folders) {
-                        if (!documents.hasAccess(folder)) continue
+                    for (root in roots) {
+                        if (!documents.hasAccess(root.tree)) continue
                         try {
-                            listed[folder] = documents.listBooks(folder)
+                            listed[root.tree] = documents.listBooks(root.tree)
                         } catch (_: IOException) {
                             // Unlistable: keep its books as they are.
                         }
                     }
+                    // A file reached through two library folders (parent and child) goes to the first library.
+                    val libraryOf = mutableMapOf<String, Long>()
+                    for (root in roots) listed[root.tree]?.forEach { libraryOf.putIfAbsent(documentId(it.uri), root.libraryId) }
                     val found = listed.values.flatten().distinctBy { documentId(it.uri) }
                     val foundIds = found.map { documentId(it.uri) }.toSet()
                     val known = fileDao.documents()
@@ -181,8 +225,9 @@ class FolderLibrary
                     var added = 0
                     for (doc in found) {
                         if (documentId(doc.uri) in knownIds) continue
-                        if (addOrFollow(doc, followable)) added++
+                        if (addOrFollow(doc, libraryOf.getValue(documentId(doc.uri)), followable)) added++
                     }
+                    fileKnownBooks(known, libraryOf)
                     val gone = missing.filter { it in followable }
                     gone.forEach { drop(it) }
                     val merged = duplicates.merge(listed.keys)
@@ -190,9 +235,36 @@ class FolderLibrary
                     // Grants kept for earlier downloads go once their last file is removed.
                     documents.grantedTrees().forEach { releaseIfUnused(it) }
                     lastScanAt = System.currentTimeMillis()
-                    ScanResult(added, gone.size, folders.size - listed.size, merged)
+                    ScanResult(added, gone.size, roots.size - listed.size, merged)
                 }
             }
+
+        /**
+         * Files the local books found in a library folder that are in no library yet (they were there before the
+         * folder became a library's, or from an earlier build). A book already in a library stays there.
+         */
+        private suspend fun fileKnownBooks(
+            known: List<BookFileEntity>,
+            libraryOf: Map<String, Long>,
+        ) {
+            val unsorted = bookDao.unsortedLocalIds().toSet()
+            if (unsorted.isEmpty()) return
+            known.filter { it.bookId in unsorted }.forEach { file ->
+                libraryOf[documentId(file.localUri!!)]?.let { bookDao.setLocalLibrary(file.bookId, it) }
+            }
+        }
+
+        /** [moved] (missing in this scan, or set aside) is now [doc]; true when it was set aside, so a book came back. */
+        private suspend fun follow(
+            moved: BookFileEntity,
+            doc: FolderDocument,
+            md5: String,
+            libraryId: Long,
+        ): Boolean {
+            fileDao.setLocal(moved.id, doc.uri, doc.sizeBytes, md5)
+            if (isLocal(moved)) bookDao.setLocalLibrary(moved.bookId, libraryId)
+            return moved.localUri == null
+        }
 
         /**
          * True when [doc] is a new book or one set aside coming back; a file with the same content as one of
@@ -200,6 +272,7 @@ class FolderLibrary
          */
         private suspend fun addOrFollow(
             doc: FolderDocument,
+            libraryId: Long,
             followable: MutableList<BookFileEntity>,
         ): Boolean =
             try {
@@ -209,10 +282,9 @@ class FolderLibrary
                     val moved = followable.firstOrNull { it.partialMd5 == md5 }
                     if (moved != null) {
                         followable.remove(moved)
-                        fileDao.setLocal(moved.id, doc.uri, doc.sizeBytes, md5)
-                        moved.localUri == null
+                        follow(moved, doc, md5, libraryId)
                     } else {
-                        library.addLocalBook(opened, format, doc.name, doc.uri, doc.sizeBytes, md5)
+                        library.addLocalBook(opened, format, doc.name, doc.uri, doc.sizeBytes, md5, libraryId)
                         true
                     }
                 }
@@ -265,5 +337,6 @@ class FolderLibrary
 
         private companion object {
             const val RESCAN_AFTER_MS = 60_000L
+            const val FALLBACK_LIBRARY = "library"
         }
     }

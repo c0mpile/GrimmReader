@@ -62,7 +62,27 @@ class MigrationTest {
         assertTrue(keptCover.exists())
     }
 
+    @Test fun onDeviceLibrariesAreAddedWithoutTouchingBooks() {
+        helper.createDatabase(DB_V6, 6).use { db ->
+            db.execSQL(
+                "INSERT INTO book (id, source, title, sortTitle, authors, readStatus, addedAt) " +
+                    "VALUES (1, 'LOCAL', 'b1', 'b1', '', 'UNREAD', 0)",
+            )
+        }
+        helper.runMigrationsAndValidate(DB_V6, 7, true).use { db ->
+            db.query("SELECT localLibraryId FROM book WHERE id = 1").use { c ->
+                assertTrue(c.moveToFirst())
+                assertTrue(c.isNull(0))
+            }
+            db.query("SELECT COUNT(*) FROM local_library").use { c ->
+                c.moveToFirst()
+                assertEquals(0, c.getInt(0))
+            }
+        }
+    }
+
     private companion object {
+        const val DB_V6 = "migration-test-v6.db"
         const val DB = "migration-test.db"
     }
 }

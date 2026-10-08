@@ -99,7 +99,7 @@ fun GrimmApp(
     val firstRunDone by prefs.firstRunDone.collectAsStateWithLifecycle(initialValue = null)
     when (firstRunDone) {
         null -> Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
-        false -> FirstRunScreen()
+        false -> FirstRunScreen(devServerUrl)
         else -> MainNavigation(versionName, devServerUrl)
     }
 }

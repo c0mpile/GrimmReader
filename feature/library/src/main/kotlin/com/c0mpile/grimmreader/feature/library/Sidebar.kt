@@ -70,12 +70,14 @@ fun Sidebar(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
+    var creatingLibrary by remember { mutableStateOf(false) }
     val collapsed = rememberSaveable(saver = CollapsedSaver) { mutableStateMapOf<String, Boolean>() }
     // A Surface so text and icons get the right content colour on the dark panel.
     Surface(modifier.width(SidebarWidth).fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SidebarContent(state, selected, onSelect, onCollapse, notebook, collapsed) { creating = true }
+        SidebarContent(state, selected, onSelect, onCollapse, notebook, collapsed, { creating = true }) { creatingLibrary = true }
     }
     if (creating) CreateShelfDialog(onDismiss = { creating = false }, create = viewModel::createShelf)
+    if (creatingLibrary) CreateLibraryDialog(onDismiss = { creatingLibrary = false }, create = viewModel::createLibrary)
 }
 
 @Composable
@@ -87,6 +89,7 @@ private fun SidebarContent(
     notebook: Boolean,
     collapsed: MutableMap<String, Boolean>,
     onCreateShelf: () -> Unit,
+    onCreateLibrary: () -> Unit,
 ) {
     Column(Modifier.safeDrawingPadding().padding(horizontal = 12.dp, vertical = 12.dp)) {
         Text(
@@ -117,22 +120,9 @@ private fun SidebarContent(
                     }
                 }
             }
-            section("Libraries", collapsed) {
-                state.libraries.forEach { (library, count) ->
-                    browse(LucideIcons.Library, library.name, count, LibraryScope.Server(library.id), BrowseMode.BOOKS, selected, onSelect)
-                }
-                browse(
-                    LucideIcons.Smartphone,
-                    "On this device",
-                    state.onDevice,
-                    LibraryScope.OnDevice,
-                    BrowseMode.BOOKS,
-                    selected,
-                    onSelect,
-                )
-            }
+            libraries(state, collapsed, selected, onSelect, onCreateLibrary)
             if (state.hasServer) {
-                section("Shelves", collapsed, action = LucideIcons.Plus to onCreateShelf) {
+                section("Shelves", collapsed, action = Triple(LucideIcons.Plus, "New shelf", onCreateShelf)) {
                     browse(LucideIcons.Inbox, "Unshelved", state.unshelved, LibraryScope.Unshelved, BrowseMode.BOOKS, selected, onSelect)
                     state.shelves.forEach { shelf ->
                         val scope = if (shelf.magic) LibraryScope.MagicShelf(shelf.id) else LibraryScope.Shelf(shelf.id)
@@ -159,6 +149,40 @@ private fun SidebarContent(
     }
 }
 
+/** The server's libraries (when connected) and the libraries on this device. */
+private fun LazyListScope.libraries(
+    state: SidebarState,
+    collapsed: MutableMap<String, Boolean>,
+    selected: SidebarDestination?,
+    onSelect: (SidebarDestination) -> Unit,
+    onCreateLibrary: () -> Unit,
+) {
+    if (state.hasServer) {
+        section("Libraries", collapsed) {
+            state.libraries.forEach { (library, count) ->
+                browse(
+                    LucideIcons.Library,
+                    library.name,
+                    count,
+                    LibraryScope.Server(library.id),
+                    BrowseMode.BOOKS,
+                    selected,
+                    onSelect,
+                )
+            }
+        }
+    }
+    section("On this device", collapsed, action = Triple(LucideIcons.Plus, "New library", onCreateLibrary)) {
+        state.localLibraries.forEach { (library, count) ->
+            val icon = if (library.serverLibraryId != null) LucideIcons.Library else LucideIcons.Smartphone
+            browse(icon, library.name, count, LibraryScope.Local(library.id), BrowseMode.BOOKS, selected, onSelect)
+        }
+        if (state.unsorted > 0) {
+            browse(LucideIcons.Inbox, "Unsorted", state.unsorted, LibraryScope.Unsorted, BrowseMode.BOOKS, selected, onSelect)
+        }
+    }
+}
+
 private fun Shelf.icon(): ImageVector =
     when {
         magic -> LucideIcons.Sparkles
@@ -169,7 +193,7 @@ private fun Shelf.icon(): ImageVector =
 private fun LazyListScope.section(
     title: String,
     collapsed: MutableMap<String, Boolean>,
-    action: Pair<ImageVector, () -> Unit>? = null,
+    action: Triple<ImageVector, String, () -> Unit>? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val isCollapsed = collapsed[title] == true
@@ -181,9 +205,9 @@ private fun LazyListScope.section(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            action?.let { (icon, onClick) ->
+            action?.let { (icon, description, onClick) ->
                 IconButton(onClick = onClick, modifier = Modifier.size(32.dp)) {
-                    Icon(icon, contentDescription = "New shelf", modifier = Modifier.size(16.dp))
+                    Icon(icon, contentDescription = description, modifier = Modifier.size(16.dp))
                 }
             }
             IconButton(onClick = { collapsed[title] = !isCollapsed }, modifier = Modifier.size(32.dp)) {
@@ -275,6 +299,41 @@ private fun SearchPill(onClick: () -> Unit) {
         )
         Text("Search", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+@Composable
+private fun CreateLibraryDialog(
+    onDismiss: () -> Unit,
+    create: suspend (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New library") },
+        text = {
+            Column {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Give it a folder in Settings → Storage and the books you put there appear in it.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    scope.launch {
+                        create(name)
+                        onDismiss()
+                    }
+                },
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

@@ -18,25 +18,35 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.c0mpile.grimmreader.core.data.library.BookFolder
+import com.c0mpile.grimmreader.core.designsystem.component.LibraryFolderList
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 
 /** Download folder (one, or app storage) and the folders whose books are read in place. */
 @Composable
 internal fun StorageSettings(
     state: SettingsUiState,
     onDownloadFolder: (Uri?) -> Unit,
-    onAddBookFolder: (Uri) -> Unit,
-    onRemoveBookFolder: (String) -> Unit,
+    onAddLibrary: (String) -> Unit,
+    onLibraryFolder: (Long, Uri?) -> Unit,
+    onDeleteLibrary: (Long) -> Unit,
     onRescan: () -> Unit,
     onForgetRemoved: () -> Unit,
 ) {
     var confirmForget by remember { mutableStateOf(false) }
     val pickDownload = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(onDownloadFolder) }
-    val pickBooks = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(onAddBookFolder) }
+    var pickingFor by rememberSaveable { mutableStateOf<Long?>(null) }
+    var confirmDelete by remember { mutableStateOf<LocalLibrary?>(null) }
+    val pickLibrary =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree: Uri? ->
+            val library = pickingFor
+            if (tree != null && library != null) onLibraryFolder(library, tree)
+            pickingFor = null
+        }
 
     Text("Downloads", style = MaterialTheme.typography.titleSmall)
     val download = state.downloadFolder
@@ -46,7 +56,9 @@ internal fun StorageSettings(
             when {
                 download == null -> "Private to the app; removed when the app is uninstalled."
                 !download.accessible -> "No access any more. Downloads fail until you pick a folder again."
-                else -> "New downloads are saved here, each in a folder of its own. Earlier downloads stay where they are."
+                else ->
+                    "New downloads are saved here, in a subfolder for their library and then a folder of their own. " +
+                        "Earlier downloads stay where they are."
             },
         warning = download?.accessible == false,
     ) {
@@ -54,16 +66,25 @@ internal fun StorageSettings(
         if (download != null) TextButton(onClick = { onDownloadFolder(null) }) { Text("Use app storage") }
     }
 
-    Text("Book folders", style = MaterialTheme.typography.titleSmall)
+    Text("Libraries", style = MaterialTheme.typography.titleSmall)
     Text(
-        "Books in these folders and their subfolders are read in place, without copying.",
+        "A library with a folder shows the books in the folder and its subfolders, read in place, together with " +
+            "the books downloaded from the server library of the same name.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    state.bookFolders.forEach { folder -> BookFolderLine(folder, onRemoveBookFolder) }
+    LibraryFolderList(
+        libraries = state.libraries,
+        onChooseFolder = {
+            pickingFor = it.id
+            pickLibrary.launch(null)
+        },
+        onClearFolder = { onLibraryFolder(it.id, null) },
+        onDelete = { confirmDelete = it },
+        onAdd = onAddLibrary,
+    )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { pickBooks.launch(null) }) { Text("Add folder") }
-        if (state.bookFolders.isNotEmpty()) OutlinedButton(onClick = onRescan, enabled = !state.scanning) { Text("Scan now") }
+        if (state.libraries.any { it.folderUri != null }) OutlinedButton(onClick = onRescan, enabled = !state.scanning) { Text("Scan now") }
         if (state.scanning) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
     }
     state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -75,6 +96,24 @@ internal fun StorageSettings(
         ) {
             TextButton(onClick = { confirmForget = true }) { Text("Forget removed books") }
         }
+    }
+    confirmDelete?.let { library ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Delete ${library.name}?") },
+            text = {
+                Text(
+                    "Books read from its folder leave the app's library; the files are not touched. Imported books stay, in no library.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = null
+                    onDeleteLibrary(library.id)
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
+        )
     }
     if (confirmForget) {
         AlertDialog(
@@ -95,18 +134,6 @@ internal fun StorageSettings(
             dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancel") } },
         )
     }
-}
-
-@Composable
-private fun BookFolderLine(
-    folder: BookFolder,
-    onRemove: (String) -> Unit,
-) = FolderLine(
-    name = folder.name,
-    detail = if (folder.accessible) null else "No access any more. Remove it and add it again.",
-    warning = !folder.accessible,
-) {
-    TextButton(onClick = { onRemove(folder.uri) }) { Text("Remove") }
 }
 
 /** Name and detail, actions on their own line under them so long texts keep the full width. */

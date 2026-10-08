@@ -4,7 +4,13 @@ package com.c0mpile.grimmreader.core.model
 sealed interface LibraryScope {
     data object All : LibraryScope
 
-    data object OnDevice : LibraryScope
+    /** Books on this device that are in no local library. */
+    data object Unsorted : LibraryScope
+
+    /** One on-device library: its folder's books plus downloads from the server library it mirrors. */
+    data class Local(
+        val libraryId: Long,
+    ) : LibraryScope
 
     /** Server books on no (user) shelf. */
     data object Unshelved : LibraryScope
@@ -25,7 +31,8 @@ sealed interface LibraryScope {
     fun encode(): String =
         when (this) {
             All -> "all"
-            OnDevice -> "device"
+            Unsorted -> "unsorted"
+            is Local -> "local:$libraryId"
             Unshelved -> "unshelved"
             is Server -> "library:$libraryId"
             is Shelf -> "shelf:$shelfId"
@@ -36,7 +43,8 @@ sealed interface LibraryScope {
         fun decode(value: String?): LibraryScope {
             val id = value?.substringAfter(':', "")?.toLongOrNull()
             return when {
-                value == "device" -> OnDevice
+                value == "unsorted" -> Unsorted
+                id != null && value.startsWith("local:") -> Local(id)
                 value == "unshelved" -> Unshelved
                 id != null && value.startsWith("library:") -> Server(id)
                 id != null && value.startsWith("shelf:") -> Shelf(id)

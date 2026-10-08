@@ -47,6 +47,7 @@ internal fun parseInstant(value: String?): Long? = value?.let { runCatching { In
 internal fun BookSummaryDto.toEntity(
     serverRowId: Long,
     existing: BookEntity?,
+    localLibraryId: Long? = existing?.localLibraryId,
 ): BookEntity =
     BookEntity(
         id = existing?.id ?: 0,
@@ -54,6 +55,7 @@ internal fun BookSummaryDto.toEntity(
         serverRowId = serverRowId,
         serverBookId = id,
         serverLibraryId = libraryId,
+        localLibraryId = localLibraryId,
         title = title?.ifBlank { null } ?: primaryFileName ?: "#$id",
         authors = authors.joinToString(BookEntity.AUTHOR_SEPARATOR),
         seriesName = seriesName,
@@ -88,6 +90,7 @@ fun BookWithFiles.toDomain(coverModel: (BookEntity) -> String?): Book =
         progressPercent = position?.percent ?: book.progressPercent,
         files = files.map { it.toDomain() },
         libraryId = book.serverLibraryId,
+        localLibraryId = book.localLibraryId,
         addedAt = book.addedAt,
         lastReadAt = maxOf(book.lastReadAt ?: 0L, position?.localUpdatedAt ?: 0L).takeIf { it > 0L },
         shelves = shelves.filter { !it.magic }.map { it.shelfId }.toSet(),
