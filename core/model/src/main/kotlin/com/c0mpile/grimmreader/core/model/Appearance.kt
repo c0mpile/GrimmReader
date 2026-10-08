@@ -40,7 +40,4 @@ data class ReaderPrefs(
     val tapToTurn: Boolean = true,
     val swipeToTurn: Boolean = true,
     val turnZone: Int = 25,
-    /** Comics: guided view steps through a page panel by panel ([guidedFullPage]: the whole page first). */
-    val guidedView: Boolean = false,
-    val guidedFullPage: Boolean = true,
 )
