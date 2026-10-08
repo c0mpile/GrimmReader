@@ -17,9 +17,11 @@ import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
+import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.files.BookMetadataReader
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.Book
+import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
 import com.c0mpile.grimmreader.core.model.Library
 import kotlinx.coroutines.CoroutineDispatcher
@@ -149,42 +151,66 @@ class LibraryRepository
         suspend fun importLocal(uri: Uri): Long =
             withContext(io) {
                 val imported = files.importFrom(uri)
-                val meta = BookMetadataReader.read(imported.file, imported.format)
-                val title = meta.title ?: imported.displayName.substringBeforeLast('.')
-                val bookId =
-                    db.withTransaction {
-                        val id =
-                            bookDao.insert(
-                                BookEntity(
-                                    source = BookSource.LOCAL,
-                                    title = title,
-                                    authors = meta.authors.joinToString(BookEntity.AUTHOR_SEPARATOR),
-                                    seriesName = meta.series,
-                                    seriesNumber = meta.seriesNumber,
-                                    readingDirection = meta.readingDirection,
-                                    addedAt = System.currentTimeMillis(),
-                                ),
-                            )
-                        fileDao.upsert(
-                            BookFileEntity(
-                                bookId = id,
-                                format = imported.format,
-                                localUri = imported.file.absolutePath,
-                                sizeBytes = imported.sizeBytes,
-                                partialMd5 = imported.partialMd5,
-                            ),
-                        )
-                        id
-                    }
-                meta.cover?.let { files.saveCover(bookId, it) }
-                bookId
+                BookHandle.open(imported.file).use { book ->
+                    addLocalBook(
+                        book,
+                        imported.format,
+                        imported.displayName,
+                        imported.file.absolutePath,
+                        imported.sizeBytes,
+                        imported.partialMd5,
+                    )
+                }
             }
 
-        /** Deletes a local book and its file; server books only lose their downloaded copy. */
+        /** Adds a local book for [book] (open now), stored as [localUri]. Returns the new book id. */
+        internal suspend fun addLocalBook(
+            book: BookHandle,
+            format: BookFormat,
+            displayName: String,
+            localUri: String,
+            sizeBytes: Long,
+            partialMd5: String,
+        ): Long {
+            val meta = BookMetadataReader.read(book, format)
+            val title = meta.title ?: displayName.substringBeforeLast('.')
+            val bookId =
+                db.withTransaction {
+                    val id =
+                        bookDao.insert(
+                            BookEntity(
+                                source = BookSource.LOCAL,
+                                title = title,
+                                authors = meta.authors.joinToString(BookEntity.AUTHOR_SEPARATOR),
+                                seriesName = meta.series,
+                                seriesNumber = meta.seriesNumber,
+                                readingDirection = meta.readingDirection,
+                                addedAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    fileDao.upsert(
+                        BookFileEntity(bookId = id, format = format, localUri = localUri, sizeBytes = sizeBytes, partialMd5 = partialMd5),
+                    )
+                    id
+                }
+            meta.cover?.let { files.saveCover(bookId, it) }
+            return bookId
+        }
+
+        /** Removes a local book from the library; its file is left alone. */
+        internal suspend fun forgetLocal(bookId: Long) {
+            files.coverFile(bookId).delete()
+            bookDao.delete(bookId)
+        }
+
+        /**
+         * Deletes a local book and its file (also one in a book folder; book detail asks first); server books
+         * only lose their downloaded copy.
+         */
         suspend fun deleteLocal(bookId: Long) =
             withContext(io) {
                 val row = bookDao.get(bookId) ?: return@withContext
-                row.files.mapNotNull { it.localUri }.forEach { java.io.File(it).delete() }
+                row.files.mapNotNull { it.localUri }.forEach(files::deleteBookFile)
                 if (row.book.source == BookSource.SERVER) {
                     row.files.forEach { fileDao.setLocal(it.id, null, it.sizeBytes, it.partialMd5) }
                 } else {

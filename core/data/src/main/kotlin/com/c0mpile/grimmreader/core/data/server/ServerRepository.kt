@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.data.server
 import com.c0mpile.grimmreader.api.grimmory.LoginRequestDto
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.database.dao.BookDao
+import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.dao.ServerDao
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
@@ -37,6 +38,7 @@ class ServerRepository
     constructor(
         private val serverDao: ServerDao,
         private val bookDao: BookDao,
+        private val fileDao: BookFileDao,
         private val session: ServerSession,
         private val policy: NetworkPolicyImpl,
         private val prefs: AppPreferences,
@@ -107,7 +109,8 @@ class ServerRepository
 
         /**
          * Removes the server. With [keepDownloads] the downloaded books stay as local books (they keep their
-         * server id for a later re-link); otherwise every book of the server is deleted from the library.
+         * server id for a later re-link); otherwise every book of the server is deleted from the library, with its
+         * downloaded files (also those saved to a picked download folder).
          */
         suspend fun remove(keepDownloads: Boolean) =
             withContext(io) {
@@ -117,6 +120,7 @@ class ServerRepository
                     bookDao.deleteServerBooksNotIn(server.id, keep = emptyList())
                     bookDao.detachFromServer(server.id)
                 } else {
+                    fileDao.serverDocuments(server.id).forEach { it.localUri?.let(files::deleteBookFile) }
                     bookDao.deleteAllForServer(server.id)
                     files.deleteServerFiles(server.id)
                 }

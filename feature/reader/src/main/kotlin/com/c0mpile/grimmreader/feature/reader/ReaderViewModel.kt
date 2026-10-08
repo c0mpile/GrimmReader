@@ -8,6 +8,8 @@ import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.progress.RemotePosition
 import com.c0mpile.grimmreader.core.data.stream.OnlineReading
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
+import com.c0mpile.grimmreader.core.files.BookHandle
+import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
@@ -48,7 +50,8 @@ sealed interface ReaderContent {
 
     /** [restoreKey] changes when a remote position is accepted, so the reader view restarts there. */
     data class Ebook(
-        val file: File,
+        val book: BookHandle,
+        val fileName: String,
         val cfi: String?,
         val restoreKey: Int = 0,
     ) : ReaderContent
@@ -104,6 +107,7 @@ class ReaderViewModel
         private val library: LibraryRepository,
         private val progress: ProgressRepository,
         private val online: OnlineReading,
+        private val documents: DocumentStore,
         private val bookmarkRepo: BookmarkRepository,
         prefs: AppPreferences,
     ) : ViewModel() {
@@ -115,6 +119,9 @@ class ReaderViewModel
 
         private val pending = MutableStateFlow<Locator?>(null)
         private var source: PageSource? = null
+
+        /** The open book file (app storage, a picked folder or the online cache); open as long as the reader is. */
+        private var handle: BookHandle? = null
 
         /** Where the reader is now: the ebook position (and the bookmark CFI the page reported) or the page. */
         private var ebookAt: Locator.Epub? = null
@@ -147,7 +154,7 @@ class ReaderViewModel
                     val serverId = book.serverId
                     when {
                         file == null -> ReaderContent.NotDownloaded
-                        path != null -> openLocal(File(path), file.format, local)
+                        path != null -> openLocal(openHandle(path), file.format, local)
                         book.source == BookSource.SERVER && serverId != null -> openOnline(serverId, file, local)
                         else -> ReaderContent.NotDownloaded
                     }
@@ -163,16 +170,21 @@ class ReaderViewModel
             }
         }
 
+        private suspend fun openHandle(path: String): BookHandle =
+            withContext(Dispatchers.IO) {
+                if (DocumentStore.isDocument(path)) documents.open(path) else BookHandle.open(File(path))
+            }.also { handle = it }
+
         private suspend fun openLocal(
-            file: File,
+            book: BookHandle,
             format: BookFormat,
             local: Locator?,
         ): ReaderContent =
             when {
-                format.isReflowable -> ReaderContent.Ebook(file, (local as? Locator.Epub)?.cfi)
-                format == BookFormat.PDF -> paged(withContext(Dispatchers.IO) { PdfPageSource.open(file) }, local)
+                format.isReflowable -> ReaderContent.Ebook(book, "book.${format.extensions.first()}", (local as? Locator.Epub)?.cfi)
+                format == BookFormat.PDF -> paged(withContext(Dispatchers.IO) { PdfPageSource.open(book) }, local)
                 else -> {
-                    val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(file, format, null) }
+                    val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(book, format, null) }
                     if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local)
                 }
             }
@@ -200,7 +212,7 @@ class ReaderViewModel
                                 if (s.content is ReaderContent.Fetching) s.copy(content = ReaderContent.Fetching(p)) else s
                             }
                         }
-                    openLocal(cached, format, local)
+                    openLocal(openHandle(cached.absolutePath), format, local)
                 }
                 else -> ReaderContent.Unsupported(file.format)
             }
@@ -346,6 +358,7 @@ class ReaderViewModel
         override fun onCleared() {
             pending.value?.let { locator -> kotlinx.coroutines.runBlocking { progress.save(bookId, locator) } }
             source?.close()
+            handle?.close()
         }
 
         @AssistedFactory

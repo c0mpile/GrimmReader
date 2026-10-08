@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.feature.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.c0mpile.grimmreader.core.data.library.FolderLibrary
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
@@ -57,11 +58,12 @@ class LibraryViewModel
         @Assisted private val mode: BrowseMode,
         private val library: LibraryRepository,
         private val session: ServerSession,
+        private val folders: FolderLibrary,
         shelves: ShelfRepository,
         private val prefs: AppPreferences,
     ) : ViewModel() {
         private val query = MutableStateFlow("")
-        private val sync = LibrarySync(viewModelScope, library, session)
+        private val sync = LibrarySync(viewModelScope, library, session, folders)
 
         val state: StateFlow<LibraryUiState> =
             combine(

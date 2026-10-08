@@ -100,7 +100,7 @@ fun ReaderScreen(
     val snackbar = remember { SnackbarHostState() }
     // One controller per ebook view, hoisted so the sheets and the position bar can jump through it.
     val ebook = state.content as? ReaderContent.Ebook
-    val controller = remember(ebook?.file, ebook?.restoreKey) { EbookController() }
+    val controller = remember(ebook?.book, ebook?.restoreKey) { EbookController() }
     var pageReady by remember(controller) { mutableStateOf(false) }
     val bookmarkCfis = state.bookmarks.mapNotNull { it.cfi }
     LaunchedEffect(controller, pageReady, bookmarkCfis) { if (pageReady) controller.setBookmarks(bookmarkCfis) }
@@ -160,10 +160,11 @@ private fun Content(
         is ReaderContent.Ebook -> {
             val page = prefs.pageTheme.palette(prefs.einkTint)
             val css = EbookCss.build(prefs, PageColors(page.background.hex(), page.text.hex(), page.link.hex(), page.images.css()))
-            key(content.file, content.restoreKey) {
+            key(content.book, content.restoreKey) {
                 // The page colour also fills the safe-area margins around the book.
                 EbookReader(
-                    file = content.file,
+                    book = content.book,
+                    fileName = content.fileName,
                     initialCfi = content.cfi,
                     css = css,
                     animated = LocalMotionEnabled.current && !page.instantTurns,

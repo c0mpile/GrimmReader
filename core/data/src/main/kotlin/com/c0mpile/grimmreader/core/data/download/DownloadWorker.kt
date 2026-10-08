@@ -10,13 +10,18 @@ import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.dao.DownloadDao
+import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadState
+import com.c0mpile.grimmreader.core.datastore.AppPreferences
+import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.files.FormatSniffer
 import com.c0mpile.grimmreader.core.files.LocalFileStore
+import com.c0mpile.grimmreader.core.model.BookFormat
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
@@ -38,6 +43,8 @@ class DownloadWorker
         private val fileDao: BookFileDao,
         private val downloads: DownloadDao,
         private val store: LocalFileStore,
+        private val documents: DocumentStore,
+        private val prefs: AppPreferences,
     ) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
             val fileId = inputData.getLong(KEY_FILE_ID, -1)
@@ -56,20 +63,33 @@ class DownloadWorker
                 val final = File(target.parentFile, "${target.nameWithoutExtension}.${format.extensions.first()}")
                 check(part.renameTo(final)) { "rename failed" }
                 meta.delete()
-                fileDao.upsert(
-                    file.copy(
-                        format = format,
-                        localUri = final.absolutePath,
-                        sizeBytes = final.length(),
-                        partialMd5 = LocalFileStore.partialMd5(final),
-                    ),
-                )
-                update(fileId, DownloadState.DONE, final.length(), final.length())
+                val size = final.length()
+                val md5 = LocalFileStore.partialMd5(final)
+                val localUri = moveToFolder(final, book, format) ?: final.absolutePath
+                fileDao.upsert(file.copy(format = format, localUri = localUri, sizeBytes = size, partialMd5 = md5))
+                update(fileId, DownloadState.DONE, size, size)
                 Result.success()
             } catch (e: IOException) {
                 update(fileId, DownloadState.FAILED, part.length(), null, e.javaClass.simpleName)
                 if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
             }
+        }
+
+        /**
+         * With a download folder set, moves the finished file there as "Title - Author.ext" and returns its URI.
+         * Null keeps it in app storage (no folder set). Throws when the folder is set but not writable, so the
+         * download is retried rather than silently landing somewhere else.
+         */
+        private suspend fun moveToFolder(
+            downloaded: File,
+            book: BookEntity,
+            format: BookFormat,
+        ): String? {
+            val folder = prefs.downloadFolder.first() ?: return null
+            if (!documents.hasAccess(folder)) throw IOException("Download folder is not accessible")
+            val uri = downloaded.inputStream().use { documents.create(folder, fileName(book, format), it) }
+            downloaded.delete()
+            return uri
         }
 
         private suspend fun fetch(
@@ -168,6 +188,25 @@ class DownloadWorker
         }
 
         companion object {
+            private const val MAX_NAME = 120
+
+            /** "Title - First Author.epub", without characters that file systems reject. */
+            internal fun fileName(
+                book: BookEntity,
+                format: BookFormat,
+            ): String {
+                val author = book.authors.split(BookEntity.AUTHOR_SEPARATOR).firstOrNull { it.isNotBlank() }
+                val base =
+                    listOfNotNull(book.title, author)
+                        .joinToString(" - ")
+                        .replace(Regex("""[\\/:*?"<>|\u0000-\u001F]"""), "_")
+                        .trim()
+                        .trimEnd('.')
+                        .take(MAX_NAME)
+                        .ifEmpty { "book" }
+                return "$base.${format.extensions.first()}"
+            }
+
             const val KEY_FILE_ID = "fileId"
             const val KEY_DONE = "done"
             const val KEY_TOTAL = "total"

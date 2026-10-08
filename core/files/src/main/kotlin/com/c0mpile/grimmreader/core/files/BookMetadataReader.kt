@@ -3,15 +3,14 @@ package com.c0mpile.grimmreader.core.files
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
 import android.util.Xml
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.ReadingDirection
+import org.apache.commons.compress.archivers.zip.ZipFile
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
-import java.util.zip.ZipFile
 
 /** Metadata found inside a local file. Everything is optional; the file name is the last resort title. */
 data class LocalMetadata(
@@ -29,18 +28,23 @@ object BookMetadataReader {
     fun read(
         file: File,
         format: BookFormat,
+    ): LocalMetadata = BookHandle.open(file).use { read(it, format) }
+
+    fun read(
+        book: BookHandle,
+        format: BookFormat,
     ): LocalMetadata =
         runCatching {
             when (format) {
-                BookFormat.EPUB -> epub(file)
-                BookFormat.CBZ -> cbz(file)
-                BookFormat.PDF -> LocalMetadata(title = null, cover = pdfCover(file))
+                BookFormat.EPUB -> epub(book)
+                BookFormat.CBZ -> cbz(book)
+                BookFormat.PDF -> LocalMetadata(title = null, cover = pdfCover(book))
                 else -> LocalMetadata(title = null)
             }
         }.getOrElse { LocalMetadata(title = null) }
 
-    private fun epub(file: File): LocalMetadata =
-        ZipFile(file).use { zip ->
+    private fun epub(book: BookHandle): LocalMetadata =
+        book.zip().use { zip ->
             val opfPath = zip.text("META-INF/container.xml")?.let { attr(it, "rootfile", "full-path") } ?: return LocalMetadata(null)
             val opf = zip.text(opfPath) ?: return LocalMetadata(null)
             val parsed = parseOpf(opf.byteInputStream())
@@ -53,16 +57,16 @@ object BookMetadataReader {
             LocalMetadata(title = parsed.title, authors = parsed.authors, cover = cover)
         }
 
-    private fun cbz(file: File): LocalMetadata =
-        ZipComicArchive(file).use { archive ->
+    private fun cbz(book: BookHandle): LocalMetadata =
+        ZipComicArchive(book).use { archive ->
             val info = archive.comicInfo()?.let { parseComicInfo(it.inputStream()) }
             val cover = if (archive.pageCount > 0) archive.open(0).use { it.readBounded(ReadLimits.IMAGE_BYTES) } else null
             (info ?: LocalMetadata(title = null)).copy(cover = cover)
         }
 
     /** Page 1 rendered on white at cover height, as JPEG. */
-    private fun pdfCover(file: File): ByteArray? =
-        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+    private fun pdfCover(book: BookHandle): ByteArray? =
+        book.descriptor().use { fd ->
             PdfRenderer(fd).use { renderer ->
                 if (renderer.pageCount == 0) return null
                 renderer.openPage(0).use { page ->

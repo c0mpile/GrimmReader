@@ -12,6 +12,7 @@ import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.SecretCipher
 import com.c0mpile.grimmreader.core.datastore.SecretStore
+import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.network.GuardedHttpClient
@@ -84,7 +85,11 @@ class OnlineReadingTest {
             session.storeTokens(id, server.url("/"), TokenDto("t", "r"))
             withTimeout(5_000) { session.server.first { it != null } }
             while (!policy.isCleartextAllowed(server.hostName)) kotlinx.coroutines.delay(10)
-            OnlineReading(session, LocalFileStore(ApplicationProvider.getApplicationContext()), Dispatchers.IO)
+            OnlineReading(
+                session,
+                LocalFileStore(ApplicationProvider.getApplicationContext(), DocumentStore(ApplicationProvider.getApplicationContext())),
+                Dispatchers.IO,
+            )
         }
 
     @Test fun ebookIsFetchedOnceThenServedFromTheCache() =

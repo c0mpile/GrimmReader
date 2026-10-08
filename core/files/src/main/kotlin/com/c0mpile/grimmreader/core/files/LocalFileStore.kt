@@ -9,7 +9,7 @@ import com.c0mpile.grimmreader.core.model.BookFormat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
+import java.nio.ByteBuffer
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,6 +35,7 @@ class LocalFileStore
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
+        private val documents: DocumentStore,
     ) {
         val booksDir: File get() = File(context.filesDir, "books")
 
@@ -76,6 +77,11 @@ class LocalFileStore
             }
         }
 
+        /** Deletes a book file: a path in app storage or a document in a picked folder. */
+        fun deleteBookFile(localUri: String) {
+            if (DocumentStore.isDocument(localUri)) documents.delete(localUri) else File(localUri).delete()
+        }
+
         fun saveCover(
             bookId: Long,
             bytes: ByteArray,
@@ -94,12 +100,9 @@ class LocalFileStore
             }
 
         companion object {
-            fun partialMd5(file: File): String =
-                RandomAccessFile(file, "r").use { raf ->
-                    PartialMd5.compute(raf.length()) { offset, buffer ->
-                        raf.seek(offset)
-                        raf.read(buffer)
-                    }
-                }
+            fun partialMd5(file: File): String = BookHandle.open(file).use(::partialMd5)
+
+            fun partialMd5(book: BookHandle): String =
+                PartialMd5.compute(book.size) { offset, buffer -> book.read(offset, ByteBuffer.wrap(buffer)) }
         }
     }

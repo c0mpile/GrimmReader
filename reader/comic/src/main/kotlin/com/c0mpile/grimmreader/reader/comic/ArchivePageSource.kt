@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.reader.comic
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.IntSize
+import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.files.ComicArchive
 import com.c0mpile.grimmreader.core.files.ZipComicArchive
 import com.c0mpile.grimmreader.core.model.BookFormat
@@ -13,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /** Pages of a local CBZ comic, read in place (CBZ is the only comic format). */
 class ArchivePageSource private constructor(
@@ -40,12 +40,12 @@ class ArchivePageSource private constructor(
     companion object {
         /** Null when [format] is not a comic. */
         fun open(
-            file: File,
+            book: BookHandle,
             format: BookFormat,
             direction: ReadingDirection?,
         ): ArchivePageSource? =
             when (format) {
-                BookFormat.CBZ -> ArchivePageSource(ZipComicArchive(file), direction ?: ReadingDirection.LTR)
+                BookFormat.CBZ -> ArchivePageSource(ZipComicArchive(book), direction ?: ReadingDirection.LTR)
                 else -> null
             }
     }

@@ -23,6 +23,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.Locator
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -33,8 +34,6 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
-import java.io.FileInputStream
 
 /** A chapter; [depth] is 0 for top-level entries, 1 for their sub-chapters and so on. */
 data class TocEntry(
@@ -101,11 +100,13 @@ private const val TAP_EDGE = 0.3f
 
 /**
  * foliate-js in a WebView that can only reach app-local content: the reader page, foliate itself and the
- * one [file] being read. Every other request gets a 403; network loads are blocked outright.
+ * one [book] being read. Every other request gets a 403; network loads are blocked outright. [fileName] only
+ * tells foliate the format by its extension.
  */
 @Composable
 fun EbookReader(
-    file: File,
+    book: BookHandle,
+    fileName: String,
     initialCfi: String?,
     css: String,
     animated: Boolean,
@@ -115,11 +116,11 @@ fun EbookReader(
     modifier: Modifier = Modifier,
 ) {
     val events by rememberUpdatedState(onEvent)
-    val startUrl = remember(file) { startUrl(file, initialCfi, css, animated) }
+    val startUrl = remember(book) { startUrl(fileName, initialCfi, css, animated) }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { context -> readerWebView(context, file, controller) { events(it) }.apply { loadUrl(startUrl) } },
+            factory = { context -> readerWebView(context, book, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
         TapZones(controller, onToggleChrome)
     }
@@ -134,7 +135,7 @@ fun EbookReader(
 }
 
 private fun startUrl(
-    file: File,
+    fileName: String,
     initialCfi: String?,
     css: String,
     animated: Boolean,
@@ -142,7 +143,7 @@ private fun startUrl(
     Uri
         .parse("$ORIGIN/assets/reader/reader.html")
         .buildUpon()
-        .appendQueryParameter("name", file.name)
+        .appendQueryParameter("name", fileName)
         .appendQueryParameter("animated", if (animated) "1" else "0")
         .apply { if (initialCfi != null) appendQueryParameter("cfi", initialCfi) }
         .appendQueryParameter("css", css)
@@ -152,7 +153,7 @@ private fun startUrl(
 @SuppressLint("SetJavaScriptEnabled")
 private fun readerWebView(
     context: Context,
-    file: File,
+    book: BookHandle,
     controller: EbookController,
     onEvent: (EbookEvent) -> Unit,
 ): WebView {
@@ -161,7 +162,7 @@ private fun readerWebView(
             .Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
             .addPathHandler("/book/") { path ->
-                if (path == "current") WebResourceResponse("application/octet-stream", null, FileInputStream(file)) else null
+                if (path == "current") WebResourceResponse("application/octet-stream", null, book.inputStream()) else null
             }.build()
     return WebView(context).apply {
         settings.javaScriptEnabled = true

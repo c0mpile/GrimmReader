@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.BookLayout
 import com.c0mpile.grimmreader.core.model.BookSort
@@ -60,6 +61,20 @@ class AppPreferences(
             it[LIBRARY_SORT] = view.sort.name
             it[LIBRARY_LAYOUT] = view.layout.name
         }
+    }
+
+    /** Folders (SAF tree URIs) scanned for local books, read in place. */
+    val bookFolders: Flow<List<String>> = store.data.map { p -> p[BOOK_FOLDERS].orEmpty().sorted() }
+
+    /** Folder (SAF tree URI) that server downloads are saved to; null = app storage. */
+    val downloadFolder: Flow<String?> = store.data.map { p -> p[DOWNLOAD_FOLDER] }
+
+    suspend fun setBookFolders(folders: Set<String>) {
+        store.edit { it[BOOK_FOLDERS] = folders }
+    }
+
+    suspend fun setDownloadFolder(folder: String?) {
+        store.edit { if (folder == null) it.remove(DOWNLOAD_FOLDER) else it[DOWNLOAD_FOLDER] = folder }
     }
 
     /** When the library of server row [serverId] was last mirrored successfully (epoch ms); 0 when never. */
@@ -123,5 +138,7 @@ class AppPreferences(
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
+        val BOOK_FOLDERS = stringSetPreferencesKey("book_folders")
+        val DOWNLOAD_FOLDER = stringPreferencesKey("download_folder")
     }
 }

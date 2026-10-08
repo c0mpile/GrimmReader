@@ -110,6 +110,17 @@ interface BookFileDao {
     @Query("SELECT * FROM book_file WHERE bookId = :bookId")
     suspend fun forBook(bookId: Long): List<BookFileEntity>
 
+    /** Files read in place from a folder or saved to the download folder (persisted content:// URIs). */
+    @Query("SELECT * FROM book_file WHERE localUri LIKE 'content://%'")
+    suspend fun documents(): List<BookFileEntity>
+
+    /** A server's downloads saved to a picked download folder. */
+    @Query(
+        "SELECT f.* FROM book_file f JOIN book b ON b.id = f.bookId " +
+            "WHERE b.serverRowId = :serverRowId AND f.localUri LIKE 'content://%'",
+    )
+    suspend fun serverDocuments(serverRowId: Long): List<BookFileEntity>
+
     @Query("UPDATE book_file SET localUri = :localUri, sizeBytes = :size, partialMd5 = :md5 WHERE id = :id")
     suspend fun setLocal(
         id: Long,

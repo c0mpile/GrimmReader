@@ -1,7 +1,11 @@
 package com.c0mpile.grimmreader.feature.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.c0mpile.grimmreader.core.data.library.BookFolder
+import com.c0mpile.grimmreader.core.data.library.FolderLibrary
+import com.c0mpile.grimmreader.core.data.library.ScanResult
 import com.c0mpile.grimmreader.core.data.server.ServerRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
@@ -9,10 +13,12 @@ import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.ServerStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -20,6 +26,10 @@ data class SettingsUiState(
     val appearance: Appearance = Appearance(),
     val server: ServerEntity? = null,
     val status: ServerStatus = ServerStatus.ONLINE,
+    val bookFolders: List<BookFolder> = emptyList(),
+    val downloadFolder: BookFolder? = null,
+    val scanning: Boolean = false,
+    val message: String? = null,
 )
 
 @HiltViewModel
@@ -29,11 +39,48 @@ class SettingsViewModel
         private val prefs: AppPreferences,
         private val servers: ServerRepository,
         session: ServerSession,
+        private val folders: FolderLibrary,
     ) : ViewModel() {
+        private val scan = MutableStateFlow(ScanState())
+
         val state: StateFlow<SettingsUiState> =
-            combine(prefs.appearance, session.server, session.status) { appearance, server, status ->
-                SettingsUiState(appearance, server, status)
+            combine(
+                combine(prefs.appearance, session.server, session.status, ::Triple),
+                folders.folders,
+                folders.downloadFolder,
+                scan,
+            ) { (appearance, server, status), bookFolders, downloadFolder, scan ->
+                SettingsUiState(appearance, server, status, bookFolders, downloadFolder, scan.running, scan.message)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState())
+
+        fun addBookFolder(tree: Uri) = scanning { folders.add(tree) }
+
+        fun rescan() = scanning { folders.scan() }
+
+        fun removeBookFolder(tree: String) = viewModelScope.launch { folders.remove(tree) }
+
+        fun setDownloadFolder(tree: Uri?) = viewModelScope.launch { folders.setDownloadFolder(tree) }
+
+        fun messageShown() = scan.update { it.copy(message = null) }
+
+        private fun scanning(run: suspend () -> ScanResult) =
+            viewModelScope.launch {
+                scan.value = ScanState(running = true)
+                val result = run()
+                scan.value = ScanState(message = result.summary())
+            }
+
+        private fun ScanResult.summary() =
+            listOfNotNull(
+                "$added book(s) added".takeIf { added > 0 },
+                "$removed removed".takeIf { removed > 0 },
+                "$unreadableFolders folder(s) could not be read".takeIf { unreadableFolders > 0 },
+            ).joinToString(", ").ifEmpty { "No changes" }
+
+        private data class ScanState(
+            val running: Boolean = false,
+            val message: String? = null,
+        )
 
         fun setAppearance(appearance: Appearance) = viewModelScope.launch { prefs.setAppearance(appearance) }
 

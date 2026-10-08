@@ -50,6 +50,15 @@ fun SettingsScreen(
             Section("Appearance")
             AppearanceSettings(state.appearance, viewModel::setAppearance)
             HorizontalDivider()
+            Section("Storage")
+            StorageSettings(
+                state,
+                onDownloadFolder = viewModel::setDownloadFolder,
+                onAddBookFolder = viewModel::addBookFolder,
+                onRemoveBookFolder = viewModel::removeBookFolder,
+                onRescan = viewModel::rescan,
+            )
+            HorizontalDivider()
             Section("Server")
             val server = state.server
             if (server == null) {

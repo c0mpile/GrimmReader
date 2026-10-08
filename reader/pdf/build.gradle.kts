@@ -8,6 +8,7 @@ android {
 }
 
 dependencies {
+    implementation(projects.core.files)
     api(projects.reader.paged)
     implementation(libs.kotlinx.coroutines.android)
 }

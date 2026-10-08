@@ -99,11 +99,13 @@ class FilesTest {
                             "<Manga>YesAndRightToLeft</Manga></ComicInfo>"
                     ).toByteArray(),
             )
-        ZipComicArchive(comic).use { archive ->
-            assertEquals(
-                listOf("P1.png", "p2.jpg", "p10.jpg"),
-                (0 until archive.pageCount).map(archive::pageName).filterNot { it.contains("MACOSX") },
-            )
+        BookHandle.open(comic).use { book ->
+            ZipComicArchive(book).use { archive ->
+                assertEquals(
+                    listOf("P1.png", "p2.jpg", "p10.jpg"),
+                    (0 until archive.pageCount).map(archive::pageName).filterNot { it.contains("MACOSX") },
+                )
+            }
         }
         val meta = BookMetadataReader.read(comic, BookFormat.CBZ)
         assertEquals("Sample Series #3", meta.title)
@@ -123,5 +125,27 @@ class FilesTest {
         val meta = BookMetadataReader.read(comic, BookFormat.CBZ)
         assertEquals(null, meta.title)
         assertArrayEquals(png, meta.cover)
+    }
+
+    @Test fun handleReadsArePositionalAndIndependent() {
+        val bytes = ByteArray(100_000) { (it % 251).toByte() }
+        val file = File(tmp.root, "h.bin").apply { writeBytes(bytes) }
+        BookHandle.open(file).use { book ->
+            assertEquals(bytes.size.toLong(), book.size)
+            val a = book.inputStream()
+            val b = book.inputStream(start = 50_000)
+            // Interleaved reads must not move each other's position.
+            assertEquals(bytes[0], a.read().toByte())
+            assertEquals(bytes[50_000], b.read().toByte())
+            assertEquals(bytes[1], a.read().toByte())
+            assertEquals(bytes.copyOfRange(50_001, bytes.size).toList(), b.readBytes().toList())
+            // A zip opened on the handle does not close it.
+            assertEquals(bytes.size, a.readBytes().size + 2)
+        }
+        val epub = epub()
+        BookHandle.open(epub).use { book ->
+            book.zip().close()
+            assertEquals(BookFormat.EPUB, FormatSniffer.sniff(book, "x"))
+        }
     }
 }
