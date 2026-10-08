@@ -43,10 +43,14 @@ interface ServerDao {
 
 @Dao
 interface BookDao {
-    /** Library grid: everything, or one server library; local books are included when [libraryId] is null. */
+    /**
+     * Library grid: everything, or one server library; local books are included when [libraryId] is null. Local
+     * books without a file are set aside (their folder was removed) and left out.
+     */
     @Transaction
     @Query(
         """SELECT * FROM book WHERE (:libraryId IS NULL OR serverLibraryId = :libraryId)
+           AND (source != 'LOCAL' OR id IN (SELECT bookId FROM book_file WHERE localUri IS NOT NULL))
            ORDER BY sortTitle""",
     )
     fun observeLibrary(libraryId: Long?): Flow<List<BookWithFiles>>
@@ -113,6 +117,13 @@ interface BookFileDao {
     /** Files read in place from a folder or saved to the download folder (persisted content:// URIs). */
     @Query("SELECT * FROM book_file WHERE localUri LIKE 'content://%'")
     suspend fun documents(): List<BookFileEntity>
+
+    /** Files of local books set aside when their folder or file went away, kept to restore them by content. */
+    @Query(
+        "SELECT f.* FROM book_file f JOIN book b ON b.id = f.bookId " +
+            "WHERE b.source = 'LOCAL' AND f.localUri IS NULL AND f.partialMd5 IS NOT NULL",
+    )
+    suspend fun setAside(): List<BookFileEntity>
 
     @Query("SELECT * FROM book_file WHERE partialMd5 = :md5")
     suspend fun byPartialMd5(md5: String): List<BookFileEntity>
