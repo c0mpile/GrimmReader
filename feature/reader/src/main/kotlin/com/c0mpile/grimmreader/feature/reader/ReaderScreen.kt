@@ -10,8 +10,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -259,16 +257,13 @@ private const val PERCENT_F = 100f
 
 /**
  * The bars take every touch in their area, also between and around their buttons; without this a tap
- * next to a button reached the page underneath and turned it.
+ * next to a button reached the page underneath and turned it. Being hit is enough to keep the touch from
+ * the page (a sibling underneath); nothing is consumed, so the buttons and the position slider still work.
  */
 private fun Modifier.blockTouches() =
     pointerInput(Unit) {
-        awaitEachGesture {
-            awaitFirstDown(requireUnconsumed = false)
-            do {
-                val event = awaitPointerEvent()
-                event.changes.forEach { it.consume() }
-            } while (event.changes.any { it.pressed })
+        awaitPointerEventScope {
+            while (true) awaitPointerEvent()
         }
     }
 
