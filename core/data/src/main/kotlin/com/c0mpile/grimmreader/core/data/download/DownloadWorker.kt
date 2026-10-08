@@ -106,7 +106,8 @@ class DownloadWorker
         }
 
         /**
-         * With a download folder set, moves the finished file there as "Title - Author.ext" and returns its URI.
+         * With a download folder set, moves the finished file there into a folder of its own, "Title - Author/Title -
+         * Author.ext" (one book per folder, so metadata files can sit next to it), and returns its URI.
          * Null keeps it in app storage (no folder set). Throws when the folder is set but not writable, so the
          * download is retried rather than silently landing somewhere else.
          */
@@ -117,7 +118,7 @@ class DownloadWorker
         ): String? {
             val folder = prefs.downloadFolder.first() ?: return null
             if (!documents.hasAccess(folder)) throw IOException("Download folder is not accessible")
-            val uri = downloaded.inputStream().use { documents.create(folder, fileName(book, format), it) }
+            val uri = downloaded.inputStream().use { documents.createInFolder(folder, folderName(book), fileName(book, format), it) }
             downloaded.delete()
             return uri
         }
@@ -214,17 +215,19 @@ class DownloadWorker
             internal fun fileName(
                 book: BookEntity,
                 format: BookFormat,
-            ): String {
+            ): String = "${folderName(book)}.${format.extensions.first()}"
+
+            /** "Title - First Author", the name of the book's own folder in the download folder. */
+            internal fun folderName(book: BookEntity): String {
                 val author = book.authors.split(BookEntity.AUTHOR_SEPARATOR).firstOrNull { it.isNotBlank() }
-                val base =
-                    listOfNotNull(book.title, author)
-                        .joinToString(" - ")
-                        .replace(Regex("""[\\/:*?"<>|\u0000-\u001F]"""), "_")
-                        .trim()
-                        .trimEnd('.')
-                        .take(MAX_NAME)
-                        .ifEmpty { "book" }
-                return "$base.${format.extensions.first()}"
+                // Trimmed again after the cut: folders ending in a space or dot are rejected by FAT/exFAT cards.
+                return listOfNotNull(book.title, author)
+                    .joinToString(" - ")
+                    .replace(Regex("""[\\/:*?"<>|\u0000-\u001F]"""), "_")
+                    .take(MAX_NAME)
+                    .trim()
+                    .trimEnd('.', ' ')
+                    .ifEmpty { "book" }
             }
 
             const val KEY_FILE_ID = "fileId"

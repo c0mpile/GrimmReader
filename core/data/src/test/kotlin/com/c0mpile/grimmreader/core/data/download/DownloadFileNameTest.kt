@@ -26,4 +26,13 @@ class DownloadFileNameTest {
         val name = DownloadWorker.fileName(book("x".repeat(500)), BookFormat.EPUB)
         assertEquals(120 + ".epub".length, name.length)
     }
+
+    @Test fun eachBookGetsAFolderOfTheSameName() {
+        assertEquals("Sample A - Author One", DownloadWorker.folderName(book("Sample A", "Author One")))
+        assertEquals("Sample A - Author One.epub", DownloadWorker.fileName(book("Sample A", "Author One"), BookFormat.EPUB))
+    }
+
+    @Test fun cutNamesDoNotEndInASpaceOrDot() {
+        assertEquals("x".repeat(118), DownloadWorker.folderName(book("x".repeat(118) + " .yyy")))
+    }
 }

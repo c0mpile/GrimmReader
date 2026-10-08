@@ -14,6 +14,7 @@ import com.c0mpile.grimmreader.core.datastore.SetupState
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import retrofit2.HttpException
@@ -125,7 +126,8 @@ class ServerRepository
                     bookDao.deleteServerBooksNotIn(server.id, keep = emptyList())
                     bookDao.detachFromServer(server.id)
                 } else {
-                    fileDao.serverDocuments(server.id).forEach { it.localUri?.let(files::deleteBookFile) }
+                    val downloadFolder = prefs.downloadFolder.first()
+                    fileDao.serverDocuments(server.id).forEach { file -> file.localUri?.let { files.deleteBookFile(it, downloadFolder) } }
                     bookDao.deleteAllForServer(server.id)
                     files.deleteServerFiles(server.id)
                 }

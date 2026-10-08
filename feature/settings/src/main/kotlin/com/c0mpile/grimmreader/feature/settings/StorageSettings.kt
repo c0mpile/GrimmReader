@@ -46,7 +46,7 @@ internal fun StorageSettings(
             when {
                 download == null -> "Private to the app; removed when the app is uninstalled."
                 !download.accessible -> "No access any more. Downloads fail until you pick a folder again."
-                else -> "New downloads are saved here. Earlier downloads stay where they are."
+                else -> "New downloads are saved here, each in a folder of its own. Earlier downloads stay where they are."
             },
         warning = download?.accessible == false,
     ) {

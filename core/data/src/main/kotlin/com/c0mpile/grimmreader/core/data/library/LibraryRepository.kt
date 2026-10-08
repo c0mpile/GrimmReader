@@ -276,7 +276,8 @@ class LibraryRepository
         suspend fun deleteLocal(bookId: Long) =
             withContext(io) {
                 val row = bookDao.get(bookId) ?: return@withContext
-                row.files.mapNotNull { it.localUri }.forEach(files::deleteBookFile)
+                val downloadFolder = prefs.downloadFolder.first()
+                row.files.mapNotNull { it.localUri }.forEach { files.deleteBookFile(it, downloadFolder) }
                 if (row.book.source == BookSource.SERVER) {
                     row.files.forEach {
                         fileDao.setLocal(it.id, null, it.sizeBytes, it.partialMd5)

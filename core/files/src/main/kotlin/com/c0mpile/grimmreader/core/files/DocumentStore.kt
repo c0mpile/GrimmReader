@@ -71,39 +71,87 @@ class DocumentStore
             depth: Int,
             found: MutableList<FolderDocument>,
         ) {
-            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
-            val cursor = provider("Folder cannot be listed") { resolver.query(children, COLUMNS, null, null, null) }
             val dirs = mutableListOf<String>()
-            cursor.use { c ->
-                while (c.moveToNext()) {
-                    val id = c.getString(0)
-                    val name = c.getString(1) ?: continue
-                    if (name.startsWith(".")) continue
-                    if (c.getString(2) == Document.MIME_TYPE_DIR) {
-                        dirs += id
-                    } else if (isBookName(name)) {
-                        found +=
-                            FolderDocument(DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, c.getLong(SIZE_COLUMN))
-                    }
+            for (child in children(tree, parentId)) {
+                if (child.name.startsWith(".")) continue
+                if (child.isDir) {
+                    dirs += child.id
+                } else if (isBookName(child.name)) {
+                    found += FolderDocument(DocumentsContract.buildDocumentUriUsingTree(tree, child.id).toString(), child.name, child.size)
                 }
             }
             if (depth < MAX_DEPTH) dirs.forEach { walk(tree, it, depth + 1, found) }
+        }
+
+        private class Child(
+            val id: String,
+            val name: String,
+            val isDir: Boolean,
+            val size: Long,
+        )
+
+        private fun children(
+            tree: Uri,
+            parentId: String,
+        ): List<Child> {
+            val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+            val cursor = provider("Folder cannot be listed") { resolver.query(uri, COLUMNS, null, null, null) }
+            return cursor.use { c ->
+                buildList {
+                    while (c.moveToNext()) {
+                        val name = c.getString(1) ?: continue
+                        add(Child(c.getString(0), name, c.getString(2) == Document.MIME_TYPE_DIR, c.getLong(SIZE_COLUMN)))
+                    }
+                }
+            }
         }
 
         /** Opens a document for reading; only through this descriptor, reopening its path is not allowed. */
         fun open(uri: String): BookHandle = BookHandle(provider("Cannot open $uri") { resolver.openFileDescriptor(Uri.parse(uri), "r") })
 
         /**
-         * Creates [name] in the root of [tree] (the provider adds " (1)" on clashes) and fills it from [input].
-         * Octet-stream, so providers keep the name as given instead of fixing up the extension.
+         * Creates [name] inside its own folder [folder] in the root of [tree] (one book per folder, so metadata files
+         * can sit next to it) and fills it from [input]. A folder of that name is reused while it holds no book file,
+         * else "[folder] (2)", "(3)", … is used. Octet-stream, so providers keep the name as given instead of
+         * fixing up the extension.
          */
-        fun create(
+        fun createInFolder(
             tree: String,
+            folder: String,
             name: String,
             input: InputStream,
         ): String {
             val treeUri = Uri.parse(tree)
-            val parent = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            val taken = children(treeUri, rootId).associateBy { it.name }
+            val dirName =
+                generateSequence(1) { it + 1 }
+                    .map { if (it == 1) folder else "$folder ($it)" }
+                    .first { candidate ->
+                        val existing = taken[candidate]
+                        existing == null || (existing.isDir && children(treeUri, existing.id).none { isBookName(it.name) })
+                    }
+            val existing = taken[dirName]
+            val dir =
+                if (existing != null) {
+                    DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.id)
+                } else {
+                    val root = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
+                    provider("Cannot create $dirName") { DocumentsContract.createDocument(resolver, root, Document.MIME_TYPE_DIR, dirName) }
+                }
+            try {
+                return write(dir, name, input)
+            } catch (e: IOException) {
+                if (existing == null) runCatching { DocumentsContract.deleteDocument(resolver, dir) }
+                throw e
+            }
+        }
+
+        private fun write(
+            parent: Uri,
+            name: String,
+            input: InputStream,
+        ): String {
             val doc =
                 provider("Cannot create $name") { DocumentsContract.createDocument(resolver, parent, "application/octet-stream", name) }
             try {
@@ -140,6 +188,29 @@ class DocumentStore
         ): Nothing = throw IOException(message, cause)
 
         fun delete(uri: String): Boolean = runCatching { DocumentsContract.deleteDocument(resolver, Uri.parse(uri)) }.getOrDefault(false)
+
+        /**
+         * Deletes [uri] and then its folder when that is now empty and not the root of the tree (a book's own folder
+         * in the download folder, see [createInFolder]).
+         */
+        fun deleteWithEmptyFolder(uri: String): Boolean {
+            val doc = Uri.parse(uri)
+            val parentId =
+                runCatching { DocumentsContract.findDocumentPath(resolver, doc)?.path }
+                    .getOrNull()
+                    ?.takeIf { it.size > 2 }
+                    ?.let { it[it.size - 2] }
+            val deleted = delete(uri)
+            if (deleted && parentId != null) {
+                val tree = DocumentsContract.buildTreeDocumentUri(doc.authority, DocumentsContract.getTreeDocumentId(doc))
+                runCatching {
+                    if (children(tree, parentId).isEmpty()) {
+                        DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, parentId))
+                    }
+                }
+            }
+            return deleted
+        }
 
         companion object {
             private const val FLAGS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
