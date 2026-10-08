@@ -1,7 +1,10 @@
 package com.c0mpile.grimmreader.core.data.server
 
+import android.content.Context
+import coil3.SingletonImageLoader
 import com.c0mpile.grimmreader.api.grimmory.LoginRequestDto
 import com.c0mpile.grimmreader.core.common.IoDispatcher
+import com.c0mpile.grimmreader.core.data.library.CoverPrefetchWorker
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.dao.ServerDao
@@ -9,6 +12,7 @@ import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SetupState
 import com.c0mpile.grimmreader.core.files.LocalFileStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -43,6 +47,7 @@ class ServerRepository
         private val policy: NetworkPolicyImpl,
         private val prefs: AppPreferences,
         private val files: LocalFileStore,
+        @ApplicationContext private val context: Context,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
         /**
@@ -126,6 +131,12 @@ class ServerRepository
                 }
                 serverDao.delete(server.id)
                 prefs.setSetupState(SetupState.LOCAL_ONLY)
+                // The image disk cache only holds server thumbnails (extracted covers live in app storage).
+                CoverPrefetchWorker.cancel(context)
+                SingletonImageLoader.get(context).run {
+                    memoryCache?.clear()
+                    diskCache?.clear()
+                }
             }
 
         private companion object {

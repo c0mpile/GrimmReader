@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,7 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import kotlin.math.absoluteValue
 
 const val COVER_ASPECT = 5f / 7f
@@ -38,14 +43,19 @@ fun BookCover(
         CoverPlaceholder(title, boxModifier)
         return
     }
-    SubcomposeAsyncImage(
-        model = model,
-        contentDescription = null,
-        modifier = boxModifier,
-        contentScale = ContentScale.Crop,
-        loading = { CoverPlaceholder(title, Modifier.fillMaxSize()) },
-        error = { CoverPlaceholder(title, Modifier.fillMaxSize()) },
-    )
+    // Plain AsyncImage over the placeholder: SubcomposeAsyncImage subcomposes every cell, which makes a long
+    // cover grid stutter while it scrolls.
+    var loaded by remember(model) { mutableStateOf(false) }
+    Box(boxModifier) {
+        if (!loaded) CoverPlaceholder(title, Modifier.fillMaxSize())
+        AsyncImage(
+            model = model,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            onState = { loaded = it is AsyncImagePainter.State.Success },
+        )
+    }
 }
 
 /** Gradient whose hue is derived from the title, with the title set in a serif face. */

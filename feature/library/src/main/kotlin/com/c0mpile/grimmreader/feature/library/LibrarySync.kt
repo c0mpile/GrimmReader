@@ -41,6 +41,7 @@ class LibrarySync(
 
     init {
         scope.launch { scanFolders(folders.scanIfStale()) }
+        scope.launch { library.shrinkLargeCovers() }
         // The server row loads from Room asynchronously; check once it is there (never in local mode).
         scope.launch {
             session.server.filterNotNull().first()

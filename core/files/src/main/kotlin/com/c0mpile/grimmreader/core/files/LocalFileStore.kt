@@ -82,14 +82,40 @@ class LocalFileStore
             if (DocumentStore.isDocument(localUri)) documents.delete(localUri) else File(localUri).delete()
         }
 
+        /** Ids of the books that have an extracted cover, from one directory listing. */
+        fun coverIds(): Set<Long> =
+            File(context.filesDir, "covers")
+                .list()
+                .orEmpty()
+                .mapNotNullTo(HashSet()) { it.removeSuffix(".img").toLongOrNull() }
+
         fun saveCover(
             bookId: Long,
             bytes: ByteArray,
         ): File =
             coverFile(bookId).apply {
                 parentFile?.mkdirs()
-                writeBytes(bytes)
+                writeBytes(CoverThumbnail.shrink(bytes))
             }
+
+        /**
+         * Shrinks covers saved at full size by earlier builds (see [CoverThumbnail]). Cheap once done: small files
+         * are skipped by their size alone. Returns how many were shrunk.
+         */
+        fun shrinkLargeCovers(): Int {
+            val large =
+                File(context.filesDir, "covers").listFiles().orEmpty().filter { it.length() > CoverThumbnail.SMALL_BYTES }
+            var shrunk = 0
+            for (file in large) {
+                val bytes = runCatching { file.readBytes() }.getOrNull() ?: continue
+                val small = CoverThumbnail.shrink(bytes)
+                if (small === bytes) continue
+                val tmp = File(file.parentFile, "${file.name}.tmp")
+                tmp.writeBytes(small)
+                if (tmp.renameTo(file)) shrunk++ else tmp.delete()
+            }
+            return shrunk
+        }
 
         private fun displayName(
             resolver: ContentResolver,
