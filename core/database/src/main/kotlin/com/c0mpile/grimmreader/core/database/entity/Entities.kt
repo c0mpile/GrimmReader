@@ -70,6 +70,14 @@ data class BookEntity(
     val readingDirection: ReadingDirection? = null,
     val addedAt: Long = 0,
     val lastReadAt: Long? = null,
+    val subtitle: String? = null,
+    /** Plain text (HTML from the server or an OPF is flattened before it is stored). */
+    val description: String? = null,
+    val publisher: String? = null,
+    /** As the source gives it: an ISO date, a year, or free text. */
+    val publishedDate: String? = null,
+    /** When subtitle, description, publisher and date were last read (server detail or the file); null = never. */
+    val detailsLoadedAt: Long? = null,
 ) {
     companion object {
         const val AUTHOR_SEPARATOR = "\u001F"

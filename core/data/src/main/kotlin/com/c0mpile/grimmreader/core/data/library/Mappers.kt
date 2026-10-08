@@ -64,6 +64,12 @@ internal fun BookSummaryDto.toEntity(
         readingDirection = existing?.readingDirection,
         addedAt = parseInstant(addedOn) ?: existing?.addedAt ?: 0,
         lastReadAt = parseInstant(lastReadTime) ?: existing?.lastReadAt,
+        // The list has no details; they come from the book detail request and are kept across refreshes.
+        subtitle = existing?.subtitle,
+        description = existing?.description,
+        publisher = existing?.publisher,
+        publishedDate = existing?.publishedDate,
+        detailsLoadedAt = existing?.detailsLoadedAt,
     )
 
 internal fun BookEntity.withoutProgress() = copy(progressPercent = null, lastReadAt = null, readStatus = ReadStatus.UNREAD)
@@ -86,6 +92,10 @@ fun BookWithFiles.toDomain(coverModel: (BookEntity) -> String?): Book =
         lastReadAt = maxOf(book.lastReadAt ?: 0L, position?.localUpdatedAt ?: 0L).takeIf { it > 0L },
         shelves = shelves.filter { !it.magic }.map { it.shelfId }.toSet(),
         magicShelves = shelves.filter { it.magic }.map { it.shelfId }.toSet(),
+        subtitle = book.subtitle,
+        description = book.description,
+        publisher = book.publisher,
+        publishedDate = book.publishedDate,
     )
 
 private val EBOOK_FORMATS = setOf("EPUB", "MOBI", "AZW3", "FB2")

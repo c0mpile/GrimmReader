@@ -25,6 +25,11 @@ data class Book(
     /** Server shelves (user shelves) and magic shelves the book is on, by server shelf id. */
     val shelves: Set<Long> = emptySet(),
     val magicShelves: Set<Long> = emptySet(),
+    val subtitle: String? = null,
+    /** Plain text summary. */
+    val description: String? = null,
+    val publisher: String? = null,
+    val publishedDate: String? = null,
 ) {
     val primaryFile: BookFile? get() = files.firstOrNull { it.isPrimary } ?: files.firstOrNull()
 }

@@ -25,7 +25,8 @@ import com.c0mpile.grimmreader.core.database.entity.ShelfEntity
 
 /**
  * Test builds are installed on real devices, so schema changes ship with a migration (v2: libraries; v3: CB7 and
- * CBR books removed, see [MIGRATION_2_3]; v4: bookmarks; v5: shelves).
+ * CBR books removed, see [MIGRATION_2_3]; v4: bookmarks; v5: shelves;
+ * v6: book description, publisher and date).
  */
 @Database(
     entities = [
@@ -40,8 +41,13 @@ import com.c0mpile.grimmreader.core.database.entity.ShelfEntity
         ShelfEntity::class,
         BookShelfEntity::class,
     ],
-    version = 5,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5)],
+    version = 6,
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5),
+        AutoMigration(from = 5, to = 6),
+    ],
 )
 abstract class GrimmDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao

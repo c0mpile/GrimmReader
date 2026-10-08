@@ -77,6 +77,19 @@ interface BookDao {
     @Upsert
     suspend fun upsert(book: BookEntity): Long
 
+    @Query(
+        "UPDATE book SET subtitle = :subtitle, description = :description, publisher = :publisher, " +
+            "publishedDate = :publishedDate, detailsLoadedAt = :loadedAt WHERE id = :id",
+    )
+    suspend fun setDetails(
+        id: Long,
+        subtitle: String?,
+        description: String?,
+        publisher: String?,
+        publishedDate: String?,
+        loadedAt: Long,
+    )
+
     @Query("UPDATE book SET progressPercent = :percent, lastReadAt = :at WHERE id = :id")
     suspend fun updateProgress(
         id: Long,

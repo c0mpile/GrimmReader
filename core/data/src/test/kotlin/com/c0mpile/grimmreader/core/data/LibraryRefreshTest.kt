@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.c0mpile.grimmreader.api.grimmory.TokenDto
+import com.c0mpile.grimmreader.core.data.library.BookDetails
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.server.NetworkPolicyImpl
@@ -112,6 +113,13 @@ class LibraryRefreshTest {
                                             else -> "[]"
                                         },
                                     ).build()
+                            request.url.encodedPath.endsWith("/app/books/1") ->
+                                MockResponse
+                                    .Builder()
+                                    .body(
+                                        """{"id":1,"title":"Sample A","subtitle":"","description":"<p>About &amp; more</p>",
+                                           "publisher":"Sample Press","publishedDate":"2010-05-01"}""",
+                                    ).build()
                             request.url.queryParameter("page") == "0" -> MockResponse.Builder().body(page0).build()
                             else -> MockResponse.Builder().body(page1).build()
                         }
@@ -175,6 +183,21 @@ class LibraryRefreshTest {
             val after = repo.observeLibrary().first()
             assertEquals(listOf(30f, null), after.map { it.progressPercent })
             assertEquals(listOf(ReadStatus.READING, ReadStatus.UNREAD), after.map { it.readStatus })
+
+            // Details come from the book detail request (blank ones stay null) and survive later refreshes.
+            val details = BookDetails(db.bookDao(), session, DocumentStore(ApplicationProvider.getApplicationContext()), Dispatchers.IO)
+            details.load(books[0].id)
+            val detailRequests = server.requestCount
+            details.load(books[0].id)
+            assertEquals(detailRequests, server.requestCount)
+            repo.refresh().getOrThrow()
+            val book = repo.observeBook(books[0].id).first()!!
+            assertEquals(
+                listOf(null, "About & more", "Sample Press", "2010-05-01"),
+                with(book) {
+                    listOf(subtitle, description, publisher, publishedDate)
+                },
+            )
             backgroundScope.cancel()
         }
 

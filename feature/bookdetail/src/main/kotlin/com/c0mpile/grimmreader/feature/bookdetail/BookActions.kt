@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.feature.bookdetail
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,10 +26,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,13 +42,18 @@ import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookSource
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 private const val BYTES_PER_MB = 1_048_576f
 private val ACTIONS_MAX_WIDTH = 560.dp
 
 /**
- * A book's actions, opened in place under its cover or row in a library: title, author and file facts,
- * favorite and shelves, and [BookActions]. Calls [onClose] when the book is gone (a local copy removed).
+ * A book's actions, opened in place under its cover or row in a library: full title, author, file facts,
+ * publisher, publication date and description (each only when known), favorite and shelves, and [BookActions].
+ * Calls [onClose] when the book is gone (a local copy removed).
  */
 @Composable
 fun BookDrawer(
@@ -71,21 +81,73 @@ fun BookDrawer(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(book.title, style = MaterialTheme.typography.titleMedium)
+                    book.subtitle?.let { Text(it, style = MaterialTheme.typography.titleSmall) }
                     if (book.authors.isNotEmpty()) {
                         Text(book.authors.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     BookFacts(book)
+                    book.publisher?.let { Fact("Publisher", it) }
+                    book.publishedDate?.let { Fact("Published", publishedDateText(it)) }
                 }
                 state.favorites?.let { FavoriteButton(state.isFavorite, viewModel::toggleFavorite) }
                 if (state.shelves.isNotEmpty()) {
                     IconButton(onClick = { picking = true }) { Icon(LucideIcons.Bookmark, contentDescription = "Shelves") }
                 }
             }
+            book.description?.let { Description(it) }
             BookActions(state, book, onRead, onRemoved = onClose, viewModel, Modifier.widthIn(max = ACTIONS_MAX_WIDTH))
         }
     }
 }
+
+/** "Label value" in body small, the label dimmed. */
+@Composable
+private fun Fact(
+    label: String,
+    value: String,
+) {
+    Text(
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append(label) }
+            append("  ")
+            append(value)
+        },
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+/** The description, cut to a few lines with More/Less when it is longer. */
+@Composable
+private fun Description(text: String) {
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    var overflows by remember(text) { mutableStateOf(false) }
+    Column {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (expanded) Int.MAX_VALUE else DESCRIPTION_LINES,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
+        )
+        if (overflows || expanded) {
+            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
+                Text(if (expanded) "Less" else "More")
+            }
+        }
+    }
+}
+
+/** "2010-05-01" as a localized date, "2010-05" as month and year; a bare year or free text as given. */
+internal fun publishedDateText(raw: String): String {
+    val date = raw.trim()
+    runCatching { return LocalDate.parse(date.take(ISO_DATE_LENGTH)).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)) }
+    runCatching { return YearMonth.parse(date).format(DateTimeFormatter.ofPattern("MMMM yyyy")) }
+    return date
+}
+
+private const val DESCRIPTION_LINES = 6
+private const val ISO_DATE_LENGTH = 10
 
 /** Series, format, size and progress, one per line. */
 @Composable
