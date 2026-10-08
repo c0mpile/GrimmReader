@@ -20,10 +20,8 @@ import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import com.c0mpile.grimmreader.reader.comic.ArchivePageSource
 import com.c0mpile.grimmreader.reader.comic.StreamingPageSource
-import com.c0mpile.grimmreader.reader.comic.panels.DetectedPanels
 import com.c0mpile.grimmreader.reader.ebook.TocEntry
 import com.c0mpile.grimmreader.reader.paged.PageSource
-import com.c0mpile.grimmreader.reader.paged.PanelProvider
 import com.c0mpile.grimmreader.reader.pdf.PdfPageSource
 import com.c0mpile.grimmreader.reader.pdf.ProtectedPdfException
 import dagger.assisted.Assisted
@@ -59,12 +57,10 @@ sealed interface ReaderContent {
         val restoreKey: Int = 0,
     ) : ReaderContent
 
-    /** Comics and PDFs; [panels] (comics only) drive guided view. */
     data class Paged(
         val source: PageSource,
         val page: Int,
         val restoreKey: Int = 0,
-        val panels: PanelProvider? = null,
     ) : ReaderContent
 
     data class Unsupported(
@@ -206,7 +202,7 @@ class ReaderViewModel
                 format == BookFormat.PDF -> paged(withContext(Dispatchers.IO) { PdfPageSource.open(book) }, local)
                 else -> {
                     val opened = withContext(Dispatchers.IO) { ArchivePageSource.open(book, format, null) }
-                    if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local, comic = true)
+                    if (opened == null) ReaderContent.Unsupported(format) else paged(opened, local)
                 }
             }
 
@@ -222,7 +218,7 @@ class ReaderViewModel
                     if (pages.isEmpty()) {
                         ReaderContent.Failed(ONLINE_FAILED)
                     } else {
-                        paged(StreamingPageSource(pages, ReadingDirection.LTR) { online.comicPage(serverBookId, it) }, local, comic = true)
+                        paged(StreamingPageSource(pages, ReadingDirection.LTR) { online.comicPage(serverBookId, it) }, local)
                     }
                 }
                 file.format.isReflowable || file.format == BookFormat.PDF -> {
@@ -241,11 +237,9 @@ class ReaderViewModel
         private fun paged(
             opened: PageSource,
             local: Locator?,
-            comic: Boolean = false,
         ): ReaderContent {
             source = opened
-            val page = ((local as? Locator.Page)?.page ?: 1) - 1
-            return ReaderContent.Paged(opened, page, panels = if (comic) DetectedPanels(opened) else null)
+            return ReaderContent.Paged(opened, ((local as? Locator.Page)?.page ?: 1) - 1)
         }
 
         fun onEbookPosition(
@@ -372,12 +366,7 @@ class ReaderViewModel
 
         fun dismissOffer() = _state.update { it.copy(offer = null) }
 
-        fun setReaderPrefs(prefs: ReaderPrefs) {
-            val old = readerPrefs.value
-            // Switching guided view (or its full-page stop) reopens the comic at the page being read.
-            if (old.guidedView != prefs.guidedView || old.guidedFullPage != prefs.guidedFullPage) pageAt?.let { goToPage(it) }
-            viewModelScope.launch { appPrefs.setReaderPrefs(prefs) }
-        }
+        fun setReaderPrefs(prefs: ReaderPrefs) = viewModelScope.launch { appPrefs.setReaderPrefs(prefs) }
 
         /** Saves the latest position now (app paused or reader closed). */
         fun flush() {
