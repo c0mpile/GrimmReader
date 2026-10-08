@@ -42,7 +42,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -124,11 +127,18 @@ private fun Badge(
             .background(MaterialTheme.colorScheme.primary),
         contentAlignment = Alignment.Center,
     ) {
+        // No line spacing or font padding around the digits, so they sit in the middle of the circle.
         Text(
             if (count > MAX_BADGE) "$MAX_BADGE+" else "$count",
             color = MaterialTheme.colorScheme.onPrimary,
-            fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
+            style =
+                TextStyle(
+                    fontSize = 10.sp,
+                    lineHeight = 10.sp,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+                ),
         )
     }
 }
