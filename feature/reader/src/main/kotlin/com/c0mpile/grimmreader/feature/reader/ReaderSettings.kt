@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,8 +22,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -41,6 +40,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
@@ -209,7 +209,8 @@ internal fun SettingsDialog(
     val tabs = if (textSettings) SettingsTab.entries else listOf(SettingsTab.THEME)
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val tab = tabs.getOrElse(selected) { SettingsTab.THEME }
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * DIALOG_HEIGHT).dp
+    // One height for every tab, like the web dialog.
+    val maxHeight = min((LocalConfiguration.current.screenHeightDp * DIALOG_HEIGHT).dp, DIALOG_MAX_HEIGHT)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val shape = RoundedCornerShape(12.dp)
         Surface(
@@ -217,7 +218,7 @@ internal fun SettingsDialog(
                 .padding(16.dp)
                 .widthIn(max = 640.dp)
                 .fillMaxWidth()
-                .heightIn(max = maxHeight)
+                .height(maxHeight)
                 .border(1.dp, MaterialTheme.colorScheme.outline, shape),
             shape = shape,
             color = MaterialTheme.colorScheme.background,
@@ -250,6 +251,7 @@ internal fun SettingsDialog(
 }
 
 private const val DIALOG_HEIGHT = 0.85f
+private val DIALOG_MAX_HEIGHT = 760.dp
 
 @Composable
 private fun ThemeTab(
@@ -335,17 +337,14 @@ private fun LayoutTab(
         )
     }
     SettingRow("Column Gap") {
-        Slider(
-            value = prefs.gap,
-            onValueChange = { onChange(prefs.copy(gap = (it * PERCENT).roundToInt() / PERCENT.toFloat())) },
-            valueRange = 0f..MAX_GAP,
+        val accent = MaterialTheme.colorScheme.primary
+        ThinSlider(
+            value = prefs.gap / MAX_GAP,
+            description = "Column gap",
+            colors = SliderColors(MaterialTheme.colorScheme.outline, Color.Transparent, accent),
+            onDrag = { onChange(prefs.copy(gap = (it * MAX_GAP * PERCENT).roundToInt() / PERCENT.toFloat())) },
+            onRelease = {},
             modifier = Modifier.width(140.dp),
-            colors =
-                SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.outline,
-                ),
         )
         Text(
             "${(prefs.gap * PERCENT).roundToInt()}%",

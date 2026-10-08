@@ -53,6 +53,9 @@ data class EbookLayout(
     val maxBlockSize: Int,
 )
 
+/** A search stops after this many hits (MAX_HITS in reader.js). */
+const val MAX_SEARCH_HITS = 500
+
 /** One search hit: [match] with some text before and after it. */
 data class SearchHit(
     val cfi: String,
