@@ -5,7 +5,9 @@
 # The signing key is private and never tracked. Preferred source is the system keyring (Secret
 # Service), service GRIMMREADER_KEYRING_SERVICE (default grimmreader-signing), with one entry per
 # field (username=FIELD), as filled by bw-keyring-sync from a Bitwarden item's custom fields:
-#   KEYSTORE_B64      the keystore file, base64 on one line (base64 -w0 release.jks)
+#   KEYSTORE_B64_1..N the keystore file as base64, split in order into chunks of <= 2500 characters
+#                     (a Bitwarden field holds at most 5000 encrypted characters); a single
+#                     KEYSTORE_B64 holding the whole thing also works
 #   KEY_ALIAS         key alias
 #   KEYSTORE_PASSWORD store and key password
 # The keystore is written to a private temp file on tmpfs for the signing only, then removed.
@@ -33,13 +35,18 @@ tmp_store=
 trap 'rm -f "$aligned" "$tmp_store"' EXIT
 
 store_b64=$(secret KEYSTORE_B64)
+for ((i = 1; ; i++)); do
+    chunk=$(secret "KEYSTORE_B64_$i")
+    [[ -n $chunk ]] || break
+    store_b64+=$chunk
+done
 if [[ -n $store_b64 ]]; then
     alias_name=$(secret KEY_ALIAS)
     KS_PW=$(secret KEYSTORE_PASSWORD)
     [[ -n $alias_name && -n $KS_PW ]] || { echo "sign-release: keyring service $service lacks KEY_ALIAS or KEYSTORE_PASSWORD" >&2; exit 1; }
     umask 077
     tmp_store=$(mktemp -p "${XDG_RUNTIME_DIR:-/dev/shm}" --suffix=.jks)
-    base64 -d <<<"$store_b64" > "$tmp_store" || { echo "sign-release: KEYSTORE_B64 is not valid base64" >&2; exit 1; }
+    base64 -d <<<"$store_b64" > "$tmp_store" || { echo "sign-release: the keystore entries are not valid base64" >&2; exit 1; }
     store=$tmp_store
 else
     props="${GRIMMREADER_KEYSTORE_PROPERTIES:-.local/signing/keystore.properties}"
