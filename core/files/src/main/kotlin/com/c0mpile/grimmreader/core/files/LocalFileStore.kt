@@ -77,9 +77,19 @@ class LocalFileStore
             }
         }
 
-        /** Deletes a book file: a path in app storage or a document in a picked folder. */
-        fun deleteBookFile(localUri: String) {
-            if (DocumentStore.isDocument(localUri)) documents.delete(localUri) else File(localUri).delete()
+        /**
+         * Deletes a book file: a path in app storage or a document in a picked folder. A download in
+         * [downloadFolder] also takes its own folder with it once that is empty.
+         */
+        fun deleteBookFile(
+            localUri: String,
+            downloadFolder: String? = null,
+        ) {
+            when {
+                !DocumentStore.isDocument(localUri) -> File(localUri).delete()
+                downloadFolder != null && DocumentStore.inTree(localUri, downloadFolder) -> documents.deleteWithEmptyFolder(localUri)
+                else -> documents.delete(localUri)
+            }
         }
 
         /** Ids of the books that have an extracted cover, from one directory listing. */

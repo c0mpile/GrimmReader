@@ -51,7 +51,7 @@ class FolderDuplicates
                 } else {
                     forget(copy.bookId)
                 }
-                copy.localUri?.let(files::deleteBookFile)
+                copy.localUri?.let { files.deleteBookFile(it, downloadFolder) }
                 merged++
             }
             return merged
