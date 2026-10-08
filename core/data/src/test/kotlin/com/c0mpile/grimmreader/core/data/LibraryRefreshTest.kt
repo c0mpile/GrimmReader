@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.testing.WorkManagerTestInitHelper
 import com.c0mpile.grimmreader.api.grimmory.TokenDto
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
@@ -130,12 +131,13 @@ class LibraryRefreshTest {
             withTimeout(5_000) { session.server.first { it != null } }
             // Wait until the session loaded the stored token.
             while (!policy.isCleartextAllowed(server.hostName)) kotlinx.coroutines.delay(10)
+            WorkManagerTestInitHelper.initializeTestWorkManager(ApplicationProvider.getApplicationContext())
             val repo =
                 LibraryRepository(
+                    ApplicationProvider.getApplicationContext(),
                     db,
                     db.bookDao(),
                     db.bookFileDao(),
-                    db.libraryDao(),
                     session,
                     LocalFileStore(ApplicationProvider.getApplicationContext(), DocumentStore(ApplicationProvider.getApplicationContext())),
                     AppPreferences(PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "p.preferences_pb") }),

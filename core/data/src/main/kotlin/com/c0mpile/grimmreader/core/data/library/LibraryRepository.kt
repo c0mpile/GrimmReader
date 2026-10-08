@@ -1,5 +1,6 @@
 package com.c0mpile.grimmreader.core.data.library
 
+import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
 import com.c0mpile.grimmreader.api.grimmory.BookSummaryDto
@@ -13,7 +14,6 @@ import com.c0mpile.grimmreader.core.data.shelf.ShelfSnapshot
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
-import com.c0mpile.grimmreader.core.database.dao.LibraryDao
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
@@ -25,16 +25,20 @@ import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
 import com.c0mpile.grimmreader.core.model.Library
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,20 +47,34 @@ import javax.inject.Singleton
 class LibraryRepository
     @Inject
     constructor(
+        @ApplicationContext private val context: Context,
         private val db: GrimmDatabase,
         private val bookDao: BookDao,
         private val fileDao: BookFileDao,
-        private val libraryDao: LibraryDao,
         private val session: ServerSession,
         private val files: LocalFileStore,
         private val prefs: AppPreferences,
         private val shelfMirror: ShelfMirror,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
+        private val libraryDao get() = db.libraryDao()
         private val refreshLock = Mutex()
+        private val coversChecked = AtomicBoolean(false)
+
+        /** Once per process: shrinks covers saved at full size by earlier builds ([LocalFileStore.shrinkLargeCovers]). */
+        suspend fun shrinkLargeCovers() {
+            if (coversChecked.compareAndSet(false, true)) withContext(io) { files.shrinkLargeCovers() }
+        }
 
         fun observeLibrary(libraryId: Long? = null): Flow<List<Book>> =
-            bookDao.observeLibrary(libraryId).map { rows -> rows.filter { it.files.isNotEmpty() }.map { it.toDomain(::coverModel) } }
+            bookDao.observeLibrary(libraryId).map { rows ->
+                // One directory listing per update instead of a file check per book.
+                val covers = files.coverIds()
+                val base = session.baseUrl()
+                rows.filter { it.files.isNotEmpty() }.map { row ->
+                    row.toDomain { coverModel(it, covers.contains(it.id), base) }
+                }
+            }
 
         fun observeBook(id: Long): Flow<Book?> = bookDao.observe(id).map { it?.toDomain(::coverModel) }
 
@@ -78,10 +96,37 @@ class LibraryRepository
         ): String? {
             val local = files.coverFile(bookId)
             if (local.exists()) return local.absolutePath
-            val base = session.baseUrl() ?: return null
-            if (serverBookId == null || serverRowId == null) return null
+            return thumbnailUrl(session.baseUrl(), serverRowId, serverBookId, coverUpdatedOn)
+        }
+
+        private fun coverModel(
+            book: BookEntity,
+            hasLocalCover: Boolean,
+            base: HttpUrl?,
+        ): String? =
+            if (hasLocalCover) {
+                files.coverFile(book.id).absolutePath
+            } else {
+                thumbnailUrl(base, book.serverRowId, book.serverBookId, book.coverUpdatedOn)
+            }
+
+        private fun thumbnailUrl(
+            base: HttpUrl?,
+            serverRowId: Long?,
+            serverBookId: Long?,
+            coverUpdatedOn: String?,
+        ): String? {
+            if (base == null || serverBookId == null || serverRowId == null) return null
             return GrimmoryUrls.thumbnail(base, serverBookId, coverUpdatedOn).toString()
         }
+
+        /** The server thumbnail of every listed book without an extracted cover, in title order (for [CoverPrefetchWorker]). */
+        suspend fun serverCoverUrls(): List<String> =
+            withContext(io) {
+                observeLibrary().first().sortedBy { it.title.lowercase() }.mapNotNull { it.coverUri?.takeIf(::isRemote) }
+            }
+
+        private fun isRemote(model: String) = model.startsWith("https://") || model.startsWith("http://")
 
         /**
          * The automatic refresh: runs [refresh] only when the last successful one for this server is older than
@@ -91,7 +136,10 @@ class LibraryRepository
         suspend fun refreshIfStale(now: Long = System.currentTimeMillis()): Result<Int>? {
             val server = session.server.value ?: return null
             val recent = now - prefs.libraryRefreshedAt(server.id) < STALE_AFTER_MS
-            if (recent && withContext(io) { shelfMirror.hasShelves(server.id) }) return null
+            if (recent && withContext(io) { shelfMirror.hasShelves(server.id) }) {
+                CoverPrefetchWorker.enqueue(context) // Cheap when every cover is cached already.
+                return null
+            }
             return refresh()
         }
 
@@ -122,6 +170,7 @@ class LibraryRepository
                             }
                         session.reportOffline(false)
                         prefs.setLibraryRefreshedAt(server.id, System.currentTimeMillis())
+                        CoverPrefetchWorker.enqueue(context)
                         seen
                     }.onFailure { if (it is IOException) session.reportOffline(true) }
                 }

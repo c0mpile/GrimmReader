@@ -104,7 +104,7 @@ internal fun BookCollection(
     } else {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
             books.forEachIndexed { index, book ->
-                item(key = book.id) {
+                item(key = book.id, contentType = BOOK_CELL) {
                     BookRow(book, selected = drawer.isOpen(PLACE, book.id), pick)
                 }
                 if (index == shown) {
@@ -118,6 +118,7 @@ internal fun BookCollection(
 }
 
 private const val PLACE = "books"
+private const val BOOK_CELL = "book"
 
 /** What a tap and a long press on a book do, and its check state ([checked] is null when not selecting). */
 private class BookPick(
@@ -130,7 +131,7 @@ private fun LazyGridScope.bookCards(
     books: List<Book>,
     drawer: BookDrawerState,
     pick: BookPick,
-) = items(books, key = { it.id }) { book ->
+) = items(books, key = { it.id }, contentType = { BOOK_CELL }) { book ->
     BookCard(
         title = book.title,
         author = book.authors.joinToString(", "),
