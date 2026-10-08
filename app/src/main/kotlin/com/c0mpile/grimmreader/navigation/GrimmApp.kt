@@ -181,13 +181,13 @@ private fun Screens(
         entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator(), rememberViewModelStoreNavEntryDecorator()),
         entryProvider =
             entryProvider {
-                entry<DashboardKey> { DashboardScreen(onOpenBook = { backStack.add(BookKey(it)) }) }
+                entry<DashboardKey> { DashboardScreen(onRead = { backStack.add(ReaderKey(it)) }) }
                 entry<BrowseKey> { key ->
                     LibraryScreen(
                         scope = LibraryScope.decode(key.scope),
                         mode = key.mode,
                         startSearching = key.search,
-                        onOpenBook = { backStack.add(BookKey(it)) },
+                        onRead = { backStack.add(ReaderKey(it)) },
                         onOpenGroup = { kind, name -> backStack.add(BookGroupKey(kind, name)) },
                     )
                 }
@@ -196,7 +196,7 @@ private fun Screens(
                         kind = key.kind,
                         name = key.name,
                         onBack = { backStack.removeLastOrNull() },
-                        onOpenBook = { backStack.add(BookKey(it)) },
+                        onRead = { backStack.add(ReaderKey(it)) },
                     )
                 }
                 entry<NotebookKey> {

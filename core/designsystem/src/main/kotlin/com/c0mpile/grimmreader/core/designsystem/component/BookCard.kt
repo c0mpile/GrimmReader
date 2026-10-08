@@ -1,5 +1,6 @@
 package com.c0mpile.grimmreader.core.designsystem.component
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +19,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.c0mpile.grimmreader.core.designsystem.theme.GrimmTextStyles
 
-/** Library grid card: cover with a 4 dp progress bar and optional badge, title and author underneath. */
+/**
+ * Library grid card: cover with a 4 dp progress bar and optional badge, title and author underneath.
+ * [selected] outlines the card, e.g. while its actions drawer is open.
+ */
 @Composable
 fun BookCard(
     title: String,
@@ -28,12 +32,14 @@ fun BookCard(
     modifier: Modifier = Modifier,
     progressPercent: Float? = null,
     badge: String? = null,
+    selected: Boolean = false,
 ) {
     Card(
         onClick = onClick,
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Box {
             BookCover(title, coverModel, Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)

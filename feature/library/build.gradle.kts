@@ -7,5 +7,6 @@ android {
 }
 
 dependencies {
+    implementation(projects.feature.bookdetail)
     implementation(libs.androidx.activity.compose)
 }

@@ -26,7 +26,7 @@ fun BookGroupScreen(
     kind: GroupKind,
     name: String,
     onBack: () -> Unit,
-    onOpenBook: (Long) -> Unit,
+    onRead: (Long) -> Unit,
     viewModel: BookGroupViewModel = hiltViewModel<BookGroupViewModel, BookGroupViewModel.Factory> { it.create(kind, name) },
 ) {
     val books by viewModel.books.collectAsStateWithLifecycle()
@@ -50,7 +50,7 @@ fun BookGroupScreen(
             if (list.isEmpty()) {
                 Text("No books here any more.", Modifier.padding(24.dp))
             } else {
-                BookCollection(list, layout, onOpenBook)
+                BookCollection(list, layout, onRead)
             }
         }
     }

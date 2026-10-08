@@ -11,15 +11,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,15 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.designsystem.component.BookCover
 import com.c0mpile.grimmreader.core.designsystem.icon.FilledIcons
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
-import com.c0mpile.grimmreader.core.model.Book
-import com.c0mpile.grimmreader.core.model.BookSource
 import kotlinx.coroutines.launch
-
-private const val BYTES_PER_MB = 1_048_576f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +63,6 @@ fun BookDetailScreen(
             if (state.loaded) Text("This book is no longer in the library.", Modifier.padding(padding).padding(24.dp))
             return@Scaffold
         }
-        val file = book.primaryFile
         Column(
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -81,55 +72,12 @@ fun BookDetailScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(book.title, style = MaterialTheme.typography.titleLarge)
                     if (book.authors.isNotEmpty()) Text(book.authors.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    book.seriesName?.let { s ->
-                        Text(listOfNotNull(s, book.seriesNumber?.let { "#${it.toString().removeSuffix(".0")}" }).joinToString(" "))
-                    }
-                    file?.let { f ->
-                        Text(
-                            listOfNotNull(f.format.name, f.sizeBytes?.let { "%.1f MB".format(it / BYTES_PER_MB) }).joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    book.progressPercent?.takeIf { it > 0 }?.let {
-                        Text(
-                            "%.0f %% read".format(it),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
+                    BookFacts(book)
                 }
             }
             if (state.shelves.isNotEmpty()) ShelvesRow(state, onPick = { picking = true })
-            ReadActions(state, book, onRead, onBack, viewModel)
+            BookActions(state, book, onRead, onRemoved = onBack, viewModel)
         }
-    }
-}
-
-@Composable
-private fun DownloadSection(
-    state: BookDetailUiState,
-    onDownload: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    val download = state.download
-    when (download?.state) {
-        DownloadState.QUEUED, DownloadState.RUNNING -> {
-            val total = download.bytesTotal
-            if (total != null && total > 0) {
-                LinearProgressIndicator(progress = { download.bytesDone.toFloat() / total }, modifier = Modifier.fillMaxWidth())
-            } else {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel download") }
-        }
-        DownloadState.FAILED -> {
-            Text("Download failed; it will retry when possible.", color = MaterialTheme.colorScheme.error)
-            Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Retry download") }
-        }
-        else ->
-            OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
-                Icon(LucideIcons.Download, contentDescription = null)
-                Text("Download", Modifier.padding(start = 8.dp))
-            }
     }
 }
 
@@ -156,7 +104,7 @@ private fun ShelvesRow(
 
 /** Checkboxes for the user's shelves, plus a field to create one with this book on it. */
 @Composable
-private fun ShelfPicker(
+internal fun ShelfPicker(
     state: BookDetailUiState,
     onToggle: (Long, Boolean) -> Unit,
     onCreate: suspend (String) -> String?,
@@ -210,7 +158,7 @@ private fun ShelfPicker(
 }
 
 @Composable
-private fun FavoriteButton(
+internal fun FavoriteButton(
     on: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -220,63 +168,5 @@ private fun FavoriteButton(
             contentDescription = if (on) "Remove from Favorites" else "Add to Favorites",
             tint = if (on) MaterialTheme.colorScheme.primary else LocalContentColor.current,
         )
-    }
-}
-
-/** Read (or read online), and download or remove the local copy. */
-@Composable
-private fun ReadActions(
-    state: BookDetailUiState,
-    book: Book,
-    onRead: (Long) -> Unit,
-    onBack: () -> Unit,
-    viewModel: BookDetailViewModel,
-) {
-    val file = book.primaryFile
-    val available = file?.isAvailableOffline == true
-    // A local book read in place from a book folder: removing it means deleting the user's own file.
-    val inFolder = book.source == BookSource.LOCAL && file?.localUri?.startsWith("content://") == true
-    var confirmDelete by remember { mutableStateOf(false) }
-    if (available) {
-        Button(onClick = { onRead(book.id) }, modifier = Modifier.fillMaxWidth()) { Text("Read") }
-        OutlinedButton(
-            onClick = { if (inFolder) confirmDelete = true else viewModel.removeLocalCopy(onBack) },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                when {
-                    book.source == BookSource.SERVER -> "Remove download"
-                    inFolder -> "Delete file"
-                    else -> "Remove from this device"
-                },
-            )
-        }
-    }
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete file?") },
-            text = { Text("This book is in one of your book folders. Deleting removes the file from that folder for good.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    viewModel.removeLocalCopy(onBack)
-                }) { Text("Delete") }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
-        )
-    } else if (book.source == BookSource.SERVER) {
-        // Reading online needs no download permission; nothing is kept beyond an evictable cache.
-        if (state.canReadOnline) {
-            Button(onClick = { onRead(book.id) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(LucideIcons.Globe, contentDescription = null)
-                Text("Read online", Modifier.padding(start = 8.dp))
-            }
-        }
-        if (state.canDownload) {
-            DownloadSection(state, onDownload = viewModel::download, onCancel = viewModel::cancelDownload)
-        } else {
-            Text("Your account cannot download this book.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
