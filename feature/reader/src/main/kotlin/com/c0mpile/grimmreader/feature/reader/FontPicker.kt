@@ -2,6 +2,7 @@ package com.c0mpile.grimmreader.feature.reader
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +21,7 @@ import com.c0mpile.grimmreader.reader.ebook.FontCategory
 import com.c0mpile.grimmreader.reader.ebook.ReaderFonts
 
 private const val REGULAR = 400
+private val FONT_CARD_HEIGHT = 84.dp
 
 /** Web-style font cards ("Aa" set in the font, name under it): the book's own fonts, then bundled ones by group. */
 @Composable
@@ -56,7 +58,7 @@ private fun FontCard(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    OptionCard(selected, onClick, modifier) {
+    OptionCard(selected, onClick, modifier.height(FONT_CARD_HEIGHT)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Aa", fontFamily = family, fontSize = 26.sp)
             Text(

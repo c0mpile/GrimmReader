@@ -3,6 +3,8 @@ package com.c0mpile.grimmreader.feature.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +24,24 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -281,3 +295,71 @@ internal fun Swatch(
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
     )
 }
+
+internal class SliderColors(
+    val track: Color,
+    val mark: Color,
+    val thumb: Color,
+)
+
+/** Thin track with optional marks and a round thumb (web reader slider); tap or drag to pick 0..1. */
+@Composable
+internal fun ThinSlider(
+    value: Float,
+    description: String,
+    colors: SliderColors,
+    marks: List<Float> = emptyList(),
+    onDrag: (Float) -> Unit,
+    onRelease: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val drag by rememberUpdatedState(onDrag)
+    val release by rememberUpdatedState(onRelease)
+    Box(
+        modifier
+            .height(40.dp)
+            .semantics {
+                contentDescription = description
+                progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
+                setProgress { target ->
+                    drag(target.coerceIn(0f, 1f))
+                    release()
+                    true
+                }
+            }.pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    drag((offset.x / size.width).coerceIn(0f, 1f))
+                    release()
+                }
+            }.pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { drag((it.x / size.width).coerceIn(0f, 1f)) },
+                    onDragEnd = { release() },
+                    onDragCancel = { release() },
+                ) { change, _ -> drag((change.position.x / size.width).coerceIn(0f, 1f)) }
+            }.drawBehind {
+                val y = size.height / 2
+                val track = TRACK_DP.dp.toPx()
+                drawRoundRect(
+                    colors.track,
+                    topLeft = Offset(0f, y - track / 2),
+                    size = Size(size.width, track),
+                    cornerRadius = CornerRadius(track / 2),
+                )
+                val mark = MARK_DP.dp.toPx()
+                marks.forEach { m ->
+                    drawLine(
+                        colors.mark,
+                        Offset(m * size.width, y - mark / 2),
+                        Offset(m * size.width, y + mark / 2),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+                drawCircle(colors.thumb, radius = THUMB_DP.dp.toPx(), center = Offset(value.coerceIn(0f, 1f) * size.width, y))
+            },
+    )
+}
+
+private const val TRACK_DP = 4
+private const val MARK_DP = 12
+private const val THUMB_DP = 9

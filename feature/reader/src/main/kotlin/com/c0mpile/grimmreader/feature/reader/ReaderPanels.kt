@@ -41,9 +41,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,6 +76,7 @@ import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.model.Bookmark
 import com.c0mpile.grimmreader.core.model.NotebookEntry
+import com.c0mpile.grimmreader.reader.ebook.MAX_SEARCH_HITS
 import com.c0mpile.grimmreader.reader.ebook.SearchHit
 import com.c0mpile.grimmreader.reader.ebook.TocEntry
 import java.time.Instant
@@ -134,7 +137,7 @@ internal fun BoxScope.SidePanel(
                             WindowInsetsSides.Vertical + if (side == PanelSide.LEFT) WindowInsetsSides.Start else WindowInsetsSides.End,
                         ),
                     ),
-            ) { content() }
+            ) { CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) { content() } }
         }
     }
     val back = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
@@ -502,7 +505,11 @@ private fun SearchTab(
             LazyColumn(Modifier.fillMaxSize()) {
                 item {
                     Text(
-                        if (count == 1) "1 result" else "$count results",
+                        when {
+                            count >= MAX_SEARCH_HITS -> "$MAX_SEARCH_HITS+ results"
+                            count == 1 -> "1 result"
+                            else -> "$count results"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = mutedText(),
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),

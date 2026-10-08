@@ -10,8 +10,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,27 +47,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -460,6 +449,8 @@ private fun TopBar(
 ) {
     val canRead = state.content is ReaderContent.Ebook || state.content is ReaderContent.Paged
     val ebook = state.content is ReaderContent.Ebook
+    // Phones: Notes stays a tab of the search panel, so the title keeps some room.
+    val wide = LocalConfiguration.current.screenWidthDp >= WIDE_BAR_DP
     Row(
         Modifier
             .fillMaxWidth()
@@ -480,27 +471,9 @@ private fun TopBar(
             )
             if (ebook) ChromeButton(LucideIcons.Search, "Search") { actions.onOverlay(Overlay.Right(RightTab.SEARCH)) }
         }
-        Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                state.title,
-                color = CHROME_FG,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            state.location?.takeIf { it.isNotBlank() && ebook }?.let {
-                Text(
-                    it,
-                    color = CHROME_MUTED,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        TitleBlock(state.title, state.location?.takeIf { ebook }, Modifier.weight(1f))
         if (canRead) {
-            ChromeButton(LucideIcons.FileText, "Notes") { actions.onOverlay(Overlay.Right(RightTab.NOTES)) }
+            if (wide || !ebook) ChromeButton(LucideIcons.FileText, "Notes") { actions.onOverlay(Overlay.Right(RightTab.NOTES)) }
             ChromeButton(
                 if (fullscreen) LucideIcons.Minimize else LucideIcons.Maximize,
                 if (fullscreen) "Exit fullscreen" else "Fullscreen",
@@ -513,6 +486,34 @@ private fun TopBar(
             ) { actions.onOverlay(Overlay.QuickSettings) }
         }
         ChromeButton(LucideIcons.X, "Close book", onClick = actions.onClose)
+    }
+}
+
+/** Book title, with the chapter under it when known. */
+@Composable
+private fun TitleBlock(
+    title: String,
+    chapter: String?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            title,
+            color = CHROME_FG,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        chapter?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                color = CHROME_MUTED,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -570,8 +571,10 @@ private fun PositionBar(
                     .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
                     .padding(horizontal = 10.dp, vertical = 8.dp),
         )
-        PositionTrack(
+        ThinSlider(
             value = shown,
+            description = "Position in book",
+            colors = SliderColors(CHROME_TRACK, CHROME_MARK, CHROME_ACCENT),
             marks = if (pages == null) state.sections else emptyList(),
             onDrag = { drag = it },
             onRelease = {
@@ -585,66 +588,8 @@ private fun PositionBar(
     }
 }
 
-/** Thin track with section marks and a round thumb (web reader slider); tap or drag to pick 0..1. */
-@Composable
-private fun PositionTrack(
-    value: Float,
-    marks: List<Float>,
-    onDrag: (Float) -> Unit,
-    onRelease: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val drag by rememberUpdatedState(onDrag)
-    val release by rememberUpdatedState(onRelease)
-    Box(
-        modifier
-            .height(40.dp)
-            .semantics {
-                contentDescription = "Position in book"
-                progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
-                setProgress { target ->
-                    drag(target.coerceIn(0f, 1f))
-                    release()
-                    true
-                }
-            }.pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    drag((offset.x / size.width).coerceIn(0f, 1f))
-                    release()
-                }
-            }.pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { drag((it.x / size.width).coerceIn(0f, 1f)) },
-                    onDragEnd = { release() },
-                    onDragCancel = { release() },
-                ) { change, _ -> drag((change.position.x / size.width).coerceIn(0f, 1f)) }
-            }.drawBehind {
-                val y = size.height / 2
-                val track = TRACK_DP.dp.toPx()
-                drawRoundRect(
-                    CHROME_TRACK,
-                    topLeft = Offset(0f, y - track / 2),
-                    size = Size(size.width, track),
-                    cornerRadius = CornerRadius(track / 2),
-                )
-                val mark = MARK_DP.dp.toPx()
-                marks.forEach { m ->
-                    drawLine(
-                        CHROME_MARK,
-                        Offset(m * size.width, y - mark / 2),
-                        Offset(m * size.width, y + mark / 2),
-                        strokeWidth = 1.dp.toPx(),
-                    )
-                }
-                drawCircle(CHROME_ACCENT, radius = THUMB_DP.dp.toPx(), center = Offset(value.coerceIn(0f, 1f) * size.width, y))
-            },
-    )
-}
-
 private const val PERCENT = 100f
-private const val TRACK_DP = 4
-private const val MARK_DP = 12
-private const val THUMB_DP = 9
+private const val WIDE_BAR_DP = 600
 
 /** Reader chrome colours (web: black bars, white icons, primary-400 accent). */
 private val CHROME_BG = Color(0xF20A0A0A)
