@@ -8,12 +8,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -27,7 +32,9 @@ internal fun StorageSettings(
     onAddBookFolder: (Uri) -> Unit,
     onRemoveBookFolder: (String) -> Unit,
     onRescan: () -> Unit,
+    onForgetRemoved: () -> Unit,
 ) {
+    var confirmForget by remember { mutableStateOf(false) }
     val pickDownload = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(onDownloadFolder) }
     val pickBooks = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(onAddBookFolder) }
 
@@ -60,6 +67,34 @@ internal fun StorageSettings(
         if (state.scanning) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
     }
     state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    if (state.setAside > 0) {
+        FolderLine(
+            name = "${state.setAside} removed book(s) remembered",
+            detail = "Read books from removed folders or deleted files. They come back with their position when the file turns up again.",
+            warning = false,
+        ) {
+            TextButton(onClick = { confirmForget = true }) { Text("Forget removed books") }
+        }
+    }
+    if (confirmForget) {
+        AlertDialog(
+            onDismissRequest = { confirmForget = false },
+            title = { Text("Forget removed books?") },
+            text = {
+                Text(
+                    "Their reading positions, bookmarks and read status are deleted. The files are not touched; " +
+                        "books found again later start from the beginning.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmForget = false
+                    onForgetRemoved()
+                }) { Text("Forget") }
+            },
+            dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable

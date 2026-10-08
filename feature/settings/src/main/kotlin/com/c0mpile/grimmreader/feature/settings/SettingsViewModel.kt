@@ -28,6 +28,8 @@ data class SettingsUiState(
     val status: ServerStatus = ServerStatus.ONLINE,
     val bookFolders: List<BookFolder> = emptyList(),
     val downloadFolder: BookFolder? = null,
+    /** Read books whose folder was removed, kept hidden so their position comes back with the folder. */
+    val setAside: Int = 0,
     val scanning: Boolean = false,
     val message: String? = null,
 )
@@ -47,10 +49,10 @@ class SettingsViewModel
             combine(
                 combine(prefs.appearance, session.server, session.status, ::Triple),
                 folders.folders,
-                folders.downloadFolder,
+                combine(folders.downloadFolder, folders.setAsideCount, ::Pair),
                 scan,
-            ) { (appearance, server, status), bookFolders, downloadFolder, scan ->
-                SettingsUiState(appearance, server, status, bookFolders, downloadFolder, scan.running, scan.message)
+            ) { (appearance, server, status), bookFolders, (downloadFolder, setAside), scan ->
+                SettingsUiState(appearance, server, status, bookFolders, downloadFolder, setAside, scan.running, scan.message)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState())
 
         fun addBookFolder(tree: Uri) = scanning { folders.add(tree) }
@@ -58,6 +60,8 @@ class SettingsViewModel
         fun rescan() = scanning { folders.scan() }
 
         fun removeBookFolder(tree: String) = viewModelScope.launch { folders.remove(tree) }
+
+        fun forgetRemovedBooks() = viewModelScope.launch { folders.forgetSetAside() }
 
         fun setDownloadFolder(tree: Uri?) = viewModelScope.launch { folders.setDownloadFolder(tree) }
 

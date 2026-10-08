@@ -73,6 +73,21 @@ class FolderLibrary
                 .map { it?.let { uri -> BookFolder(uri, documents.folderName(uri), documents.hasAccess(uri)) } }
                 .flowOn(io)
 
+        /** How many read books are set aside (see the class comment), waiting for their content to turn up. */
+        val setAsideCount: Flow<Int> = fileDao.observeSetAsideCount()
+
+        /** Drops every set-aside book with its position and bookmarks; their files were already out of reach. */
+        suspend fun forgetSetAside() =
+            lock.withLock {
+                withContext(io) {
+                    fileDao
+                        .setAside()
+                        .map { it.bookId }
+                        .distinct()
+                        .forEach { library.forgetLocal(it) }
+                }
+            }
+
         /**
          * New downloads go to [tree], or app storage when null. Earlier downloads stay where they are, so the old
          * folder keeps its grant while any of them is there.
