@@ -10,6 +10,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -70,6 +73,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.c0mpile.grimmreader.core.designsystem.component.PageTurns
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.designsystem.theme.PageImages
@@ -138,7 +142,9 @@ fun ReaderScreen(
     val close = { overlay = Overlay.None }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Box(Modifier.fillMaxSize().then(if (panelOpen) Modifier.blur(PANEL_BLUR) else Modifier)) {
-            Content(state.content, prefs, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = {
+            // While the bars are shown, a tap on the page only hides them; nothing turns.
+            val turns = if (chrome) PageTurns.Off else prefs.pageTurns()
+            Content(state.content, prefs, turns, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = {
                 chrome = !chrome
                 if (overlay == Overlay.QuickSettings) overlay = Overlay.None
             })
@@ -246,6 +252,26 @@ private fun BoxScope.Panels(
 }
 
 private val PANEL_BLUR = 6.dp
+
+private fun ReaderPrefs.pageTurns() = PageTurns(edge = turnZone / PERCENT_F, taps = tapToTurn, swipes = swipeToTurn)
+
+private const val PERCENT_F = 100f
+
+/**
+ * The bars take every touch in their area, also between and around their buttons; without this a tap
+ * next to a button reached the page underneath and turned it.
+ */
+private fun Modifier.blockTouches() =
+    pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            do {
+                val event = awaitPointerEvent()
+                event.changes.forEach { it.consume() }
+            } while (event.changes.any { it.pressed })
+        }
+    }
+
 private val LEFT_PANEL_WIDTH = 360.dp
 private val RIGHT_PANEL_WIDTH = 400.dp
 
@@ -301,6 +327,7 @@ private tailrec fun Context.findActivity(): Activity? =
 private fun Content(
     content: ReaderContent,
     prefs: ReaderPrefs,
+    turns: PageTurns,
     viewModel: ReaderViewModel,
     controller: EbookController,
     onPageReady: () -> Unit,
@@ -321,6 +348,7 @@ private fun Content(
                     css = css,
                     layout = layout,
                     animated = LocalMotionEnabled.current && !page.instantTurns,
+                    turns = turns,
                     controller = controller,
                     onEvent = { event ->
                         when (event) {
@@ -349,6 +377,7 @@ private fun Content(
                     onPage = viewModel::onPage,
                     onToggleChrome = onToggleChrome,
                     modifier = Modifier.background(page.background),
+                    turns = turns,
                     imageFilter = page.images.colorFilter,
                     instantTurns = page.instantTurns,
                 )
@@ -425,6 +454,7 @@ private fun Chrome(
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .blockTouches()
                     .background(CHROME_BG)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                     .height(56.dp)
@@ -454,6 +484,7 @@ private fun TopBar(
     Row(
         Modifier
             .fillMaxWidth()
+            .blockTouches()
             .background(CHROME_BG)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .height(52.dp)

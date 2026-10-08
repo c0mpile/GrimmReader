@@ -36,4 +36,8 @@ data class ReaderPrefs(
     val einkGrain: Boolean = false,
     /** Simulated refresh flash every N page turns; 0 = off. */
     val einkFlashEvery: Int = 0,
+    /** Page turns by tap and/or swipe, both only in the left and right zones, each [turnZone] % of the width. */
+    val tapToTurn: Boolean = true,
+    val swipeToTurn: Boolean = true,
+    val turnZone: Int = 25,
 )

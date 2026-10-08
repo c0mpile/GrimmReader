@@ -48,6 +48,9 @@ class AppPreferences(
                 einkTint = enumOr(p[EINK_TINT], defaults.einkTint),
                 einkGrain = p[EINK_GRAIN] ?: defaults.einkGrain,
                 einkFlashEvery = p[EINK_FLASH] ?: defaults.einkFlashEvery,
+                tapToTurn = p[TAP_TO_TURN] ?: defaults.tapToTurn,
+                swipeToTurn = p[SWIPE_TO_TURN] ?: defaults.swipeToTurn,
+                turnZone = p[TURN_ZONE] ?: defaults.turnZone,
             )
         }
 
@@ -117,6 +120,9 @@ class AppPreferences(
             it[EINK_TINT] = prefs.einkTint.name
             it[EINK_GRAIN] = prefs.einkGrain
             it[EINK_FLASH] = prefs.einkFlashEvery
+            it[TAP_TO_TURN] = prefs.tapToTurn
+            it[SWIPE_TO_TURN] = prefs.swipeToTurn
+            it[TURN_ZONE] = prefs.turnZone
         }
     }
 
@@ -146,6 +152,9 @@ class AppPreferences(
         val EINK_TINT = stringPreferencesKey("eink_tint")
         val EINK_FLASH = intPreferencesKey("eink_flash_every")
         val EINK_GRAIN = booleanPreferencesKey("eink_grain")
+        val TAP_TO_TURN = booleanPreferencesKey("reader_tap_to_turn")
+        val SWIPE_TO_TURN = booleanPreferencesKey("reader_swipe_to_turn")
+        val TURN_ZONE = intPreferencesKey("reader_turn_zone")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
