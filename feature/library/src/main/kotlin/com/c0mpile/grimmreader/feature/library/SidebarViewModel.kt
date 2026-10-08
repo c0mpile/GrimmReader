@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.download.DownloadRepository
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.library.LocalLibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.Library
 import com.c0mpile.grimmreader.core.model.LibraryScope
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 import com.c0mpile.grimmreader.core.model.Shelf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +47,10 @@ data class SidebarState(
     val series: Int = 0,
     val authors: Int = 0,
     val libraries: List<Pair<Library, Int>> = emptyList(),
-    val onDevice: Int = 0,
+    /** The on-device libraries with the books in each (a folder's books plus downloads of the mirrored server library). */
+    val localLibraries: List<Pair<LocalLibrary, Int>> = emptyList(),
+    /** On-device books in no library. */
+    val unsorted: Int = 0,
     val unshelved: Int = 0,
     val shelves: List<Shelf> = emptyList(),
     /** Downloads running or waiting; the Downloads entry shows while there is a server or any download. */
@@ -61,15 +66,16 @@ class SidebarViewModel
         session: ServerSession,
         downloads: DownloadRepository,
         private val shelfRepo: ShelfRepository,
+        private val localLibraries: LocalLibraryRepository,
     ) : ViewModel() {
         val state: StateFlow<SidebarState> =
             combine(
                 library.observeLibrary(),
                 library.observeLibraries(),
-                shelfRepo.observe(),
+                combine(shelfRepo.observe(), localLibraries.libraries, ::Pair),
                 session.server,
                 downloads.observe(),
-            ) { books, libraries, shelves, server, queue ->
+            ) { books, libraries, (shelves, local), server, queue ->
                 SidebarState(
                     hasServer = server != null,
                     userName = server?.username,
@@ -77,7 +83,8 @@ class SidebarViewModel
                     series = groupBySeries(books).size,
                     authors = groupByAuthor(books).size,
                     libraries = libraries.map { it to books.inScope(LibraryScope.Server(it.id)).size },
-                    onDevice = books.inScope(LibraryScope.OnDevice).size,
+                    localLibraries = local.map { it to books.inScope(LibraryScope.Local(it.id)).size },
+                    unsorted = books.inScope(LibraryScope.Unsorted).size,
                     unshelved = books.inScope(LibraryScope.Unshelved).size,
                     shelves = shelves,
                     activeDownloads = queue.count { it.state in ACTIVE },
@@ -85,6 +92,11 @@ class SidebarViewModel
                 )
             }.flowOn(Dispatchers.Default)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SidebarState())
+
+        /** Adds an on-device library of the user's own. */
+        suspend fun createLibrary(name: String) {
+            localLibraries.create(name)
+        }
 
         /** Creates a shelf on the server; the error message on failure. */
         suspend fun createShelf(name: String): String? =

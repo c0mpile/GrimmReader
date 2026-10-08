@@ -117,20 +117,22 @@ class DocumentStore
         fun open(uri: String): BookHandle = BookHandle(provider("Cannot open $uri") { resolver.openFileDescriptor(Uri.parse(uri), "r") })
 
         /**
-         * Creates [name] inside its own folder [folder] in the root of [tree] (one book per folder, so metadata files
-         * can sit next to it) and fills it from [input]. A folder of that name is reused while it holds no book file,
-         * else "[folder] (2)", "(3)", … is used. Octet-stream, so providers keep the name as given instead of
-         * fixing up the extension.
+         * Creates [name] inside its own folder [folder] under [parent] (a folder of that name in the root of [tree],
+         * made when missing; null = the root itself), one book per folder, so metadata files can sit next to it, and
+         * fills it from [input]. A folder of that name is reused while it holds no book file, else "[folder] (2)",
+         * "(3)", … is used. Octet-stream, so providers keep the name as given instead of fixing up the extension.
          */
         fun createInFolder(
             tree: String,
+            parent: String?,
             folder: String,
             name: String,
             input: InputStream,
         ): String {
             val treeUri = Uri.parse(tree)
             val rootId = DocumentsContract.getTreeDocumentId(treeUri)
-            val taken = children(treeUri, rootId).associateBy { it.name }
+            val parentId = parent?.let { folderId(treeUri, rootId, it) } ?: rootId
+            val taken = children(treeUri, parentId).associateBy { it.name }
             val dirName =
                 generateSequence(1) { it + 1 }
                     .map { if (it == 1) folder else "$folder ($it)" }
@@ -143,8 +145,10 @@ class DocumentStore
                 if (existing != null) {
                     DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.id)
                 } else {
-                    val root = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
-                    provider("Cannot create $dirName") { DocumentsContract.createDocument(resolver, root, Document.MIME_TYPE_DIR, dirName) }
+                    val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentId)
+                    provider(
+                        "Cannot create $dirName",
+                    ) { DocumentsContract.createDocument(resolver, parentUri, Document.MIME_TYPE_DIR, dirName) }
                 }
             try {
                 return write(dir, name, input)
@@ -152,6 +156,28 @@ class DocumentStore
                 if (existing == null) runCatching { DocumentsContract.deleteDocument(resolver, dir) }
                 throw e
             }
+        }
+
+        /** Makes sure the folder [name] exists in the root of [tree]. */
+        fun ensureFolder(
+            tree: String,
+            name: String,
+        ) {
+            val treeUri = Uri.parse(tree)
+            folderId(treeUri, DocumentsContract.getTreeDocumentId(treeUri), name)
+        }
+
+        /** The document id of the folder [name] inside [parentId], created when missing. */
+        private fun folderId(
+            tree: Uri,
+            parentId: String,
+            name: String,
+        ): String {
+            children(tree, parentId).firstOrNull { it.isDir && it.name == name }?.let { return it.id }
+            val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+            val created =
+                provider("Cannot create $name") { DocumentsContract.createDocument(resolver, parent, Document.MIME_TYPE_DIR, name) }
+            return DocumentsContract.getDocumentId(created)
         }
 
         private fun write(

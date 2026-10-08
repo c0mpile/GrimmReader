@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.library.FolderLibrary
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.library.LocalLibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
@@ -15,6 +16,7 @@ import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.Library
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LibraryView
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 import com.c0mpile.grimmreader.core.model.ServerStatus
 import com.c0mpile.grimmreader.core.model.Shelf
 import dagger.assisted.Assisted
@@ -36,6 +38,7 @@ data class LibraryUiState(
     val mode: BrowseMode = BrowseMode.BOOKS,
     val view: LibraryView = LibraryView(),
     val libraries: List<Library> = emptyList(),
+    val localLibraries: List<LocalLibrary> = emptyList(),
     val shelves: List<Shelf> = emptyList(),
     val books: List<Book> = emptyList(),
     val groups: List<BookGroup> = emptyList(),
@@ -60,6 +63,7 @@ class LibraryViewModel
         private val session: ServerSession,
         private val folders: FolderLibrary,
         shelves: ShelfRepository,
+        localLibraries: LocalLibraryRepository,
         private val prefs: AppPreferences,
     ) : ViewModel() {
         private val query = MutableStateFlow("")
@@ -68,17 +72,18 @@ class LibraryViewModel
         val state: StateFlow<LibraryUiState> =
             combine(
                 library.observeLibrary(),
-                combine(library.observeLibraries(), shelves.observe()) { libraries, shelfList -> libraries to shelfList },
+                combine(library.observeLibraries(), shelves.observe(), localLibraries.libraries, ::Triple),
                 prefs.libraryView,
                 combine(session.server, session.status) { server, status -> (server != null) to status },
                 combine(query, sync.flags) { q, flags -> q to flags },
-            ) { all, (libraries, shelfList), view, (hasServer, status), (q, ui) ->
+            ) { all, (libraries, shelfList, local), view, (hasServer, status), (q, ui) ->
                 val inScope = all.inScope(scope)
                 LibraryUiState(
                     scope = scope,
                     mode = mode,
                     view = view,
                     libraries = libraries,
+                    localLibraries = local,
                     shelves = shelfList,
                     books = if (mode == BrowseMode.BOOKS) inScope.matching(q).sortedFor(view.sort) else emptyList(),
                     groups =
@@ -110,7 +115,7 @@ class LibraryViewModel
 
         fun refresh() = sync.refresh()
 
-        fun import(uris: List<Uri>) = sync.import(uris)
+        fun import(uris: List<Uri>) = sync.import(uris, (scope as? LibraryScope.Local)?.libraryId)
 
         fun messageShown() = sync.messageShown()
 

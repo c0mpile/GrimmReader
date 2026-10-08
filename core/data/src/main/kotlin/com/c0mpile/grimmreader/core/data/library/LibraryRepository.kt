@@ -13,7 +13,6 @@ import com.c0mpile.grimmreader.core.data.shelf.ShelfMirror
 import com.c0mpile.grimmreader.core.data.shelf.ShelfSnapshot
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
 import com.c0mpile.grimmreader.core.database.dao.BookDao
-import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
@@ -29,6 +28,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -50,14 +51,15 @@ class LibraryRepository
         @ApplicationContext private val context: Context,
         private val db: GrimmDatabase,
         private val bookDao: BookDao,
-        private val fileDao: BookFileDao,
         private val session: ServerSession,
         private val files: LocalFileStore,
         private val prefs: AppPreferences,
         private val shelfMirror: ShelfMirror,
+        private val localLibraries: LocalLibraryRepository,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
         private val libraryDao get() = db.libraryDao()
+        private val fileDao get() = db.bookFileDao()
         private val refreshLock = Mutex()
         private val coversChecked = AtomicBoolean(false)
 
@@ -130,13 +132,13 @@ class LibraryRepository
 
         /**
          * The automatic refresh: runs [refresh] only when the last successful one for this server is older than
-         * [STALE_AFTER_MS] (kept across restarts), or when shelves were never mirrored (the server always has
-         * Favorites; an update that added shelves must not wait). Null when skipped.
+         * [STALE_AFTER_MS] (kept across restarts), or when shelves or on-device libraries were never mirrored (the server
+         * always has Favorites; an update that added shelves or libraries must not wait). Null when skipped.
          */
         suspend fun refreshIfStale(now: Long = System.currentTimeMillis()): Result<Int>? {
             val server = session.server.value ?: return null
             val recent = now - prefs.libraryRefreshedAt(server.id) < STALE_AFTER_MS
-            if (recent && withContext(io) { shelfMirror.hasShelves(server.id) }) {
+            if (recent && withContext(io) { shelfMirror.hasShelves(server.id) && localLibraries.hasLinked() }) {
                 CoverPrefetchWorker.enqueue(context) // Cheap when every cover is cached already.
                 return null
             }
@@ -176,22 +178,42 @@ class LibraryRepository
                 }
             }
 
+        /**
+         * Only the server's library list (the first run lists them right after sign-in, before any book is
+         * fetched): mirrored into Room and into the on-device libraries. Returns the libraries.
+         */
+        suspend fun refreshLibraries(): Result<List<Library>> =
+            withContext(io) {
+                // Right after sign-in the session may not have loaded the new server row yet.
+                val server =
+                    withTimeoutOrNull(SERVER_WAIT_MS) { session.server.filterNotNull().first() }
+                        ?: return@withContext Result.success(emptyList())
+                val api = session.api() ?: return@withContext Result.success(emptyList())
+                runCatching {
+                    val rows = api.libraries().toEntities(server.id)
+                    db.withTransaction {
+                        libraryDao.replaceAll(server.id, rows)
+                        localLibraries.syncWithServer(server.id, rows)
+                    }
+                    rows.map { it.toDomain() }
+                }
+            }
+
         private suspend fun mirror(
             serverRowId: Long,
             libraries: List<LibraryDto>,
             books: List<BookSummaryDto>,
         ): Int {
-            libraryDao.replaceAll(
-                serverRowId,
-                libraries.mapIndexed { i, l -> LibraryEntity(serverRowId, l.id, l.name, l.allowedFormats.joinToString(","), i) },
-            )
+            val rows = libraries.toEntities(serverRowId)
+            libraryDao.replaceAll(serverRowId, rows)
+            val localIds = localLibraries.syncWithServer(serverRowId, rows)
             val seen = mutableListOf<Long>()
             // A reset not sent yet: the server still reports the old progress.
             val resetting = db.outboxDao().ofKind(ProgressRepository.KIND_RESET).mapTo(HashSet()) { it.entityId }
             for (dto in books) {
                 val format = formatOf(dto.primaryFileType, dto.primaryFileName) ?: continue
                 val existing = bookDao.byServerId(serverRowId, dto.id)
-                val entity = dto.toEntity(serverRowId, existing)
+                val entity = dto.toEntity(serverRowId, existing, localIds[dto.libraryId])
                 val bookId =
                     bookDao
                         .upsert(if (existing?.id in resetting) entity.withoutProgress() else entity)
@@ -209,8 +231,14 @@ class LibraryRepository
             return seen.size
         }
 
-        /** Copies a user-picked file into app storage and adds it as a local book. Returns the new book id. */
-        suspend fun importLocal(uri: Uri): Long =
+        /** The server is gone: its libraries stay on the device, no longer mirroring a server library. */
+        suspend fun serverRemoved() = localLibraries.unlinkServer()
+
+        /** Copies a user-picked file into app storage and adds it as a local book, in [localLibraryId]. Returns the new book id. */
+        suspend fun importLocal(
+            uri: Uri,
+            localLibraryId: Long? = null,
+        ): Long =
             withContext(io) {
                 val imported = files.importFrom(uri)
                 BookHandle.open(imported.file).use { book ->
@@ -221,6 +249,7 @@ class LibraryRepository
                         imported.file.absolutePath,
                         imported.sizeBytes,
                         imported.partialMd5,
+                        localLibraryId,
                     )
                 }
             }
@@ -233,6 +262,7 @@ class LibraryRepository
             localUri: String,
             sizeBytes: Long,
             partialMd5: String,
+            localLibraryId: Long? = null,
         ): Long {
             val meta = BookMetadataReader.read(book, format)
             val title = meta.title ?: displayName.substringBeforeLast('.')
@@ -242,6 +272,7 @@ class LibraryRepository
                         bookDao.insert(
                             BookEntity(
                                 source = BookSource.LOCAL,
+                                localLibraryId = localLibraryId,
                                 title = title,
                                 authors = meta.authors.joinToString(BookEntity.AUTHOR_SEPARATOR),
                                 seriesName = meta.series,
@@ -291,8 +322,12 @@ class LibraryRepository
 
         companion object {
             private const val PAGE_SIZE = 100
+            private const val SERVER_WAIT_MS = 5_000L
 
             /** The automatic refresh skips a library mirrored less than 30 minutes ago; pull-to-refresh never does. */
             const val STALE_AFTER_MS = 30 * 60 * 1000L
         }
     }
+
+private fun List<LibraryDto>.toEntities(serverRowId: Long) =
+    mapIndexed { i, l -> LibraryEntity(serverRowId, l.id, l.name, l.allowedFormats.joinToString(","), i) }

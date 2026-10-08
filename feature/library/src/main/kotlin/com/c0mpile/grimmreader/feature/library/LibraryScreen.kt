@@ -52,6 +52,7 @@ import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.ServerStatus
 
 private const val EMPTY_SERVER = "No books yet. Pull to refresh or open a file."
+private const val EMPTY_LIBRARY = "Nothing here yet. Give this library a folder in Settings → Storage, or open a file."
 private const val EMPTY_LOCAL = "Open an EPUB or comic file to start reading."
 private const val NO_MATCH = "Nothing matches your search."
 
@@ -170,7 +171,8 @@ private fun scopeTitle(state: LibraryUiState): String =
                 BrowseMode.AUTHORS -> "Authors"
                 BrowseMode.SERIES -> "Series"
             }
-        LibraryScope.OnDevice -> "On this device"
+        LibraryScope.Unsorted -> "Unsorted"
+        is LibraryScope.Local -> state.localLibraries.firstOrNull { it.id == scope.libraryId }?.name ?: "Library"
         LibraryScope.Unshelved -> "Unshelved"
         is LibraryScope.Server -> state.libraries.firstOrNull { it.id == scope.libraryId }?.name ?: "Library"
         is LibraryScope.Shelf -> state.shelves.firstOrNull { !it.magic && it.id == scope.shelfId }?.name ?: "Shelf"
@@ -262,6 +264,7 @@ private fun EmptyMessage(state: LibraryUiState) {
             when {
                 state.query.isNotBlank() -> NO_MATCH
                 state.mode == BrowseMode.SERIES -> "No series here."
+                state.scope is LibraryScope.Local -> EMPTY_LIBRARY
                 state.hasServer -> EMPTY_SERVER
                 else -> EMPTY_LOCAL
             },

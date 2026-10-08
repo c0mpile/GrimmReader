@@ -20,6 +20,8 @@ data class Book(
     val progressPercent: Float? = null,
     val files: List<BookFile> = emptyList(),
     val libraryId: Long? = null,
+    /** The on-device library the book belongs to (see [LocalLibrary]); null = not sorted into one. */
+    val localLibraryId: Long? = null,
     val addedAt: Long = 0,
     val lastReadAt: Long? = null,
     /** Server shelves (user shelves) and magic shelves the book is on, by server shelf id. */
@@ -53,6 +55,21 @@ data class Library(
     val id: Long,
     val name: String,
     val isComics: Boolean,
+)
+
+/**
+ * A library kept on this device. One is made for every server library (linked by [serverLibraryId], named after
+ * it) and others are the user's own. [folderName] is its optional watch folder: books in it are read in place.
+ * Server books downloaded from the linked library show up in it too.
+ */
+data class LocalLibrary(
+    val id: Long,
+    val name: String,
+    val serverLibraryId: Long? = null,
+    val folderName: String? = null,
+    val folderUri: String? = null,
+    /** False once the grant on the watch folder was revoked or its volume is gone. */
+    val folderAccessible: Boolean = true,
 )
 
 /**

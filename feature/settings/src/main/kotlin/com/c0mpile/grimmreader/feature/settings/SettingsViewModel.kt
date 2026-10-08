@@ -5,12 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.library.BookFolder
 import com.c0mpile.grimmreader.core.data.library.FolderLibrary
+import com.c0mpile.grimmreader.core.data.library.LocalLibraryRepository
 import com.c0mpile.grimmreader.core.data.library.ScanResult
 import com.c0mpile.grimmreader.core.data.server.ServerRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.model.Appearance
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 import com.c0mpile.grimmreader.core.model.ServerStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +28,7 @@ data class SettingsUiState(
     val appearance: Appearance = Appearance(),
     val server: ServerEntity? = null,
     val status: ServerStatus = ServerStatus.ONLINE,
-    val bookFolders: List<BookFolder> = emptyList(),
+    val libraries: List<LocalLibrary> = emptyList(),
     val downloadFolder: BookFolder? = null,
     /** Read books whose folder was removed, kept hidden so their position comes back with the folder. */
     val setAside: Int = 0,
@@ -42,24 +44,30 @@ class SettingsViewModel
         private val servers: ServerRepository,
         session: ServerSession,
         private val folders: FolderLibrary,
+        private val localLibraries: LocalLibraryRepository,
     ) : ViewModel() {
         private val scan = MutableStateFlow(ScanState())
 
         val state: StateFlow<SettingsUiState> =
             combine(
                 combine(prefs.appearance, session.server, session.status, ::Triple),
-                folders.folders,
+                localLibraries.libraries,
                 combine(folders.downloadFolder, folders.setAsideCount, ::Pair),
                 scan,
-            ) { (appearance, server, status), bookFolders, (downloadFolder, setAside), scan ->
-                SettingsUiState(appearance, server, status, bookFolders, downloadFolder, setAside, scan.running, scan.message)
+            ) { (appearance, server, status), libraries, (downloadFolder, setAside), scan ->
+                SettingsUiState(appearance, server, status, libraries, downloadFolder, setAside, scan.running, scan.message)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState())
 
-        fun addBookFolder(tree: Uri) = scanning { folders.add(tree) }
+        fun addLibrary(name: String) = viewModelScope.launch { localLibraries.create(name) }
+
+        fun setLibraryFolder(
+            libraryId: Long,
+            tree: Uri?,
+        ) = scanning { folders.setLibraryFolder(libraryId, tree) }
+
+        fun deleteLibrary(libraryId: Long) = viewModelScope.launch { folders.deleteLibrary(libraryId) }
 
         fun rescan() = scanning { folders.scan() }
-
-        fun removeBookFolder(tree: String) = viewModelScope.launch { folders.remove(tree) }
 
         fun forgetRemovedBooks() = viewModelScope.launch { folders.forgetSetAside() }
 

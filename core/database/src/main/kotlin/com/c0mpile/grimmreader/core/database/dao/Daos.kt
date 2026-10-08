@@ -15,6 +15,7 @@ import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.database.entity.DownloadWithBook
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
+import com.c0mpile.grimmreader.core.database.entity.LocalLibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ReadingPositionEntity
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
@@ -113,6 +114,32 @@ interface BookDao {
 
     @Query("DELETE FROM book WHERE serverRowId = :serverRowId")
     suspend fun deleteAllForServer(serverRowId: Long)
+
+    /** Name of the on-device library the book is in (for the download folder), null when in none. */
+    @Query("SELECT l.name FROM local_library l JOIN book b ON b.localLibraryId = l.id WHERE b.id = :bookId")
+    suspend fun localLibraryName(bookId: Long): String?
+
+    @Query("UPDATE book SET localLibraryId = :libraryId WHERE id = :id")
+    suspend fun setLocalLibrary(
+        id: Long,
+        libraryId: Long?,
+    )
+
+    /** Local books that are in no on-device library yet (a scan files the ones it finds in a library folder). */
+    @Query("SELECT id FROM book WHERE source = 'LOCAL' AND localLibraryId IS NULL")
+    suspend fun unsortedLocalIds(): List<Long>
+
+    /** Server books of a server library follow the on-device library mirroring it (null when there is none). */
+    @Query("UPDATE book SET localLibraryId = :libraryId WHERE serverRowId = :serverRowId AND serverLibraryId = :serverLibraryId")
+    suspend fun setLocalLibraryOfServerLibrary(
+        serverRowId: Long,
+        serverLibraryId: Long,
+        libraryId: Long?,
+    )
+
+    /** Books of a deleted on-device library fall back to being in none. */
+    @Query("UPDATE book SET localLibraryId = NULL WHERE localLibraryId = :libraryId")
+    suspend fun clearLocalLibrary(libraryId: Long)
 
     /** Detach books from a removed server, keeping downloaded ones as local books. */
     @Query("UPDATE book SET source = 'LOCAL', serverRowId = NULL WHERE serverRowId = :serverRowId")
@@ -393,3 +420,54 @@ data class ShelfCount(
     val magic: Boolean,
     val books: Int,
 )
+
+@Dao
+interface LocalLibraryDao {
+    @Query("SELECT * FROM local_library ORDER BY position, id")
+    fun observe(): Flow<List<LocalLibraryEntity>>
+
+    @Query("SELECT * FROM local_library ORDER BY position, id")
+    suspend fun all(): List<LocalLibraryEntity>
+
+    @Query("SELECT * FROM local_library WHERE id = :id")
+    suspend fun get(id: Long): LocalLibraryEntity?
+
+    @Query("SELECT * FROM local_library WHERE serverLibraryId = :serverLibraryId")
+    suspend fun byServerLibrary(serverLibraryId: Long): LocalLibraryEntity?
+
+    @Query("SELECT folderUri FROM local_library WHERE folderUri IS NOT NULL")
+    fun observeFolders(): Flow<List<String>>
+
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM local_library")
+    suspend fun nextPosition(): Int
+
+    @Insert
+    suspend fun insert(library: LocalLibraryEntity): Long
+
+    @Query("UPDATE local_library SET name = :name WHERE id = :id")
+    suspend fun rename(
+        id: Long,
+        name: String,
+    )
+
+    @Query("UPDATE local_library SET folderUri = :folderUri WHERE id = :id")
+    suspend fun setFolder(
+        id: Long,
+        folderUri: String?,
+    )
+
+    @Query("UPDATE local_library SET serverLibraryId = :serverLibraryId WHERE id = :id")
+    suspend fun link(
+        id: Long,
+        serverLibraryId: Long,
+    )
+
+    @Query("UPDATE local_library SET serverLibraryId = NULL")
+    suspend fun unlinkAll()
+
+    @Query("UPDATE local_library SET serverLibraryId = NULL WHERE serverLibraryId = :serverLibraryId")
+    suspend fun unlink(serverLibraryId: Long)
+
+    @Query("DELETE FROM local_library WHERE id = :id")
+    suspend fun delete(id: Long)
+}

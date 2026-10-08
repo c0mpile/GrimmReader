@@ -23,7 +23,12 @@ object DatabaseModule {
             .databaseBuilder(context, GrimmDatabase::class.java, "grimm.db")
             .addMigrations(MIGRATION_2_3)
             .build()
+}
 
+/** The DAOs of [GrimmDatabase]. */
+@Module
+@InstallIn(SingletonComponent::class)
+object DaoModule {
     @Provides fun serverDao(db: GrimmDatabase) = db.serverDao()
 
     @Provides fun bookDao(db: GrimmDatabase) = db.bookDao()
@@ -41,4 +46,6 @@ object DatabaseModule {
     @Provides fun bookmarkDao(db: GrimmDatabase) = db.bookmarkDao()
 
     @Provides fun shelfDao(db: GrimmDatabase) = db.shelfDao()
+
+    @Provides fun localLibraryDao(db: GrimmDatabase) = db.localLibraryDao()
 }
