@@ -1,8 +1,10 @@
 package com.c0mpile.grimmreader.feature.library
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -22,8 +26,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.c0mpile.grimmreader.core.designsystem.component.BookCard
@@ -34,6 +40,8 @@ import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookLayout
 
 private val GRID_CELL = 116.dp
+private val GRID_PADDING = 16.dp
+private val GRID_SPACING = 12.dp
 private val LIST_COVER = 56.dp
 private val AUTHOR_COVER = 40.dp
 
@@ -52,39 +60,74 @@ fun LayoutToggle(
     }
 }
 
+/**
+ * Books as a cover grid or a list. Tapping a book slides its actions drawer open underneath (in a grid, under
+ * the whole row); tapping it again closes it.
+ */
 @Composable
 fun BookCollection(
     books: List<Book>,
     layout: BookLayout,
-    onOpenBook: (Long) -> Unit,
+    onRead: (Long) -> Unit,
 ) {
+    val drawer = rememberBookDrawerState()
+    LaunchedEffect(books) { drawer.forgetMissing(books.mapTo(HashSet()) { BookDrawerState.key(PLACE, it.id) }) }
+    val shown = books.indexOfFirst { drawer.isShown(PLACE, it.id) }
     if (layout == BookLayout.GRID) {
-        CoverGrid {
-            items(books, key = { it.id }) { book ->
-                BookCard(
-                    title = book.title,
-                    author = book.authors.joinToString(", "),
-                    coverModel = book.coverUri,
-                    onClick = { onOpenBook(book.id) },
-                    progressPercent = book.progressPercent,
-                    badge = book.primaryFile?.format?.name,
-                )
+        BoxWithConstraints {
+            // GridCells.Adaptive's count, fixed here so the drawer can be put after the tapped book's row.
+            val columns = ((maxWidth - GRID_PADDING * 2 + GRID_SPACING) / (GRID_CELL + GRID_SPACING)).toInt().coerceAtLeast(1)
+            val split = if (shown < 0) books.size else minOf(books.size, (shown / columns + 1) * columns)
+            CoverGrid(columns) {
+                bookCards(books.subList(0, split), drawer)
+                if (shown >= 0) {
+                    val id = books[shown].id
+                    item(key = "drawer/$id", span = { GridItemSpan(maxLineSpan) }) { BookDrawerSlot(drawer, PLACE, id, onRead) }
+                }
+                bookCards(books.subList(split, books.size), drawer)
             }
         }
     } else {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
-            items(books, key = { it.id }) { book -> BookRow(book) { onOpenBook(book.id) } }
+            books.forEachIndexed { index, book ->
+                item(key = book.id) {
+                    BookRow(book, selected = drawer.isOpen(PLACE, book.id)) { drawer.toggle(PLACE, book.id) }
+                }
+                if (index == shown) {
+                    item(key = "drawer/${book.id}") {
+                        BookDrawerSlot(drawer, PLACE, book.id, onRead, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
+                }
+            }
         }
     }
+}
+
+private const val PLACE = "books"
+
+private fun LazyGridScope.bookCards(
+    books: List<Book>,
+    drawer: BookDrawerState,
+) = items(books, key = { it.id }) { book ->
+    BookCard(
+        title = book.title,
+        author = book.authors.joinToString(", "),
+        coverModel = book.coverUri,
+        onClick = { drawer.toggle(PLACE, book.id) },
+        progressPercent = book.progressPercent,
+        badge = book.primaryFile?.format?.name,
+        selected = drawer.isOpen(PLACE, book.id),
+    )
 }
 
 /** Cover thumbnail, the full title, authors, series and format, with reading progress underneath. */
 @Composable
 private fun BookRow(
     book: Book,
+    selected: Boolean,
     onClick: () -> Unit,
 ) {
-    ListRow(onClick, cover = { BookCover(book.title, book.coverUri, Modifier.width(LIST_COVER)) }) {
+    ListRow(onClick, selected = selected, cover = { BookCover(book.title, book.coverUri, Modifier.width(LIST_COVER)) }) {
         Text(book.title, style = MaterialTheme.typography.titleMedium)
         if (book.authors.isNotEmpty()) {
             Text(
@@ -170,11 +213,13 @@ private fun GroupRow(
 @Composable
 private fun ListRow(
     onClick: () -> Unit,
+    selected: Boolean = false,
     cover: @Composable () -> Unit,
     trailing: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    val background = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent
+    Column(Modifier.fillMaxWidth().background(background).clickable(onClick = onClick)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -191,12 +236,15 @@ private fun ListRow(
 private const val DIVIDER_ALPHA = 0.4f
 
 @Composable
-private fun CoverGrid(content: androidx.compose.foundation.lazy.grid.LazyGridScope.() -> Unit) {
+private fun CoverGrid(
+    columns: Int? = null,
+    content: LazyGridScope.() -> Unit,
+) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(GRID_CELL),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        columns = columns?.let { GridCells.Fixed(it) } ?: GridCells.Adaptive(GRID_CELL),
+        contentPadding = PaddingValues(GRID_PADDING),
+        horizontalArrangement = Arrangement.spacedBy(GRID_SPACING),
+        verticalArrangement = Arrangement.spacedBy(GRID_SPACING),
         modifier = Modifier.fillMaxSize(),
         content = content,
     )

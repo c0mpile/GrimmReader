@@ -72,7 +72,7 @@ internal val READABLE_TYPES =
 fun LibraryScreen(
     scope: LibraryScope,
     mode: BrowseMode,
-    onOpenBook: (Long) -> Unit,
+    onRead: (Long) -> Unit,
     onOpenGroup: (GroupKind, String) -> Unit,
     startSearching: Boolean = false,
     viewModel: LibraryViewModel =
@@ -133,7 +133,7 @@ fun LibraryScreen(
                 val empty = if (state.mode == BrowseMode.BOOKS) state.books.isEmpty() else state.groups.isEmpty()
                 when {
                     empty && !state.syncing -> EmptyMessage(state)
-                    state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onOpenBook)
+                    state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onRead)
                     state.mode == BrowseMode.AUTHORS -> AuthorList(state.groups) { onOpenGroup(GroupKind.AUTHOR, it) }
                     else -> SeriesCollection(state.groups, state.view.layout) { onOpenGroup(GroupKind.SERIES, it) }
                 }

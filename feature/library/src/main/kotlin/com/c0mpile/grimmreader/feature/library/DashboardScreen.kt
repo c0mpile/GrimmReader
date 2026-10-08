@@ -49,7 +49,7 @@ import com.c0mpile.grimmreader.core.model.Book
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    onOpenBook: (Long) -> Unit,
+    onRead: (Long) -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -86,14 +86,19 @@ fun DashboardScreen(
                         )
                     }
                 } else {
+                    val drawer = rememberBookDrawerState()
+                    val rows = listOf(CONTINUE to state.continueReading, ADDED to state.recentlyAdded, DISCOVER to state.discover)
+                    LaunchedEffect(rows) {
+                        drawer.forgetMissing(
+                            rows.flatMapTo(HashSet()) { (title, books) -> books.map { BookDrawerState.key(title, it.id) } },
+                        )
+                    }
                     LazyColumn(
                         Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        shelfRow("Continue Reading", state.continueReading, onOpenBook)
-                        shelfRow("Recently Added", state.recentlyAdded, onOpenBook)
-                        shelfRow("Discover Something New", state.discover, onOpenBook)
+                        rows.forEach { (title, books) -> shelfRow(title, books, drawer, onRead) }
                     }
                 }
             }
@@ -104,18 +109,23 @@ fun DashboardScreen(
 private fun androidx.compose.foundation.lazy.LazyListScope.shelfRow(
     title: String,
     books: List<Book>,
-    onOpenBook: (Long) -> Unit,
+    drawer: BookDrawerState,
+    onRead: (Long) -> Unit,
 ) {
     if (books.isEmpty()) return
-    item(key = title) { BookRow(title, books, onOpenBook) }
+    item(key = title) { BookRow(title, books, drawer, onRead) }
 }
 
-/** A titled card with an accent underline and a horizontal row of covers, after the web dashboard. */
+/**
+ * A titled card with an accent underline and a horizontal row of covers, after the web dashboard.
+ * A tapped book's actions drawer slides open under the covers, inside the card.
+ */
 @Composable
 private fun BookRow(
     title: String,
     books: List<Book>,
-    onOpenBook: (Long) -> Unit,
+    drawer: BookDrawerState,
+    onRead: (Long) -> Unit,
 ) {
     Column(
         Modifier
@@ -141,16 +151,23 @@ private fun BookRow(
                     title = book.title,
                     author = book.authors.joinToString(", "),
                     coverModel = book.coverUri,
-                    onClick = { onOpenBook(book.id) },
+                    onClick = { drawer.toggle(title, book.id) },
                     modifier = Modifier.width(COVER_WIDTH.dp),
                     progressPercent = book.progressPercent,
                     badge = book.primaryFile?.format?.name,
+                    selected = drawer.isOpen(title, book.id),
                 )
             }
+        }
+        books.firstOrNull { drawer.isShown(title, it.id) }?.let { book ->
+            BookDrawerSlot(drawer, title, book.id, onRead, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
         }
     }
 }
 
 private const val COVER_WIDTH = 116
+private const val CONTINUE = "Continue Reading"
+private const val ADDED = "Recently Added"
+private const val DISCOVER = "Discover Something New"
 private const val EMPTY_SERVER = "No books yet. Pull to refresh or open a file."
 private const val EMPTY_LOCAL = "Open an EPUB, PDF or comic file to start reading."
