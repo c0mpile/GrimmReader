@@ -66,6 +66,16 @@ interface GrimmoryApi {
         @Body body: UpdateProgressDto,
     ): Response<Unit>
 
+    /**
+     * Clears this user's own Grimmory reading progress and read status for the books; bookmarks, annotations and
+     * notes are separate and stay. More than one id per call needs a bulk-reset permission, so the app sends one.
+     */
+    @POST("api/v1/books/reset-progress")
+    suspend fun resetProgress(
+        @Body bookIds: List<Long>,
+        @Query("type") type: String = RESET_GRIMMORY,
+    ): Response<Unit>
+
     /** This user's shelves, including the server-made "Favorites". */
     @GET("api/v1/app/shelves")
     suspend fun shelves(): List<ShelfDto>
@@ -130,6 +140,9 @@ interface GrimmoryApi {
     ): List<Int>
 
     companion object {
+        /** `ResetProgressType` for the server's own progress (named after Booklore, which Grimmory forked). */
+        const val RESET_GRIMMORY = "BOOKLORE"
+
         val json =
             Json {
                 ignoreUnknownKeys = true

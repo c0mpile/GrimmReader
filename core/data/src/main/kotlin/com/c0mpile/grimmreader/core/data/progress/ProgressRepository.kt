@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.c0mpile.grimmreader.api.grimmory.EpubProgressDto
 import com.c0mpile.grimmreader.api.grimmory.FileProgressDto
+import com.c0mpile.grimmreader.api.grimmory.GrimmoryApi
 import com.c0mpile.grimmreader.api.grimmory.PageProgressDto
 import com.c0mpile.grimmreader.api.grimmory.ProgressDto
 import com.c0mpile.grimmreader.api.grimmory.UpdateProgressDto
@@ -94,6 +95,29 @@ class ProgressRepository
         }
 
         /**
+         * Resets reading progress: the book is unread again, without a position, and leaves Continue Reading.
+         * Bookmarks, highlights and notes are kept. Server books also queue a server reset (sent by [pushResets]);
+         * a pending progress upload for the book is dropped first, and a later read is queued after the reset.
+         */
+        suspend fun reset(bookIds: Collection<Long>) =
+            withContext(io) {
+                val now = System.currentTimeMillis()
+                var queued = false
+                db.withTransaction {
+                    for (bookId in bookIds) {
+                        val book = bookDao.get(bookId)?.book ?: continue
+                        positions.delete(bookId)
+                        bookDao.resetProgress(bookId)
+                        outbox.deleteFor(KIND_PROGRESS, bookId)
+                        val serverBookId = book.serverBookId?.takeIf { book.source == BookSource.SERVER } ?: continue
+                        outbox.replace(OutboxOpEntity(kind = KIND_RESET, entityId = bookId, payload = "$serverBookId", createdAt = now))
+                        queued = true
+                    }
+                }
+                if (queued) SyncWorker.enqueue(context)
+            }
+
+        /**
          * Server position if it should be offered on open: the server moved since we last reconciled, our
          * own position is not pending upload, and the two positions differ (CFI or page; percentages differ
          * slightly between screen sizes, so they are not compared).
@@ -102,6 +126,8 @@ class ProgressRepository
             withContext(io) {
                 val row = bookDao.get(bookId) ?: return@withContext null
                 val serverBookId = row.book.serverBookId?.takeIf { row.book.source == BookSource.SERVER } ?: return@withContext null
+                // Until the server has the reset, it still holds the old position.
+                if (outbox.ofKind(KIND_RESET).any { it.entityId == bookId }) return@withContext null
                 val dto = runCatching { session.api()?.progress(serverBookId) }.getOrNull() ?: return@withContext null
                 val format = row.files.firstOrNull { it.isPrimary }?.format ?: return@withContext null
                 val remote = dto.toLocator(format) ?: return@withContext null
@@ -136,7 +162,48 @@ class ProgressRepository
 
         companion object {
             const val KIND_PROGRESS = "progress"
+            const val KIND_RESET = "progress_reset"
             internal val json = Json { ignoreUnknownKeys = true }
+
+            /** The server takes at most this many ids per reset request. */
+            internal const val RESET_CHUNK = 500
+
+            /**
+             * Sends queued resets: in one request per [RESET_CHUNK] books when [bulk] (the user may bulk-reset),
+             * else one request per book. A rejected bulk request (a stale permission, a book gone from the server)
+             * falls back to single requests; a single one rejected with a client error is dropped. Returns the ops
+             * that are done; fewer than given means the rest must be retried (auth or server error).
+             */
+            internal suspend fun pushResets(
+                ops: List<OutboxOpEntity>,
+                api: GrimmoryApi,
+                bulk: Boolean,
+            ): List<OutboxOpEntity> {
+                val (valid, broken) = ops.partition { it.payload.toLongOrNull() != null }
+                val done = broken.toMutableList()
+                for (chunk in if (bulk) valid.chunked(RESET_CHUNK) else valid.map(::listOf)) {
+                    if (chunk.size > 1) {
+                        val response = api.resetProgress(chunk.map { it.payload.toLong() })
+                        if (response.isSuccessful) {
+                            done += chunk
+                            continue
+                        }
+                        if (!response.isClientError()) return done
+                    }
+                    for (op in chunk) {
+                        val response = api.resetProgress(listOf(op.payload.toLong()))
+                        if (!response.isSuccessful && !response.isClientError()) return done
+                        done += op
+                    }
+                }
+                return done
+            }
+
+            /** A 4xx that would fail the same way again; 401 is not one (the token is refreshed and it is retried). */
+            private fun retrofit2.Response<*>.isClientError() = code() != HTTP_UNAUTHORIZED && code() in HTTP_CLIENT_ERRORS
+
+            private const val HTTP_UNAUTHORIZED = 401
+            private val HTTP_CLIENT_ERRORS = 400..499
 
             internal fun decide(
                 local: ReadingPositionEntity?,

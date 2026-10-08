@@ -11,6 +11,7 @@ import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.dao.DownloadDao
 import com.c0mpile.grimmreader.core.database.entity.BookEntity
+import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
@@ -22,6 +23,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
@@ -54,11 +57,22 @@ class DownloadWorker
             val serverRowId = book.serverRowId ?: return Result.failure()
             val serverBookId = book.serverBookId ?: return Result.failure()
             val target = store.downloadTarget(serverRowId, serverBookId, fileId)
+            update(fileId, DownloadState.QUEUED, File(target.path + ".part").length(), null)
+            return slots.withPermit { transfer(file, book, GrimmoryUrls.content(base, serverBookId), target) }
+        }
+
+        private suspend fun transfer(
+            file: BookFileEntity,
+            book: BookEntity,
+            url: okhttp3.HttpUrl,
+            target: File,
+        ): Result {
+            val fileId = file.id
             val part = File(target.path + ".part")
             val meta = File(target.path + ".part.meta")
             update(fileId, DownloadState.RUNNING, part.length(), null)
             return try {
-                fetch(GrimmoryUrls.content(base, serverBookId), part, meta, fileId)
+                fetch(url, part, meta, fileId)
                 val format = FormatSniffer.sniff(part) ?: file.format
                 val final = File(target.parentFile, "${target.nameWithoutExtension}.${format.extensions.first()}")
                 check(part.renameTo(final)) { "rename failed" }
@@ -189,6 +203,9 @@ class DownloadWorker
 
         companion object {
             private const val MAX_NAME = 120
+
+            /** Downloads queued together (a multi-book selection) run [DownloadRepository.MAX_PARALLEL] at a time. */
+            private val slots = Semaphore(DownloadRepository.MAX_PARALLEL)
 
             /** "Title - First Author.epub", without characters that file systems reject. */
             internal fun fileName(

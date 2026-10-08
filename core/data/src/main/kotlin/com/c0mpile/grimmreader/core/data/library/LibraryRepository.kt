@@ -6,6 +6,7 @@ import com.c0mpile.grimmreader.api.grimmory.BookSummaryDto
 import com.c0mpile.grimmreader.api.grimmory.GrimmoryUrls
 import com.c0mpile.grimmreader.api.grimmory.LibraryDto
 import com.c0mpile.grimmreader.core.common.IoDispatcher
+import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfMirror
 import com.c0mpile.grimmreader.core.data.shelf.ShelfSnapshot
@@ -130,10 +131,16 @@ class LibraryRepository
                 libraries.mapIndexed { i, l -> LibraryEntity(serverRowId, l.id, l.name, l.allowedFormats.joinToString(","), i) },
             )
             val seen = mutableListOf<Long>()
+            // A reset not sent yet: the server still reports the old progress.
+            val resetting = db.outboxDao().ofKind(ProgressRepository.KIND_RESET).mapTo(HashSet()) { it.entityId }
             for (dto in books) {
                 val format = formatOf(dto.primaryFileType, dto.primaryFileName) ?: continue
                 val existing = bookDao.byServerId(serverRowId, dto.id)
-                val bookId = bookDao.upsert(dto.toEntity(serverRowId, existing)).takeIf { it > 0 } ?: existing!!.id
+                val entity = dto.toEntity(serverRowId, existing)
+                val bookId =
+                    bookDao
+                        .upsert(if (existing?.id in resetting) entity.withoutProgress() else entity)
+                        .takeIf { it > 0 } ?: existing!!.id
                 val file = fileDao.forBook(bookId).firstOrNull { it.isPrimary }
                 fileDao.upsert(
                     (file ?: BookFileEntity(bookId = bookId, format = format)).copy(

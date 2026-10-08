@@ -56,6 +56,12 @@ object LucideIcons {
             stroke("M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z")
         }
     }
+    val CheckCheck: ImageVector by lazy {
+        lucide("check-check") {
+            stroke("M18 6 7 17l-5-5")
+            stroke("m22 10-7.5 7.5L13 16")
+        }
+    }
     val Check: ImageVector by lazy {
         lucide("check") {
             stroke("M20 6 9 17l-5-5")
@@ -269,6 +275,12 @@ object LucideIcons {
             stroke("M21 3v5h-5")
             stroke("M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16")
             stroke("M8 16H3v5")
+        }
+    }
+    val RotateCcw: ImageVector by lazy {
+        lucide("rotate-ccw") {
+            stroke("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8")
+            stroke("M3 3v5h5")
         }
     }
     val Search: ImageVector by lazy {

@@ -22,12 +22,18 @@ data class Permissions(
 
     fun has(flag: String): Boolean = isAdmin || flag in flags
 
+    /** May reset several books' progress in one request (the server checks this only for more than one book). */
+    val canBulkResetProgress: Boolean get() = has(CAN_BULK_RESET_PROGRESS) || has(CAN_BULK_RESET_PROGRESS_RENAMED)
+
     companion object {
         const val ADMIN = "admin"
         const val CAN_DOWNLOAD = "canDownload"
         const val CAN_UPLOAD = "canUpload"
         const val CAN_EDIT_METADATA = "canEditMetadata"
-        const val CAN_DELETE_BOOK = "canDeleteBook"
+        const val CAN_BULK_RESET_PROGRESS = "canBulkResetBookloreReadProgress"
+
+        /** The same permission under Grimmory's own name, in case a server version renames it. */
+        const val CAN_BULK_RESET_PROGRESS_RENAMED = "canBulkResetGrimmoryReadProgress"
         const val CAN_MANAGE_FONTS = "canManageFonts"
         const val CAN_ACCESS_OPDS = "canAccessOpds"
         val NONE = Permissions()

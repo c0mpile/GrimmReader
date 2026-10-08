@@ -6,16 +6,19 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.c0mpile.grimmreader.api.grimmory.TokenDto
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
 import com.c0mpile.grimmreader.core.data.server.NetworkPolicyImpl
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfMirror
 import com.c0mpile.grimmreader.core.database.GrimmDatabase
+import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SecretCipher
 import com.c0mpile.grimmreader.core.datastore.SecretStore
 import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.files.LocalFileStore
+import com.c0mpile.grimmreader.core.model.ReadStatus
 import com.c0mpile.grimmreader.core.network.GuardedHttpClient
 import dagger.Lazy
 import kotlinx.coroutines.CoroutineScope
@@ -64,11 +67,12 @@ class LibraryRefreshTest {
     }
 
     private val page0 =
-        """{"content":[{"id":1,"title":"Sample A","authors":["Ada"],"libraryId":1,"primaryFileId":11,"primaryFileType":"EPUB"},
+        """{"content":[{"id":1,"title":"Sample A","authors":["Ada"],"libraryId":1,"primaryFileId":11,"primaryFileType":"EPUB",
+           "readProgress":30.0,"readStatus":"READING"},
            {"id":2,"title":"Sample Audio","primaryFileId":12,"primaryFileType":"AUDIOBOOK"}],"hasNext":true}"""
     private val page1 =
         """{"content":[{"id":3,"title":"Sample Comic","libraryId":2,"primaryFileId":13,"primaryFileType":"CBX",
-           "primaryFileName":"c.cbz"}],"hasNext":false}"""
+           "primaryFileName":"c.cbz","readProgress":30.0,"readStatus":"READING"}],"hasNext":false}"""
 
     private val libraries =
         """[{"id":1,"name":"Books","allowedFormats":["EPUB","PDF"]},{"id":2,"name":"Comics","allowedFormats":["CBX","PDF"]}]"""
@@ -158,9 +162,17 @@ class LibraryRefreshTest {
             val requests = server.requestCount
             assertNull(repo.refreshIfStale())
             assertEquals(requests, server.requestCount)
+            // A reset of the comic not sent yet: the server still reports its old progress, which must not return.
+            assertEquals(listOf(30f, 30f), books.map { it.progressPercent })
+            db.outboxDao().insert(
+                OutboxOpEntity(kind = ProgressRepository.KIND_RESET, entityId = books[1].id, payload = "3", createdAt = 0),
+            )
             val later = System.currentTimeMillis() + LibraryRepository.STALE_AFTER_MS + 1
             assertEquals(2, repo.refreshIfStale(now = later)?.getOrThrow())
             assertTrue(server.requestCount > requests)
+            val after = repo.observeLibrary().first()
+            assertEquals(listOf(30f, null), after.map { it.progressPercent })
+            assertEquals(listOf(ReadStatus.READING, ReadStatus.UNREAD), after.map { it.readStatus })
             backgroundScope.cancel()
         }
 

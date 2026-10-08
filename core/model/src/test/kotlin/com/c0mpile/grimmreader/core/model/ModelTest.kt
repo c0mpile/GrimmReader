@@ -22,7 +22,7 @@ class ModelTest {
     }
 
     @Test fun adminImpliesEveryPermission() {
-        assertTrue(Permissions(setOf(Permissions.ADMIN)).has(Permissions.CAN_DELETE_BOOK))
+        assertTrue(Permissions(setOf(Permissions.ADMIN)).has(Permissions.CAN_DOWNLOAD))
         assertFalse(Permissions(setOf(Permissions.CAN_DOWNLOAD)).has(Permissions.CAN_UPLOAD))
     }
 }

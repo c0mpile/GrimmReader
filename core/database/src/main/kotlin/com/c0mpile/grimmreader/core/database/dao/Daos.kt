@@ -82,6 +82,10 @@ interface BookDao {
         at: Long,
     )
 
+    /** Back to unread with no progress, as if never opened. */
+    @Query("UPDATE book SET progressPercent = NULL, lastReadAt = NULL, readStatus = 'UNREAD' WHERE id = :id")
+    suspend fun resetProgress(id: Long)
+
     /** Server rows that disappeared from a full refresh; downloaded ones are kept. */
     @Query(
         """DELETE FROM book WHERE serverRowId = :serverRowId AND serverBookId NOT IN (:keep)
@@ -160,6 +164,9 @@ interface ReadingPositionDao {
 
     @Upsert
     suspend fun upsert(position: ReadingPositionEntity)
+
+    @Query("DELETE FROM reading_position WHERE bookId = :bookId")
+    suspend fun delete(bookId: Long)
 
     @Query("UPDATE reading_position SET dirty = 0, serverSeenAt = :serverSeenAt WHERE bookId = :bookId AND localUpdatedAt = :ifUpdatedAt")
     suspend fun markSynced(
