@@ -37,6 +37,8 @@ data class ScanResult(
     val added: Int = 0,
     val removed: Int = 0,
     val unreadableFolders: Int = 0,
+    /** Duplicates of folder books dropped (the app's own copy deleted, see [FolderDuplicates]). */
+    val merged: Int = 0,
 )
 
 /**
@@ -53,6 +55,7 @@ class FolderLibrary
         private val bookDao: BookDao,
         private val fileDao: BookFileDao,
         private val library: LibraryRepository,
+        private val duplicates: FolderDuplicates,
         @IoDispatcher private val io: CoroutineDispatcher,
     ) {
         private val lock = Mutex()
@@ -146,8 +149,9 @@ class FolderLibrary
                         if (addOrFollow(doc, missing)) added++
                     }
                     missing.forEach { library.forgetLocal(it.bookId) }
+                    val merged = duplicates.merge(listed.keys)
                     lastScanAt = System.currentTimeMillis()
-                    ScanResult(added, missing.size, folders.size - listed.size)
+                    ScanResult(added, missing.size, folders.size - listed.size, merged)
                 }
             }
 
