@@ -48,7 +48,7 @@ class StoresTest {
             assertEquals(ThemeMode.DARK, prefs.appearance.first().mode)
             prefs.setAppearance(Appearance(ThemeMode.AMOLED))
             assertEquals(Appearance(ThemeMode.AMOLED), prefs.appearance.first())
-            assertEquals(SetupState.NOT_DONE, prefs.setupState.first())
+            assertEquals(SetupState.LOCAL_ONLY, prefs.setupState.first())
         }
 
     @Test fun oldThemeModesFallBackToDarkAndPageThemeRoundTrips() =

@@ -7,8 +7,6 @@ import com.c0mpile.grimmreader.core.data.server.ConnectionResult
 import com.c0mpile.grimmreader.core.data.server.ConnectionTester
 import com.c0mpile.grimmreader.core.data.server.LoginResult
 import com.c0mpile.grimmreader.core.data.server.ServerRepository
-import com.c0mpile.grimmreader.core.datastore.AppPreferences
-import com.c0mpile.grimmreader.core.datastore.SetupState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +35,6 @@ class SetupViewModel
     constructor(
         private val tester: ConnectionTester,
         private val servers: ServerRepository,
-        private val prefs: AppPreferences,
     ) : ViewModel() {
         private val _state = MutableStateFlow(SetupUiState())
         val state: StateFlow<SetupUiState> = _state.asStateFlow()
@@ -88,6 +85,4 @@ class SetupViewModel
                 _state.update { it.copy(signingIn = false, loginResult = result, password = "") }
             }
         }
-
-        fun useLocally() = viewModelScope.launch { prefs.setSetupState(SetupState.LOCAL_ONLY) }
     }
