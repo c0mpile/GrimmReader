@@ -98,6 +98,18 @@ class StarDictTest {
         assertEquals("<b>bold</b> link<br>a &lt; b<br>next<br><b>word</b> [wɜːd] <i>an example</i>", html)
     }
 
+    @Test fun nestedMarkupCannotRebuildALink() {
+        for (hidden in listOf(
+            "<<a>a href=\"https://x.example\">x",
+            "<a<a>>",
+            "<scr<script>x</script>ipt>alert(1)</script>",
+            "<im<img>g src=x>",
+        )) {
+            val clean = DefinitionHtml.sanitize(hidden).lowercase()
+            assertFalse(clean, Regex("<\\s*(a|img|script)\\b").containsMatchIn(clean))
+        }
+    }
+
     @Test fun wordFormsTryBaseForms() {
         val running = WordForms.of("“Running,”")
         assertEquals(listOf("Running", "running"), running.take(2))

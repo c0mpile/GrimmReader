@@ -25,7 +25,10 @@ enum class DictionarySource(
     FREEDICT("FreeDict", "FreeDict, free licences (mostly GPL); see each dictionary's source"),
 }
 
-/** A downloadable dictionary. [from]/[to] are language codes; [checksum] is "sha256:…" or "sha512:…". */
+/**
+ * A downloadable dictionary. [from]/[to] are language codes; [checksum] is "sha256:…" or "sha512:…" (catalogue
+ * entries without one are left out).
+ */
 data class CatalogEntry(
     val id: String,
     val source: DictionarySource,
@@ -112,6 +115,8 @@ class DictionaryCatalog
             private val WIKTIONARY_URL =
                 Regex("https://github\\.com/xxyzz/wiktionary_stardict/releases/download/[^/?#]+/[a-z-]+\\.tar\\.zst")
             private val FREEDICT_URL = Regex("https://download\\.freedict\\.org/dictionaries/[^?#]+\\.stardict\\.tar\\.xz")
+            private val SHA256 = Regex("sha256:[0-9a-f]{64}")
+            private val SHA512 = Regex("[0-9a-f]{128}")
             private val PAIR = Regex("([a-z]{2,3}(?:-[a-z]+)?)-([a-z]{2,3})")
 
             internal fun parseWiktionary(text: String): List<CatalogEntry> {
@@ -119,6 +124,8 @@ class DictionaryCatalog
                 return release.assets.mapNotNull { asset ->
                     val pair = PAIR.matchEntire(asset.name.removeSuffix(".tar.zst")) ?: return@mapNotNull null
                     if (!asset.name.endsWith(".tar.zst") || !WIKTIONARY_URL.matches(asset.url)) return@mapNotNull null
+                    // Downloads may be redirected to another host; the checksum is what makes them trustworthy.
+                    val digest = asset.digest?.takeIf { SHA256.matches(it) } ?: return@mapNotNull null
                     CatalogEntry(
                         id = "wiktionary:${pair.value}",
                         source = DictionarySource.WIKTIONARY,
@@ -128,7 +135,7 @@ class DictionaryCatalog
                         words = null,
                         url = asset.url,
                         fileName = asset.name,
-                        checksum = asset.digest?.takeIf { it.startsWith("sha256:") },
+                        checksum = digest,
                         version = release.tag,
                     )
                 }
@@ -139,6 +146,7 @@ class DictionaryCatalog
                     val release = dict.releases.lastOrNull { it.platform == "stardict" } ?: return@mapNotNull null
                     val pair = PAIR.matchEntire(dict.name ?: return@mapNotNull null) ?: return@mapNotNull null
                     if (!FREEDICT_URL.matches(release.url)) return@mapNotNull null
+                    val checksum = release.checksum?.lowercase()?.takeIf { SHA512.matches(it) } ?: return@mapNotNull null
                     CatalogEntry(
                         id = "freedict:${pair.value}",
                         source = DictionarySource.FREEDICT,
@@ -148,7 +156,7 @@ class DictionaryCatalog
                         words = dict.headwords?.toIntOrNull(),
                         url = release.url,
                         fileName = release.url.substringAfterLast('/'),
-                        checksum = release.checksum?.let { "sha512:$it" },
+                        checksum = "sha512:$checksum",
                         version = release.version.orEmpty(),
                     )
                 }
