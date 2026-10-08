@@ -184,9 +184,15 @@ private fun SearchField(
 ) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
+    // The field keeps its own text: the view model's query comes back only after the whole library has been
+    // filtered off the main thread, and a field fed that late value drops and reorders keystrokes.
+    var text by rememberSaveable { mutableStateOf(query) }
     TextField(
-        value = query,
-        onValueChange = onQuery,
+        value = text,
+        onValueChange = {
+            text = it
+            onQuery(it)
+        },
         placeholder = { Text("Title, author or series") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
