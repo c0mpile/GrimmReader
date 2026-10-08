@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Builds the GrimmReader APK (debug by default) and prints where it is.
+#   -r  release build instead of debug (unsigned: no release signing config yet)
+#   -i  install on the connected device(s) afterwards
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+variant=debug
+install=false
+while getopts "ri" opt; do
+    case "$opt" in
+        r) variant=release ;;
+        i) install=true ;;
+        *) echo "usage: grbuild [-r] [-i]" >&2; exit 2 ;;
+    esac
+done
+
+if [[ $variant == release && $install == true ]]; then
+    echo "grbuild: the release APK is unsigned and cannot be installed; use -i without -r" >&2
+    exit 1
+fi
+
+task="assemble${variant^}"
+[[ $install == true ]] && task="install${variant^}"
+
+./gradlew "$task" -q --console=plain 2>&1 | grep -E 'FAILED|error:|^e: |BUILD|Installed' || true
+status=${PIPESTATUS[0]}
+if [[ $status -ne 0 ]]; then
+    echo "grbuild: $task failed" >&2
+    exit "$status"
+fi
+ls -lh app/build/outputs/apk/"$variant"/*.apk
