@@ -2,6 +2,7 @@
 // the "grimm" WebMessageListener. Only app-local URLs are reachable; the WebView has no network.
 import '../foliate/view.js'
 import * as CFI from '../foliate/epubcfi.js'
+import { Overlayer } from '../foliate/overlayer.js'
 
 const post = m => grimm.postMessage(JSON.stringify(m))
 const params = new URLSearchParams(location.search)
@@ -57,6 +58,64 @@ const search = async (query, id) => {
     }
 }
 
+// Word lookup: the word at a point of the page (CSS px of this window), found in the section frame under it.
+// The caret nearest the point is used, so a point in a margin must still fall on the word's own box.
+const LOOKUP_KEY = 'grimm-lookup'
+const LOOKUP_SLOP = 4
+const wordInDoc = (doc, x, y) => {
+    let node, offset
+    const caret = doc.caretPositionFromPoint?.(x, y)
+    if (caret) { node = caret.offsetNode; offset = caret.offset }
+    else {
+        const r = doc.caretRangeFromPoint?.(x, y)
+        if (!r) return null
+        node = r.startContainer; offset = r.startOffset
+    }
+    if (!node || node.nodeType !== 3) return null
+    const text = node.data
+    const lang = node.parentElement?.closest('[lang]')?.getAttribute('lang') || undefined
+    let segmenter
+    try { segmenter = new Intl.Segmenter(lang, { granularity: 'word' }) } catch { segmenter = new Intl.Segmenter(undefined, { granularity: 'word' }) }
+    const segments = segmenter.segment(text)
+    for (const at of [offset, offset - 1]) {
+        if (at < 0 || at >= text.length) continue
+        const seg = segments.containing(at)
+        if (!seg?.isWordLike) continue
+        const range = doc.createRange()
+        range.setStart(node, seg.index)
+        range.setEnd(node, seg.index + seg.segment.length)
+        const hit = Array.from(range.getClientRects()).some(r =>
+            x >= r.left - LOOKUP_SLOP && x <= r.right + LOOKUP_SLOP && y >= r.top - LOOKUP_SLOP && y <= r.bottom + LOOKUP_SLOP)
+        return hit ? { range, word: seg.segment } : null
+    }
+    return null
+}
+const clearLookup = () => {
+    for (const { doc, overlayer } of view.renderer?.getContents?.() ?? []) {
+        overlayer?.remove(LOOKUP_KEY)
+        doc?.getSelection()?.removeAllRanges()
+    }
+}
+const lookupAt = (x, y) => {
+    if (!ready || !Number.isFinite(x) || !Number.isFinite(y)) return
+    clearLookup()
+    for (const { doc, overlayer } of view.renderer?.getContents?.() ?? []) {
+        const frame = doc?.defaultView?.frameElement
+        if (!frame) continue
+        const rect = frame.getBoundingClientRect()
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue
+        // Fixed-layout pages are scaled frames.
+        const sx = frame.clientWidth ? rect.width / frame.clientWidth : 1
+        const sy = frame.clientHeight ? rect.height / frame.clientHeight : 1
+        const found = wordInDoc(doc, (x - rect.left) / sx, (y - rect.top) / sy)
+        if (!found) return
+        if (overlayer) overlayer.add(LOOKUP_KEY, found.range, Overlayer.highlight, { color: 'rgb(250, 204, 21)' })
+        else doc.getSelection()?.addRange(found.range)
+        post({ t: 'lookup', word: found.word })
+        return
+    }
+}
+
 // The bookmark whose position starts on the visible page (web bookmarks are range CFIs too), or null.
 const bookmarkHere = () => {
     if (!visible) return null
@@ -94,6 +153,8 @@ window.grimm_api = {
     setLayout: applyLayout,
     search: (query, id) => { search(query, id) },
     clearSearch: () => { searchId++; view.clearSearch() },
+    lookupAt,
+    clearLookup,
 }
 
 try {

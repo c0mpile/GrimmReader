@@ -47,24 +47,31 @@ data class PageTurns(
  * off); [onTap] null leaves taps to the content (comics: the zoomable image). [onSwipe] gets true for a swipe
  * to the left. Multi-touch (pinch) and movements a child consumed (panning a zoomed page) are ignored.
  *
+ * A touch held still for the long-press timeout goes to [onLongPress] (with where it is, in px) as soon as the
+ * timeout passes; the rest of that touch is then ignored. With [onLongPress] null a long hold does nothing.
+ *
  * The lambdas are captured once per [turns]; pass ones that read current state.
  */
 fun Modifier.pageGestures(
     turns: PageTurns,
     onTap: ((PageZone) -> Unit)?,
     onSwipe: (toLeft: Boolean) -> Unit,
+    onLongPress: ((Offset) -> Unit)? = null,
 ): Modifier =
-    pointerInput(turns, onTap != null) {
+    pointerInput(turns, onTap != null, onLongPress != null) {
         val minSwipe = SWIPE_DP.dp.toPx()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
-            val touch = followTouch(down) ?: return@awaitEachGesture
+            val touch = Touch()
+            val lifted = if (onLongPress != null) followOrLongPress(down, touch, onLongPress) else follow(down, touch)
+            val up = touch.up
+            if (!lifted || up == null) return@awaitEachGesture
             val zone = turns.zone(down.position.x, size.width.toFloat())
-            val move: Offset = touch.up.position - down.position
-            val held = touch.up.uptimeMillis - down.uptimeMillis
+            val move: Offset = up.position - down.position
+            val held = up.uptimeMillis - down.uptimeMillis
             when {
                 !touch.dragged && onTap != null && held < viewConfiguration.longPressTimeoutMillis -> {
-                    touch.up.consume()
+                    up.consume()
                     onTap(if (turns.taps) zone else PageZone.MIDDLE)
                 }
                 touch.dragged && turns.swipes && zone != PageZone.MIDDLE && isSwipe(move, minSwipe) -> onSwipe(move.x < 0)
@@ -72,20 +79,48 @@ fun Modifier.pageGestures(
         }
     }
 
-private class Touch(
-    val up: PointerInputChange,
-    val dragged: Boolean,
-)
-
-/** Follows [down] until it lifts; null for multi-touch, a movement a child consumed, or a cancelled touch. */
-private suspend fun AwaitPointerEventScope.followTouch(down: PointerInputChange): Touch? {
+private class Touch {
+    var up: PointerInputChange? = null
     var dragged = false
+}
+
+/**
+ * Like [follow], but a touch still held without moving when the long-press timeout passes goes to [onLongPress];
+ * the rest of that touch is swallowed (false: neither a tap nor a swipe).
+ */
+private suspend fun AwaitPointerEventScope.followOrLongPress(
+    down: PointerInputChange,
+    touch: Touch,
+    onLongPress: (Offset) -> Unit,
+): Boolean {
+    val lifted = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { follow(down, touch) }
+    if (lifted != null) return lifted
+    if (touch.dragged) return follow(down, touch)
+    onLongPress(down.position)
+    do {
+        val event = awaitPointerEvent()
+        event.changes.forEach { it.consume() }
+    } while (event.changes.any { it.pressed })
+    return false
+}
+
+/**
+ * Follows [down] until it lifts (true, [Touch.up] set); false for multi-touch, a movement a child consumed, or a
+ * cancelled touch. Updates [touch] as it goes, so a caller that times out still knows whether it moved.
+ */
+private suspend fun AwaitPointerEventScope.follow(
+    down: PointerInputChange,
+    touch: Touch,
+): Boolean {
     while (true) {
         val event = awaitPointerEvent()
-        val change = event.changes.firstOrNull { it.id == down.id } ?: return null
-        if (event.changes.count { it.pressed } > 1 || (change.pressed && change.isConsumed)) return null
-        if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) dragged = true
-        if (!change.pressed) return Touch(change, dragged)
+        val change = event.changes.firstOrNull { it.id == down.id } ?: return false
+        if (event.changes.count { it.pressed } > 1 || (change.pressed && change.isConsumed)) return false
+        if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) touch.dragged = true
+        if (!change.pressed) {
+            touch.up = change
+            return true
+        }
     }
 }
 

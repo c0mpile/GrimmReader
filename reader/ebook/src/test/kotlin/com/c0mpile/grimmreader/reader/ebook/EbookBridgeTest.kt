@@ -90,4 +90,11 @@ class EbookBridgeTest {
         assertTrue((parse("""{"t":"search","id":3,"done":true}""") as EbookEvent.Search).done)
         assertNull(parse("""{"t":"search","items":[]}"""))
     }
+
+    @Test fun lookupCarriesTheWordOnly() {
+        assertEquals(EbookEvent.Lookup("serendipity"), parse("""{"t":"lookup","word":" serendipity "}"""))
+        assertNull(parse("""{"t":"lookup","word":""}"""))
+        assertNull(parse("""{"t":"lookup"}"""))
+        assertNull(parse("""{"t":"lookup","word":"${"x".repeat(65)}"}"""))
+    }
 }

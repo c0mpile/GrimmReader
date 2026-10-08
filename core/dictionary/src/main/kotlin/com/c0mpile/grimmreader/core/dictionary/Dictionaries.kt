@@ -7,6 +7,7 @@ import com.c0mpile.grimmreader.core.common.AppScope
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.files.DocumentStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,11 +39,15 @@ data class Definition(
     val html: String,
 )
 
-/** The result of looking up [query]: [matched] is the form found (e.g. "run" for "running"), null if none. */
+/**
+ * The result of looking up [query]: [matched] is the form found (e.g. "run" for "running"), null if none;
+ * [dictionaries] is how many were searched (0: none installed).
+ */
 data class Lookup(
     val query: String,
     val matched: String?,
     val definitions: List<Definition>,
+    val dictionaries: Int,
 )
 
 data class ImportResult(
@@ -73,13 +78,20 @@ class Dictionaries
         private val _installed = MutableStateFlow<List<InstalledDictionary>>(emptyList())
         val installed: StateFlow<List<InstalledDictionary>> = _installed.asStateFlow()
 
+        /** Completes once the installed list was first read from storage. */
+        private val loaded = CompletableDeferred<Unit>()
+
         init {
-            scope.launch(io) { lock.withLock { refresh() } }
+            scope.launch(io) {
+                lock.withLock { refresh() }
+                loaded.complete(Unit)
+            }
         }
 
         /** The first form of [word] (see [WordForms]) any dictionary has, with every dictionary's articles for it. */
         suspend fun lookup(word: String): Lookup =
             withContext(io) {
+                loaded.await()
                 lock.withLock {
                     val dictionaries = _installed.value.mapNotNull { d -> dictionary(d.id)?.let { d to it } }
                     for (form in WordForms.of(word)) {
@@ -88,9 +100,9 @@ class Dictionaries
                                 .flatMap { (d, dict) ->
                                     dict.lookup(form).map { Definition(d.name, it.word, DefinitionHtml.of(it.fields)) }
                                 }.filter { it.html.isNotEmpty() }
-                        if (found.isNotEmpty()) return@withLock Lookup(word, form, found)
+                        if (found.isNotEmpty()) return@withLock Lookup(word, form, found, dictionaries.size)
                     }
-                    Lookup(word, null, emptyList())
+                    Lookup(word, null, emptyList(), dictionaries.size)
                 }
             }
 

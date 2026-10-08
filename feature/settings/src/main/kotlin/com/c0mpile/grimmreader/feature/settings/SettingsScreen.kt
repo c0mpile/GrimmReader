@@ -38,6 +38,7 @@ import com.c0mpile.grimmreader.core.model.ThemeMode
 fun SettingsScreen(
     versionName: String,
     onConnectServer: () -> Unit,
+    onOpenDictionaries: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -59,6 +60,14 @@ fun SettingsScreen(
                 onRescan = viewModel::rescan,
                 onForgetRemoved = viewModel::forgetRemovedBooks,
             )
+            HorizontalDivider()
+            Section("Dictionaries")
+            Text(
+                "Press and hold a word while reading to look it up. Download dictionaries or add your own StarDict files.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onOpenDictionaries) { Text("Manage dictionaries") }
             HorizontalDivider()
             Section("Server")
             val server = state.server

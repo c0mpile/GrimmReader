@@ -7,6 +7,7 @@ android {
 }
 
 dependencies {
+    implementation(projects.core.dictionary)
     implementation(projects.reader.ebook)
     implementation(projects.reader.comic)
     implementation(projects.reader.pdf)

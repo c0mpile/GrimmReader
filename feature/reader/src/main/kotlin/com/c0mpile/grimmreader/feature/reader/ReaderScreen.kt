@@ -56,9 +56,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -112,10 +114,12 @@ private sealed interface Overlay {
 fun ReaderScreen(
     bookId: Long,
     onBack: () -> Unit,
+    onOpenDictionaries: () -> Unit = {},
     viewModel: ReaderViewModel = hiltViewModel<ReaderViewModel, ReaderViewModel.Factory> { it.create(bookId) },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.readerPrefs.collectAsStateWithLifecycle()
+    val lookup by viewModel.lookups.current.collectAsStateWithLifecycle()
     var chrome by rememberSaveable { mutableStateOf(true) }
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
     var fullscreen by rememberSaveable { mutableStateOf(false) }
@@ -134,6 +138,9 @@ fun ReaderScreen(
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
+    // The looked-up word stays highlighted while its definitions are shown.
+    val lookupOpen = lookup != null
+    LaunchedEffect(controller, lookupOpen) { if (!lookupOpen) controller.clearLookup() }
     ImmersiveMode(fullscreen)
     val textSettings = state.content !is ReaderContent.Paged
     val panelOpen = overlay is Overlay.Left || overlay is Overlay.Right
@@ -182,6 +189,17 @@ fun ReaderScreen(
             onOverlay = { overlay = it },
         )
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 64.dp))
+    }
+    lookup?.let { current ->
+        DictionarySheet(
+            current,
+            onLookUp = viewModel.lookups::lookUp,
+            onOpenDictionaries = {
+                viewModel.lookups.close()
+                onOpenDictionaries()
+            },
+            onDismiss = viewModel.lookups::close,
+        )
     }
     if (overlay == Overlay.Settings) {
         SettingsDialog(prefs, textSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
@@ -328,6 +346,7 @@ private fun Content(
     onPageReady: () -> Unit,
     onToggleChrome: () -> Unit,
 ) {
+    val haptics = LocalHapticFeedback.current
     when (content) {
         ReaderContent.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         is ReaderContent.Ebook -> {
@@ -355,6 +374,10 @@ private fun Content(
                                 viewModel.onEbookPosition(event.locator, event.tocLabel, event.hasPosition, event.bookmark)
                             is EbookEvent.BookmarkHere -> viewModel.onEbookBookmarkHere(event.cfi)
                             is EbookEvent.Search -> viewModel.panels.onSearch(event)
+                            is EbookEvent.Lookup -> {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.lookups.lookUp(event.word)
+                            }
                             is EbookEvent.Failed -> Unit
                         }
                     },
