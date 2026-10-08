@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.feature.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.c0mpile.grimmreader.core.data.library.FolderLibrary
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.model.Book
@@ -41,8 +42,9 @@ class DashboardViewModel
     constructor(
         library: LibraryRepository,
         session: ServerSession,
+        folders: FolderLibrary,
     ) : ViewModel() {
-        private val sync = LibrarySync(viewModelScope, library, session)
+        private val sync = LibrarySync(viewModelScope, library, session, folders)
 
         /** Discover picks stay put while the screen lives, instead of reshuffling on every update. */
         private val seed = Random.nextLong()

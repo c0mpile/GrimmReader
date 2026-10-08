@@ -234,11 +234,37 @@ private fun ReadActions(
 ) {
     val file = book.primaryFile
     val available = file?.isAvailableOffline == true
+    // A local book read in place from a book folder: removing it means deleting the user's own file.
+    val inFolder = book.source == BookSource.LOCAL && file?.localUri?.startsWith("content://") == true
+    var confirmDelete by remember { mutableStateOf(false) }
     if (available) {
         Button(onClick = { onRead(book.id) }, modifier = Modifier.fillMaxWidth()) { Text("Read") }
-        OutlinedButton(onClick = { viewModel.removeLocalCopy(onBack) }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (book.source == BookSource.SERVER) "Remove download" else "Remove from this device")
+        OutlinedButton(
+            onClick = { if (inFolder) confirmDelete = true else viewModel.removeLocalCopy(onBack) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                when {
+                    book.source == BookSource.SERVER -> "Remove download"
+                    inFolder -> "Delete file"
+                    else -> "Remove from this device"
+                },
+            )
         }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete file?") },
+            text = { Text("This book is in one of your book folders. Deleting removes the file from that folder for good.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    viewModel.removeLocalCopy(onBack)
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
     } else if (book.source == BookSource.SERVER) {
         // Reading online needs no download permission; nothing is kept beyond an evictable cache.
         if (state.canReadOnline) {

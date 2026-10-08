@@ -1,7 +1,9 @@
 package com.c0mpile.grimmreader.feature.library
 
 import android.net.Uri
+import com.c0mpile.grimmreader.core.data.library.FolderLibrary
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.library.ScanResult
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.files.UnsupportedFormatException
 import kotlinx.coroutines.CoroutineScope
@@ -31,12 +33,14 @@ class LibrarySync(
     private val scope: CoroutineScope,
     private val library: LibraryRepository,
     private val session: ServerSession,
+    private val folders: FolderLibrary,
 ) {
     private val _flags = MutableStateFlow(SyncFlags())
     val flags: StateFlow<SyncFlags> = _flags.asStateFlow()
     private var sync: Job? = null
 
     init {
+        scope.launch { scanFolders(folders.scanIfStale()) }
         // The server row loads from Room asynchronously; check once it is there (never in local mode).
         scope.launch {
             session.server.filterNotNull().first()
@@ -44,9 +48,9 @@ class LibrarySync(
         }
     }
 
-    /** Pull to refresh: always asks the server, or joins the refresh already running. */
+    /** Pull to refresh: rescans the book folders and asks the server, or joins the refresh already running. */
     fun refresh() {
-        if (session.server.value == null || _flags.value.refreshing) return
+        if (_flags.value.refreshing) return
         _flags.update { it.copy(refreshing = true) }
         val running = sync?.takeIf { it.isActive }
         if (running != null) {
@@ -55,7 +59,16 @@ class LibrarySync(
                 _flags.update { it.copy(refreshing = false) }
             }
         } else {
-            start { library.refresh() }
+            start {
+                scanFolders(folders.scan())
+                if (session.server.value == null) null else library.refresh()
+            }
+        }
+    }
+
+    private fun scanFolders(result: ScanResult?) {
+        if ((result?.unreadableFolders ?: 0) > 0) {
+            _flags.update { it.copy(message = "A book folder could not be read. Check it in Settings.") }
         }
     }
 

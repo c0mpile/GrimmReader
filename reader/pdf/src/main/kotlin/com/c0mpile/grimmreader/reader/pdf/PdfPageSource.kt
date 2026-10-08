@@ -7,12 +7,12 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.IntSize
+import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import com.c0mpile.grimmreader.reader.paged.BoundedDecoder
 import com.c0mpile.grimmreader.reader.paged.PageSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.IOException
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -56,8 +56,8 @@ class PdfPageSource private constructor(
 
     companion object {
         /** Throws [ProtectedPdfException] for encrypted files and [IOException] for anything unreadable. */
-        fun open(file: File): PdfPageSource {
-            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        fun open(book: BookHandle): PdfPageSource {
+            val fd = book.descriptor()
             val renderer =
                 try {
                     PdfRenderer(fd)

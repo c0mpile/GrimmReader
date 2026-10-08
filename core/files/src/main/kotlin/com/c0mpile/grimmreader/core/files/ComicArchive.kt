@@ -1,9 +1,7 @@
 package com.c0mpile.grimmreader.core.files
 
 import java.io.Closeable
-import java.io.File
 import java.io.InputStream
-import java.util.zip.ZipFile
 
 /** Random access to the page images of a comic archive, in reading order. */
 interface ComicArchive : Closeable {
@@ -14,14 +12,13 @@ interface ComicArchive : Closeable {
     fun pageName(index: Int): String
 }
 
-/** CBZ via java.util.zip (random access, no full extraction). */
+/** CBZ with random access to its entries (no full extraction); the handle stays open after [close]. */
 class ZipComicArchive(
-    file: File,
+    book: BookHandle,
 ) : ComicArchive {
-    private val zip = ZipFile(file)
+    private val zip = book.zip()
     private val pages =
-        zip
-            .entries()
+        zip.entries
             .asSequence()
             .filter { !it.isDirectory && isImage(it.name) && !it.name.substringAfterLast('/').startsWith(".") }
             .map { it.name }

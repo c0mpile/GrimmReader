@@ -5,3 +5,7 @@ plugins {
 android {
     namespace = "com.c0mpile.grimmreader.feature.settings"
 }
+
+dependencies {
+    implementation(libs.androidx.activity.compose)
+}

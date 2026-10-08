@@ -14,6 +14,7 @@ import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SecretCipher
 import com.c0mpile.grimmreader.core.datastore.SecretStore
+import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.files.LocalFileStore
 import com.c0mpile.grimmreader.core.network.GuardedHttpClient
 import dagger.Lazy
@@ -132,7 +133,7 @@ class LibraryRefreshTest {
                     db.bookFileDao(),
                     db.libraryDao(),
                     session,
-                    LocalFileStore(ApplicationProvider.getApplicationContext()),
+                    LocalFileStore(ApplicationProvider.getApplicationContext(), DocumentStore(ApplicationProvider.getApplicationContext())),
                     AppPreferences(PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "p.preferences_pb") }),
                     ShelfMirror(db.shelfDao(), db.bookDao(), db.outboxDao()),
                     Dispatchers.IO,

@@ -9,6 +9,7 @@ android {
 }
 
 dependencies {
+    implementation(projects.core.files)
     api(projects.core.model)
     implementation(projects.core.designsystem)
     implementation(libs.androidx.webkit)
