@@ -18,14 +18,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-/** What the first-run screen decided. */
-enum class SetupState { NOT_DONE, LOCAL_ONLY, SERVER }
+/** Whether a server is connected; the app starts as a local reader. */
+enum class SetupState { LOCAL_ONLY, SERVER }
 
 /** Non-secret app settings. Secrets live in [SecretStore]. */
 class AppPreferences(
     private val store: DataStore<Preferences>,
 ) {
-    val setupState: Flow<SetupState> = store.data.map { p -> enumOr(p[SETUP], SetupState.NOT_DONE) }
+    val setupState: Flow<SetupState> = store.data.map { p -> enumOr(p[SETUP], SetupState.LOCAL_ONLY) }
+
+    /** Whether the first-run folder screen was finished; installs that predate it count as done. */
+    val firstRunDone: Flow<Boolean> = store.data.map { p -> p[FIRST_RUN_DONE] == true || p[SETUP] != null }
+
+    suspend fun setFirstRunDone() {
+        store.edit { it[FIRST_RUN_DONE] = true }
+    }
 
     /** Modes saved by older builds (System, Light, E-ink) fall back to Dark. */
     val appearance: Flow<Appearance> = store.data.map { p -> Appearance(mode = enumOr(p[THEME], ThemeMode.DARK)) }
@@ -132,6 +139,7 @@ class AppPreferences(
     ): E = value?.let { v -> enumValues<E>().firstOrNull { it.name == v } } ?: default
 
     private companion object {
+        val FIRST_RUN_DONE = booleanPreferencesKey("first_run_done")
         val SETUP = stringPreferencesKey("setup_state")
         val THEME = stringPreferencesKey("theme_mode")
         val FONT_FAMILY = stringPreferencesKey("reader_font_family")

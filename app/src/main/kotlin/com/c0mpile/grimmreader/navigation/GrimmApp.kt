@@ -31,7 +31,6 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
-import com.c0mpile.grimmreader.core.datastore.SetupState
 import com.c0mpile.grimmreader.core.designsystem.component.LocalOpenSidebar
 import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.LibraryScope
@@ -48,6 +47,7 @@ import com.c0mpile.grimmreader.feature.notebook.NotebookScreen
 import com.c0mpile.grimmreader.feature.reader.ReaderScreen
 import com.c0mpile.grimmreader.feature.settings.DictionariesScreen
 import com.c0mpile.grimmreader.feature.settings.SettingsScreen
+import com.c0mpile.grimmreader.feature.setup.FirstRunScreen
 import com.c0mpile.grimmreader.feature.setup.SetupScreen
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -96,10 +96,10 @@ fun GrimmApp(
     versionName: String,
     devServerUrl: String,
 ) {
-    val setup by prefs.setupState.collectAsStateWithLifecycle(initialValue = null)
-    when (setup) {
+    val firstRunDone by prefs.firstRunDone.collectAsStateWithLifecycle(initialValue = null)
+    when (firstRunDone) {
         null -> Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {}
-        SetupState.NOT_DONE -> SetupScreen(devServerUrl = devServerUrl, onDone = {})
+        false -> FirstRunScreen()
         else -> MainNavigation(versionName, devServerUrl)
     }
 }

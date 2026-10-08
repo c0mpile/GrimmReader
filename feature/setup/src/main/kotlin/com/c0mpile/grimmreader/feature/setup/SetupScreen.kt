@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -27,9 +26,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -42,14 +38,13 @@ import com.c0mpile.grimmreader.core.data.server.ConnectionResult
 import com.c0mpile.grimmreader.core.data.server.LoginResult
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 
-/** First run: connect to a Grimmory server or use the app as a local reader. Re-enterable from Settings. */
+/** Connect to a Grimmory server; opened from Settings. */
 @Composable
 fun SetupScreen(
     devServerUrl: String,
     onDone: () -> Unit,
     viewModel: SetupViewModel = hiltViewModel(),
 ) {
-    var connecting by remember { mutableStateOf(false) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(devServerUrl) { viewModel.prefill(devServerUrl) }
     LaunchedEffect(state.loginResult) { if (state.loginResult is LoginResult.Ok) onDone() }
@@ -63,14 +58,7 @@ fun SetupScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("GrimmReader", style = MaterialTheme.typography.headlineMedium)
-            if (!connecting) {
-                Welcome(onConnect = { connecting = true }, onLocal = {
-                    viewModel.useLocally()
-                    onDone()
-                })
-            } else {
-                ServerForm(state, viewModel)
-            }
+            ServerForm(state, viewModel)
         }
     }
     state.certificate?.let { cert ->
@@ -91,16 +79,6 @@ fun SetupScreen(
             dismissButton = { TextButton(onClick = viewModel::rejectCertificate) { Text("Cancel") } },
         )
     }
-}
-
-@Composable
-private fun Welcome(
-    onConnect: () -> Unit,
-    onLocal: () -> Unit,
-) {
-    Text("Read your Grimmory library anywhere, or use GrimmReader as a local reader without a server.")
-    Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Text("Connect to a Grimmory server") }
-    OutlinedButton(onClick = onLocal, modifier = Modifier.fillMaxWidth()) { Text("Use as a local reader") }
 }
 
 @Composable
