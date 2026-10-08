@@ -1,28 +1,40 @@
 package com.c0mpile.grimmreader.core.designsystem.component
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.GrimmTextStyles
 
 /**
  * Library grid card: cover with a 4 dp progress bar and optional badge, title and author underneath.
- * [selected] outlines the card, e.g. while its actions drawer is open.
+ * [selected] outlines the card, e.g. while its actions drawer is open. [checked] is non-null while books are
+ * being selected and shows a check circle in the cover's top left corner (filled when checked).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BookCard(
     title: String,
@@ -33,35 +45,60 @@ fun BookCard(
     progressPercent: Float? = null,
     badge: String? = null,
     selected: Boolean = false,
+    checked: Boolean? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Card(
-        onClick = onClick,
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        border = if (selected || checked == true) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
-        Box {
-            BookCover(title, coverModel, Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
-            if (progressPercent != null && progressPercent > 0f) {
-                ProgressStrip(progressPercent, Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp))
+        Column(Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+            Box {
+                BookCover(title, coverModel, Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
+                if (progressPercent != null && progressPercent > 0f) {
+                    ProgressStrip(progressPercent, Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp))
+                }
+                if (badge != null) FormatPill(badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
+                if (checked != null) SelectionCheck(checked, Modifier.align(Alignment.TopStart).padding(6.dp))
             }
-            if (badge != null) FormatPill(badge, Modifier.align(Alignment.TopEnd).padding(6.dp))
-        }
-        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Text(title, style = GrimmTextStyles.CardTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (!author.isNullOrBlank()) {
-                Text(
-                    author,
-                    style = GrimmTextStyles.CardAuthor,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Text(title, style = GrimmTextStyles.CardTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (!author.isNullOrBlank()) {
+                    Text(
+                        author,
+                        style = GrimmTextStyles.CardAuthor,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+/** A round check mark for multi-select: filled with a tick when [checked], an empty ring otherwise. */
+@Composable
+fun SelectionCheck(
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(if (checked) colors.primary else Color.Black.copy(alpha = UNCHECKED_SCRIM))
+            .border(2.dp, if (checked) colors.primary else Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) Icon(LucideIcons.Check, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(16.dp))
+    }
+}
+
+private const val UNCHECKED_SCRIM = 0.35f
 
 @Composable
 fun ProgressStrip(
