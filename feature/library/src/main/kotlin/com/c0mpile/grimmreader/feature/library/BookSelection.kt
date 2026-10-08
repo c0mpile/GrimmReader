@@ -131,8 +131,8 @@ internal fun SelectionActionBar(
     val message by viewModel.message.collectAsStateWithLifecycle()
     LaunchedEffect(message) {
         message?.let {
-            viewModel.messageShown()
             snackbar.showSnackbar(it)
+            viewModel.messageShown()
         }
     }
     var confirm by rememberSaveable { mutableStateOf<SelectionAction?>(null) }
@@ -189,17 +189,19 @@ internal enum class SelectionAction { DELETE, RESET }
 
 internal fun deleteText(summary: SelectionSummary): String =
     buildList {
-        add("The files of ${countLabel(summary.toDelete.size)} are deleted from this device. Nothing is deleted from the server.")
+        val files = if (summary.toDelete.size == 1) "The file is" else "The ${summary.toDelete.size} files are"
+        add("$files deleted from this device. Nothing is deleted from the server.")
         if (summary.serverCopies > 0) add("Server books stay in the library and can be downloaded again.")
         if (summary.serverCopies < summary.toDelete.size) add("Books that are only on this device leave the library.")
         if (summary.inFolders > 0) add("${fileLabel(summary.inFolders)} in folders you added will be deleted from those folders.")
         val skipped = summary.books.size - summary.toDelete.size
-        if (skipped > 0) add("${countLabel(skipped)} without a file on this device are left alone.")
+        if (skipped > 0) add("${countLabel(skipped)} without a file on this device ${if (skipped == 1) "is" else "are"} left alone.")
     }.joinToString("\n\n")
 
 internal fun resetText(summary: SelectionSummary): String =
     buildList {
-        add("${countLabel(summary.books.size)} start from the beginning again and leave Continue Reading.")
+        val books = if (summary.books.size == 1) "This book starts" else "These ${summary.books.size} books start"
+        add("$books from the beginning again and leave Continue Reading.")
         if (summary.hasServerBooks) add("The progress is also reset on the server.")
         add("Bookmarks, highlights and notes are kept.")
     }.joinToString("\n\n")

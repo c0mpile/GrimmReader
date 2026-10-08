@@ -36,7 +36,8 @@ class BookSelectionTest {
         val text = deleteText(summary)
         assertTrue(text.contains("Nothing is deleted from the server."))
         assertTrue(text.contains("1 file in folders you added"))
-        assertTrue(text.contains("1 book without a file on this device"))
+        assertTrue(text.contains("The 3 files are deleted from this device."))
+        assertTrue(text.contains("1 book without a file on this device is left alone."))
     }
 
     @Test fun localBooksOfferNoDownloadAndNeitherDoesAnAccountWithoutPermission() {
@@ -47,6 +48,7 @@ class BookSelectionTest {
     @Test fun resetMentionsTheServerOnlyForServerBooksAndKeepsAnnotations() {
         val local = resetText(SelectionSummary(listOf(imported), canDownload = true))
         assertFalse(local.contains("server"))
+        assertTrue(local.startsWith("This book starts from the beginning"))
         assertTrue(local.contains("Bookmarks, highlights and notes are kept."))
         assertTrue(resetText(SelectionSummary(listOf(online, imported), canDownload = true)).contains("also reset on the server"))
     }
