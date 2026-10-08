@@ -5,6 +5,7 @@ import android.provider.DocumentsContract
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
+import com.c0mpile.grimmreader.core.database.dao.DownloadDao
 import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.files.DocumentStore
@@ -57,6 +58,7 @@ class FolderLibrary
         private val documents: DocumentStore,
         private val bookDao: BookDao,
         private val fileDao: BookFileDao,
+        private val downloads: DownloadDao,
         private val library: LibraryRepository,
         private val duplicates: FolderDuplicates,
         @IoDispatcher private val io: CoroutineDispatcher,
@@ -151,7 +153,7 @@ class FolderLibrary
 
         /** The automatic scan when a library screen opens: skipped when one ran in the last minute. */
         suspend fun scanIfStale(now: Long = System.currentTimeMillis()): ScanResult? =
-            if (now - lastScanAt < RESCAN_AFTER_MS || prefs.bookFolders.first().isEmpty()) null else scan()
+            if (now - lastScanAt < RESCAN_AFTER_MS) null else scan()
 
         suspend fun scan(): ScanResult =
             lock.withLock {
@@ -184,6 +186,7 @@ class FolderLibrary
                     val gone = missing.filter { it in followable }
                     gone.forEach { drop(it) }
                     val merged = duplicates.merge(listed.keys)
+                    forgetDeletedDownloads()
                     // Grants kept for earlier downloads go once their last file is removed.
                     documents.grantedTrees().forEach { releaseIfUnused(it) }
                     lastScanAt = System.currentTimeMillis()
@@ -234,6 +237,20 @@ class FolderLibrary
             } else {
                 library.forgetLocal(file.bookId)
             }
+        }
+
+        /**
+         * Server books whose downloaded copy was deleted outside the app (a file manager) go back to not
+         * downloaded, so they offer reading online or downloading again instead of opening a missing file.
+         */
+        private suspend fun forgetDeletedDownloads() {
+            fileDao
+                .documents()
+                .filter { !isLocal(it) && documents.isGone(it.localUri!!) }
+                .forEach {
+                    fileDao.setLocal(it.id, null, it.sizeBytes, it.partialMd5)
+                    downloads.delete(it.id)
+                }
         }
 
         private suspend fun isLocal(file: BookFileEntity) = bookDao.get(file.bookId)?.book?.source == BookSource.LOCAL

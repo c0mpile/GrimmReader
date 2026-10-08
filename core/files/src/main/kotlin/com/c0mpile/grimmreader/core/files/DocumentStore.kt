@@ -194,6 +194,29 @@ class DocumentStore
             cause: Throwable? = null,
         ): Nothing = throw IOException(message, cause)
 
+        /**
+         * True only when the provider says the document [uri] no longer exists (deleted in a file manager). A
+         * document whose folder grant is gone, or whose provider cannot be asked (SD card out), is not "gone": it
+         * may come back.
+         */
+        fun isGone(uri: String): Boolean {
+            val doc = Uri.parse(uri)
+            val tree =
+                runCatching { DocumentsContract.buildTreeDocumentUri(doc.authority, DocumentsContract.getTreeDocumentId(doc)) }
+                    .getOrNull() ?: return false
+            if (!hasAccess(tree.toString())) return false
+            return try {
+                resolver.query(doc, arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { !it.moveToFirst() } ?: false
+            } catch (_: SecurityException) {
+                false
+            } catch (_: IllegalArgumentException) {
+                // How ExternalStorageProvider reports a missing file (FileNotFoundException inside).
+                true
+            } catch (_: java.io.FileNotFoundException) {
+                true
+            }
+        }
+
         fun delete(uri: String): Boolean = runCatching { DocumentsContract.deleteDocument(resolver, Uri.parse(uri)) }.getOrDefault(false)
 
         /**
