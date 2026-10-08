@@ -1,7 +1,8 @@
 package com.c0mpile.grimmreader.feature.library
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.c0mpile.grimmreader.core.designsystem.component.BookCard
 import com.c0mpile.grimmreader.core.designsystem.component.BookCover
 import com.c0mpile.grimmreader.core.designsystem.component.ProgressStrip
+import com.c0mpile.grimmreader.core.designsystem.component.SelectionCheck
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookLayout
@@ -62,16 +64,28 @@ fun LayoutToggle(
 
 /**
  * Books as a cover grid or a list. Tapping a book slides its actions drawer open underneath (in a grid, under
- * the whole row); tapping it again closes it.
+ * the whole row); tapping it again closes it. A long press starts [selection]; while selecting, taps check
+ * and uncheck books instead.
  */
 @Composable
-fun BookCollection(
+internal fun BookCollection(
     books: List<Book>,
     layout: BookLayout,
     onRead: (Long) -> Unit,
+    selection: BookSelection,
 ) {
     val drawer = rememberBookDrawerState()
-    LaunchedEffect(books) { drawer.forgetMissing(books.mapTo(HashSet()) { BookDrawerState.key(PLACE, it.id) }) }
+    LaunchedEffect(books) {
+        drawer.forgetMissing(books.mapTo(HashSet()) { BookDrawerState.key(PLACE, it.id) })
+        selection.retain(books.mapTo(HashSet()) { it.id })
+    }
+    LaunchedEffect(selection.active) { if (selection.active) drawer.close() }
+    val pick =
+        BookPick(
+            onClick = { id -> if (selection.active) selection.toggle(id) else drawer.toggle(PLACE, id) },
+            onLongClick = selection::toggle,
+            checked = { id -> selection.isSelected(id).takeIf { selection.active } },
+        )
     val shown = books.indexOfFirst { drawer.isShown(PLACE, it.id) }
     if (layout == BookLayout.GRID) {
         BoxWithConstraints {
@@ -79,19 +93,19 @@ fun BookCollection(
             val columns = ((maxWidth - GRID_PADDING * 2 + GRID_SPACING) / (GRID_CELL + GRID_SPACING)).toInt().coerceAtLeast(1)
             val split = if (shown < 0) books.size else minOf(books.size, (shown / columns + 1) * columns)
             CoverGrid(columns) {
-                bookCards(books.subList(0, split), drawer)
+                bookCards(books.subList(0, split), drawer, pick)
                 if (shown >= 0) {
                     val id = books[shown].id
                     item(key = "drawer/$id", span = { GridItemSpan(maxLineSpan) }) { BookDrawerSlot(drawer, PLACE, id, onRead) }
                 }
-                bookCards(books.subList(split, books.size), drawer)
+                bookCards(books.subList(split, books.size), drawer, pick)
             }
         }
     } else {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
             books.forEachIndexed { index, book ->
                 item(key = book.id) {
-                    BookRow(book, selected = drawer.isOpen(PLACE, book.id)) { drawer.toggle(PLACE, book.id) }
+                    BookRow(book, selected = drawer.isOpen(PLACE, book.id), pick)
                 }
                 if (index == shown) {
                     item(key = "drawer/${book.id}") {
@@ -105,18 +119,28 @@ fun BookCollection(
 
 private const val PLACE = "books"
 
+/** What a tap and a long press on a book do, and its check state ([checked] is null when not selecting). */
+private class BookPick(
+    val onClick: (Long) -> Unit,
+    val onLongClick: (Long) -> Unit,
+    val checked: (Long) -> Boolean?,
+)
+
 private fun LazyGridScope.bookCards(
     books: List<Book>,
     drawer: BookDrawerState,
+    pick: BookPick,
 ) = items(books, key = { it.id }) { book ->
     BookCard(
         title = book.title,
         author = book.authors.joinToString(", "),
         coverModel = book.coverUri,
-        onClick = { drawer.toggle(PLACE, book.id) },
+        onClick = { pick.onClick(book.id) },
         progressPercent = book.progressPercent,
         badge = book.primaryFile?.format?.name,
         selected = drawer.isOpen(PLACE, book.id),
+        checked = pick.checked(book.id),
+        onLongClick = { pick.onLongClick(book.id) },
     )
 }
 
@@ -125,9 +149,16 @@ private fun LazyGridScope.bookCards(
 private fun BookRow(
     book: Book,
     selected: Boolean,
-    onClick: () -> Unit,
+    pick: BookPick,
 ) {
-    ListRow(onClick, selected = selected, cover = { BookCover(book.title, book.coverUri, Modifier.width(LIST_COVER)) }) {
+    val checked = pick.checked(book.id)
+    ListRow(
+        onClick = { pick.onClick(book.id) },
+        onLongClick = { pick.onLongClick(book.id) },
+        selected = selected || checked == true,
+        leading = checked?.let { { SelectionCheck(it) } },
+        cover = { BookCover(book.title, book.coverUri, Modifier.width(LIST_COVER)) },
+    ) {
         Text(book.title, style = MaterialTheme.typography.titleMedium)
         if (book.authors.isNotEmpty()) {
             Text(
@@ -210,21 +241,25 @@ private fun GroupRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ListRow(
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     selected: Boolean = false,
+    leading: (@Composable () -> Unit)? = null,
     cover: @Composable () -> Unit,
     trailing: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val background = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent
-    Column(Modifier.fillMaxWidth().background(background).clickable(onClick = onClick)) {
+    Column(Modifier.fillMaxWidth().background(background).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            leading?.invoke()
             cover()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { content() }
             Box { trailing() }

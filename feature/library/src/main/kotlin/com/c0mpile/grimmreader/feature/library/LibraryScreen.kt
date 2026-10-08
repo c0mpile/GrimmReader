@@ -82,6 +82,8 @@ fun LibraryScreen(
     val snackbar = remember { SnackbarHostState() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { viewModel.import(it) }
     var searching by rememberSaveable { mutableStateOf(startSearching) }
+    val selection = rememberBookSelection()
+    SelectionBackHandler(selection)
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(it)
@@ -90,34 +92,19 @@ fun LibraryScreen(
     }
     Scaffold(
         topBar = {
-            TopAppBar(
-                navigationIcon = { SidebarButton() },
-                title = {
-                    if (searching) {
-                        SearchField(state.query, viewModel::setQuery)
-                    } else {
-                        Text(scopeTitle(state))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        if (searching) viewModel.setQuery("")
-                        searching = !searching
-                    }) {
-                        Icon(
-                            if (searching) LucideIcons.X else LucideIcons.Search,
-                            contentDescription = if (searching) "Close search" else "Search",
-                        )
-                    }
-                    if (state.mode != BrowseMode.AUTHORS) LayoutToggle(state.view.layout, viewModel::setLayout)
-                    if (state.mode == BrowseMode.BOOKS) SortMenu(state.view.sort, viewModel::setSort)
-                },
-            )
+            if (selection.active) {
+                SelectionTopBar(selection, state.books)
+            } else {
+                LibraryTopBar(state, searching, { searching = it }, viewModel)
+            }
         },
+        bottomBar = { SelectionActionBar(selection, state.books, snackbar) },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { picker.launch(READABLE_TYPES) },
-            ) { Icon(LucideIcons.FolderOpen, contentDescription = "Open a file") }
+            if (!selection.active) {
+                FloatingActionButton(
+                    onClick = { picker.launch(READABLE_TYPES) },
+                ) { Icon(LucideIcons.FolderOpen, contentDescription = "Open a file") }
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -133,13 +120,46 @@ fun LibraryScreen(
                 val empty = if (state.mode == BrowseMode.BOOKS) state.books.isEmpty() else state.groups.isEmpty()
                 when {
                     empty && !state.syncing -> EmptyMessage(state)
-                    state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onRead)
+                    state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onRead, selection)
                     state.mode == BrowseMode.AUTHORS -> AuthorList(state.groups) { onOpenGroup(GroupKind.AUTHOR, it) }
                     else -> SeriesCollection(state.groups, state.view.layout) { onOpenGroup(GroupKind.SERIES, it) }
                 }
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LibraryTopBar(
+    state: LibraryUiState,
+    searching: Boolean,
+    onSearching: (Boolean) -> Unit,
+    viewModel: LibraryViewModel,
+) {
+    TopAppBar(
+        navigationIcon = { SidebarButton() },
+        title = {
+            if (searching) {
+                SearchField(state.query, viewModel::setQuery)
+            } else {
+                Text(scopeTitle(state))
+            }
+        },
+        actions = {
+            IconButton(onClick = {
+                if (searching) viewModel.setQuery("")
+                onSearching(!searching)
+            }) {
+                Icon(
+                    if (searching) LucideIcons.X else LucideIcons.Search,
+                    contentDescription = if (searching) "Close search" else "Search",
+                )
+            }
+            if (state.mode != BrowseMode.AUTHORS) LayoutToggle(state.view.layout, viewModel::setLayout)
+            if (state.mode == BrowseMode.BOOKS) SortMenu(state.view.sort, viewModel::setSort)
+        },
+    )
 }
 
 private fun scopeTitle(state: LibraryUiState): String =
