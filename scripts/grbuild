@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds the GrimmReader APK (debug by default) and prints where it is.
-#   -r  release build instead of debug (unsigned: no release signing config yet)
+# Debug builds are signed by Gradle with the debug key; release builds are signed afterwards with the
+# private release key via scripts/sign-release.
+#   -r  release build instead of debug
 #   -i  install on the connected device(s) afterwards
 set -euo pipefail
 # Resolve symlinks (e.g. ~/.local/bin/grbuild) so the repo is found from anywhere.
@@ -16,13 +18,8 @@ while getopts "ri" opt; do
     esac
 done
 
-if [[ $variant == release && $install == true ]]; then
-    echo "grbuild: the release APK is unsigned and cannot be installed; use -i without -r" >&2
-    exit 1
-fi
-
 task="assemble${variant^}"
-[[ $install == true ]] && task="install${variant^}"
+[[ $install == true && $variant == debug ]] && task="installDebug"
 
 # Status of gradlew itself, not of the output filter (grep finds nothing on a quiet success).
 status=0
@@ -31,4 +28,9 @@ if [[ $status -ne 0 ]]; then
     echo "grbuild: $task failed" >&2
     exit "$status"
 fi
-ls -lh app/build/outputs/apk/"$variant"/*.apk
+if [[ $variant == release ]]; then
+    # Prints the signed APK path; installs it when -i was given.
+    if [[ $install == true ]]; then scripts/sign-release -i; else scripts/sign-release; fi
+else
+    ls -lh app/build/outputs/apk/debug/*.apk
+fi
