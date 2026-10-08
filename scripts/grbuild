@@ -3,7 +3,8 @@
 #   -r  release build instead of debug (unsigned: no release signing config yet)
 #   -i  install on the connected device(s) afterwards
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Resolve symlinks (e.g. ~/.local/bin/grbuild) so the repo is found from anywhere.
+cd "$(dirname "$(readlink -f "$0")")/.."
 
 variant=debug
 install=false
@@ -23,8 +24,9 @@ fi
 task="assemble${variant^}"
 [[ $install == true ]] && task="install${variant^}"
 
-./gradlew "$task" -q --console=plain 2>&1 | grep -E 'FAILED|error:|^e: |BUILD|Installed' || true
-status=${PIPESTATUS[0]}
+# Status of gradlew itself, not of the output filter (grep finds nothing on a quiet success).
+status=0
+./gradlew "$task" -q --console=plain 2>&1 | grep -E 'FAILED|error:|^e: |BUILD|Installed|No such file' || status=${PIPESTATUS[0]}
 if [[ $status -ne 0 ]]; then
     echo "grbuild: $task failed" >&2
     exit "$status"
