@@ -58,6 +58,13 @@ sealed interface LibraryScope {
 /** [SERIES] lists the series of ebooks and PDFs; comic series (CBZ) have their own view, [COMIC_SERIES]. */
 enum class BrowseMode { BOOKS, AUTHORS, SERIES, COMIC_SERIES }
 
+/**
+ * What a library linked to a server shows. [SERVER] everything on the server, [DEVICE] files on this device that
+ * match nothing on the server, [DOWNLOADED] server books downloaded through the app, [MISSING] server books that
+ * are not on this device in any form, [ALL] the server's books and the device's together.
+ */
+enum class LibraryFilter { SERVER, DEVICE, DOWNLOADED, MISSING, ALL }
+
 enum class BookSort { TITLE, AUTHOR, ADDED, RECENT }
 
 /** Cover grid, or a list with a thumbnail and the full title. */

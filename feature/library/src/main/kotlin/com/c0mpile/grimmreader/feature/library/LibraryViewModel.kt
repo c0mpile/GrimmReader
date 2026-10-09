@@ -14,6 +14,7 @@ import com.c0mpile.grimmreader.core.model.BookLayout
 import com.c0mpile.grimmreader.core.model.BookSort
 import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.Library
+import com.c0mpile.grimmreader.core.model.LibraryFilter
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LibraryView
 import com.c0mpile.grimmreader.core.model.LocalLibrary
@@ -43,6 +44,9 @@ data class LibraryUiState(
     val books: List<Book> = emptyList(),
     val groups: List<BookGroup> = emptyList(),
     val query: String = "",
+    /** What a library linked to the server shows; [filterShown] says whether the picker applies. */
+    val filter: LibraryFilter = LibraryFilter.ALL,
+    val filterShown: Boolean = false,
     val hasServer: Boolean = false,
     val status: ServerStatus = ServerStatus.ONLINE,
     /** A refresh the user asked for (pull to refresh): shows the pull indicator. */
@@ -67,6 +71,7 @@ class LibraryViewModel
         private val prefs: AppPreferences,
     ) : ViewModel() {
         private val query = MutableStateFlow("")
+        private val filter = MutableStateFlow(LibraryFilter.ALL)
         private val sync = LibrarySync(viewModelScope, library, session, folders)
 
         val state: StateFlow<LibraryUiState> =
@@ -75,9 +80,16 @@ class LibraryViewModel
                 combine(library.observeLibraries(), shelves.observe(), localLibraries.libraries, ::Triple),
                 prefs.libraryView,
                 combine(session.server, session.status) { server, status -> (server != null) to status },
-                combine(query, sync.flags) { q, flags -> q to flags },
-            ) { all, (libraries, shelfList, local), view, (hasServer, status), (q, ui) ->
-                val inScope = all.inScope(scope)
+                combine(query, sync.flags, filter) { q, flags, f -> Triple(q, flags, f) },
+            ) { all, (libraries, shelfList, local), view, (hasServer, status), (q, ui, picked) ->
+                val library = (scope as? LibraryScope.Local)?.let { s -> local.firstOrNull { it.id == s.libraryId } }
+                val linked = hasServer && library?.serverLibraryId != null
+                val inScope =
+                    if (library != null) {
+                        all.inLibrary(library, picked, hasServer, local.mapNotNull { it.folderUri })
+                    } else {
+                        all.inScope(scope)
+                    }
                 val comics = local.filter { it.isComics }.map { it.id }.toSet()
                 LibraryUiState(
                     scope = scope,
@@ -95,6 +107,8 @@ class LibraryViewModel
                             BrowseMode.COMIC_SERIES -> groupByComicSeries(inScope, comics).matchingName(q)
                         },
                     query = q,
+                    filter = picked,
+                    filterShown = linked,
                     hasServer = hasServer,
                     status = status,
                     refreshing = ui.refreshing,
@@ -107,6 +121,10 @@ class LibraryViewModel
         fun setSort(sort: BookSort) = updateView { it.copy(sort = sort) }
 
         fun setLayout(layout: BookLayout) = updateView { it.copy(layout = layout) }
+
+        fun setFilter(value: LibraryFilter) {
+            filter.value = value
+        }
 
         fun setQuery(text: String) {
             query.value = text

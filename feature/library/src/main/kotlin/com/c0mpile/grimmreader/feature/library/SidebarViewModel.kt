@@ -9,7 +9,7 @@ import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.model.BrowseMode
-import com.c0mpile.grimmreader.core.model.Library
+import com.c0mpile.grimmreader.core.model.LibraryFilter
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.LocalLibrary
 import com.c0mpile.grimmreader.core.model.Shelf
@@ -47,8 +47,7 @@ data class SidebarState(
     val series: Int = 0,
     val comicSeries: Int = 0,
     val authors: Int = 0,
-    val libraries: List<Pair<Library, Int>> = emptyList(),
-    /** The on-device libraries with the books in each (a folder's books plus downloads of the mirrored server library). */
+    /** The libraries (one per server library, plus the user's own) with the books in each, as its All view shows them. */
     val localLibraries: List<Pair<LocalLibrary, Int>> = emptyList(),
     /** On-device books in no library. */
     val unsorted: Int = 0,
@@ -72,11 +71,10 @@ class SidebarViewModel
         val state: StateFlow<SidebarState> =
             combine(
                 library.observeLibrary(),
-                library.observeLibraries(),
                 combine(shelfRepo.observe(), localLibraries.libraries, ::Pair),
                 session.server,
                 downloads.observe(),
-            ) { books, libraries, (shelves, local), server, queue ->
+            ) { books, (shelves, local), server, queue ->
                 val comics = local.filter { it.isComics }.map { it.id }.toSet()
                 SidebarState(
                     hasServer = server != null,
@@ -85,8 +83,10 @@ class SidebarViewModel
                     series = groupBySeries(books, comics).size,
                     comicSeries = groupByComicSeries(books, comics).size,
                     authors = groupByAuthor(books).size,
-                    libraries = libraries.map { it to books.inScope(LibraryScope.Server(it.id)).size },
-                    localLibraries = local.map { it to books.inScope(LibraryScope.Local(it.id)).size },
+                    localLibraries =
+                        local.map { lib ->
+                            lib to books.inLibrary(lib, LibraryFilter.ALL, server != null, local.mapNotNull { it.folderUri }).size
+                        },
                     unsorted = books.inScope(LibraryScope.Unsorted).size,
                     unshelved = books.inScope(LibraryScope.Unshelved).size,
                     shelves = shelves,
