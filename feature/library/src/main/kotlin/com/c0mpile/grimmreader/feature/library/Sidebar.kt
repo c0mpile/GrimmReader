@@ -180,7 +180,8 @@ private fun LazyListScope.libraries(
             }
         }
     }
-    section("On this device", collapsed, action = Triple(LucideIcons.Plus, "New library", onCreateLibrary)) {
+    val title = if (state.hasServer) "On this device" else "Libraries"
+    section(title, collapsed, action = Triple(LucideIcons.Plus, "New library", onCreateLibrary)) {
         state.localLibraries.forEach { (library, count) ->
             val icon = if (library.serverLibraryId != null) LucideIcons.Library else LucideIcons.Smartphone
             browse(icon, library.name, count, LibraryScope.Local(library.id), BrowseMode.BOOKS, selected, onSelect)
