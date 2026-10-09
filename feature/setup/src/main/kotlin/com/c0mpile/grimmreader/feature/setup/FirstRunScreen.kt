@@ -116,6 +116,7 @@ private fun FoldersStep(viewModel: FirstRunViewModel) {
         onClearFolder = { viewModel.setLibraryFolder(it.id, null) },
         onDelete = { viewModel.deleteLibrary(it.id) },
         onAdd = viewModel::addLibrary,
+        onSetComics = { library, comics -> viewModel.setLibraryComics(library.id, comics) },
     )
     Button(onClick = viewModel::finish, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
     Text(

@@ -55,7 +55,8 @@ sealed interface LibraryScope {
     }
 }
 
-enum class BrowseMode { BOOKS, AUTHORS, SERIES }
+/** [SERIES] lists the series of ebooks and PDFs; comic series (CBZ) have their own view, [COMIC_SERIES]. */
+enum class BrowseMode { BOOKS, AUTHORS, SERIES, COMIC_SERIES }
 
 enum class BookSort { TITLE, AUTHOR, ADDED, RECENT }
 

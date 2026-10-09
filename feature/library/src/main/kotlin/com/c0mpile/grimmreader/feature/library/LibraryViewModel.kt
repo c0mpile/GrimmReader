@@ -78,6 +78,7 @@ class LibraryViewModel
                 combine(query, sync.flags) { q, flags -> q to flags },
             ) { all, (libraries, shelfList, local), view, (hasServer, status), (q, ui) ->
                 val inScope = all.inScope(scope)
+                val comics = local.filter { it.isComics }.map { it.id }.toSet()
                 LibraryUiState(
                     scope = scope,
                     mode = mode,
@@ -90,7 +91,8 @@ class LibraryViewModel
                         when (mode) {
                             BrowseMode.BOOKS -> emptyList()
                             BrowseMode.AUTHORS -> groupByAuthor(inScope).matchingName(q)
-                            BrowseMode.SERIES -> groupBySeries(inScope).matchingName(q)
+                            BrowseMode.SERIES -> groupBySeries(inScope, comics).matchingName(q)
+                            BrowseMode.COMIC_SERIES -> groupByComicSeries(inScope, comics).matchingName(q)
                         },
                     query = q,
                     hasServer = hasServer,

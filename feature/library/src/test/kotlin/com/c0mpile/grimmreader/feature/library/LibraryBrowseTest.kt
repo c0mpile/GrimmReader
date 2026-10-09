@@ -22,6 +22,7 @@ class LibraryBrowseTest {
         downloaded: Boolean = false,
         added: Long = 0,
         read: Long? = null,
+        format: BookFormat = BookFormat.EPUB,
     ) = Book(
         id = id,
         source = source,
@@ -33,7 +34,7 @@ class LibraryBrowseTest {
         localLibraryId = localLibrary,
         addedAt = added,
         lastReadAt = read,
-        files = listOf(BookFile(id, id, BookFormat.EPUB, localUri = if (downloaded) "/f" else null)),
+        files = listOf(BookFile(id, id, format, localUri = if (downloaded) "/f" else null)),
     )
 
     private val books =
@@ -83,5 +84,32 @@ class LibraryBrowseTest {
         assertEquals(listOf("Saga"), groups.map { it.name })
         assertEquals(listOf("Beta", "Alpha"), groups.single().books.map { it.title })
         assertEquals(listOf("Saga"), groups.matchingName("sag").map { it.name })
+    }
+
+    @Test fun comicSeriesFollowTheLibraryMediaType() {
+        val comics =
+            listOf(
+                book(10, "Issue 2", series = "Saga", number = 2f, localLibrary = 30, format = BookFormat.CBZ),
+                book(11, "Issue 1", series = "Saga", number = 1f, localLibrary = 30, format = BookFormat.CBZ),
+                book(12, "Hero", series = "Heroes", localLibrary = null, format = BookFormat.CBZ),
+                book(13, "Odd", series = "Odd", localLibrary = 20, format = BookFormat.CBZ),
+            )
+        val all = books + comics
+        // No comics library marked: nothing is split off.
+        assertEquals(listOf("Heroes", "Odd", "Saga"), groupBySeries(all).map { it.name })
+        assertEquals(emptyList<String>(), groupByComicSeries(all, emptySet()).map { it.name })
+        // Library 30 is comics: its books and loose CBZ files are comics; a CBZ in a books library stays a book.
+        assertEquals(listOf("Odd", "Saga"), groupBySeries(all, setOf(30L)).map { it.name })
+        assertEquals(
+            listOf(2L, 3L),
+            groupBySeries(all, setOf(30L))
+                .last()
+                .books
+                .map { it.id }
+                .sorted(),
+        )
+        val comicGroups = groupByComicSeries(all, setOf(30L))
+        assertEquals(listOf("Heroes", "Saga"), comicGroups.map { it.name })
+        assertEquals(listOf("Issue 1", "Issue 2"), comicGroups.last().books.map { it.title })
     }
 }

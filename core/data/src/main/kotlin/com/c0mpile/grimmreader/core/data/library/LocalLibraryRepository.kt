@@ -64,6 +64,11 @@ class LocalLibraryRepository
 
         internal suspend fun delete(id: Long) = withContext(io) { dao.delete(id) }
 
+        suspend fun setComics(
+            id: Long,
+            isComics: Boolean,
+        ) = withContext(io) { dao.setComics(id, isComics) }
+
         suspend fun create(name: String): Long =
             withContext(io) {
                 adoptLegacyFolders()
@@ -120,6 +125,7 @@ class LocalLibraryRepository
                                         name = lib.name,
                                         serverLibraryId = lib.serverLibraryId,
                                         position = dao.nextPosition(),
+                                        isComics = lib.toDomain().isComics,
                                     ),
                                 )
                             }
@@ -170,5 +176,6 @@ class LocalLibraryRepository
                 folderName = folderUri?.let(documents::folderName),
                 folderUri = folderUri,
                 folderAccessible = folderUri?.let(documents::hasAccess) ?: true,
+                isComics = isComics,
             )
     }

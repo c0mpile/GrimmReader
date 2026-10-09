@@ -34,6 +34,7 @@ internal fun StorageSettings(
     onAddLibrary: (String) -> Unit,
     onLibraryFolder: (Long, Uri?) -> Unit,
     onDeleteLibrary: (Long) -> Unit,
+    onLibraryComics: (Long, Boolean) -> Unit,
     onRescan: () -> Unit,
     onForgetRemoved: () -> Unit,
 ) {
@@ -82,6 +83,7 @@ internal fun StorageSettings(
         onClearFolder = { onLibraryFolder(it.id, null) },
         onDelete = { confirmDelete = it },
         onAdd = onAddLibrary,
+        onSetComics = { library, comics -> onLibraryComics(library.id, comics) },
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (state.libraries.any { it.folderUri != null }) OutlinedButton(onClick = onRescan, enabled = !state.scanning) { Text("Scan now") }
