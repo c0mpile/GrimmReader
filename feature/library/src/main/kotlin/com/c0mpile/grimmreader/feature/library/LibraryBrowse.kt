@@ -41,10 +41,10 @@ internal fun List<Book>.inScope(scope: LibraryScope): List<Book> =
  * of the on-device libraries: a server book reading a file from one is on the device from the user's own copy,
  * not a download.
  *
- * A device file counts as the server's book when it has the same content (partial MD5) or, since the server
- * does not tell the hash of a file never downloaded, the same title and an author in common. Such a file is
- * not [LibraryFilter.DEVICE] and its server book is not [LibraryFilter.MISSING]; in [LibraryFilter.ALL] the
- * pair shows once, as the file on the device.
+ * [LibraryFilter.DEVICE] is every book on the device in the library. A device file counts as the server's book
+ * when it has the same content (partial MD5) or, since the server does not tell the hash of a file never
+ * downloaded, the same title and an author in common; in [LibraryFilter.ALL] such a pair shows once, as the file
+ * on the device.
  */
 internal fun List<Book>.inLibrary(
     library: LocalLibrary,
@@ -59,9 +59,8 @@ internal fun List<Book>.inLibrary(
     val pairs = Pairs(server, device)
     return when (filter) {
         LibraryFilter.SERVER -> server
-        LibraryFilter.DEVICE -> device.filter { it.id !in pairs.device }
+        LibraryFilter.DEVICE -> inScope(LibraryScope.Local(library.id))
         LibraryFilter.DOWNLOADED -> server.filter { it.isDownload(bookFolders) }
-        LibraryFilter.MISSING -> server.filter { it.primaryFile?.isAvailableOffline != true && it.id !in pairs.server }
         LibraryFilter.ALL -> server.filter { it.id !in pairs.server } + device
     }
 }
@@ -72,13 +71,12 @@ private fun Book.isDownload(bookFolders: Collection<String>): Boolean {
     return !uri.startsWith("content://") || bookFolders.none { uri.startsWith("$it/document/") }
 }
 
-/** Which server books have a copy among the device books and which device books are a server book (by id). */
+/** Which server books (by id) have a copy among the device books, so [LibraryFilter.ALL] shows the pair once. */
 private class Pairs(
     server: List<Book>,
     device: List<Book>,
 ) {
     val server = mutableSetOf<Long>()
-    val device = mutableSetOf<Long>()
 
     init {
         val byTitle = server.groupBy { looseKey(it.title) }
@@ -87,7 +85,6 @@ private class Pairs(
             val candidates = byHash[local.primaryFile?.partialMd5].orEmpty() + byTitle[looseKey(local.title)].orEmpty()
             for (remote in candidates.filter { isSameBook(it, local) }) {
                 this.server += remote.id
-                this.device += local.id
             }
         }
     }
@@ -196,3 +193,18 @@ private fun fold(s: String): String =
         .normalize(s, java.text.Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
         .lowercase(Locale.ROOT)
+
+/**
+ * Whether the server book [remote] is already on the device as the file [local]: the same title, an author in
+ * common (or none known) and the same size (to the KB, the server only tells that). A file of unknown size does not match.
+ */
+internal fun isSameFile(
+    remote: Book,
+    local: Book,
+): Boolean {
+    val remoteSize = remote.primaryFile?.sizeBytes ?: return false
+    val localSize = local.primaryFile?.sizeBytes ?: return false
+    return kotlin.math.abs(remoteSize - localSize) <= BYTES_PER_KB && isSameBook(remote, local)
+}
+
+private const val BYTES_PER_KB = 1024L

@@ -136,7 +136,8 @@ internal fun SelectionActionBar(
         }
     }
     var confirm by rememberSaveable { mutableStateOf<SelectionAction?>(null) }
-    val summary = SelectionSummary(books.filter { selection.isSelected(it.id) }, canDownload)
+    val deviceBooks by viewModel.deviceBooks.collectAsStateWithLifecycle()
+    val summary = SelectionSummary(books.filter { selection.isSelected(it.id) }, canDownload, deviceBooks)
     AnimatedVisibility(
         selection.active,
         enter = slideInVertically { it } + fadeIn(),
