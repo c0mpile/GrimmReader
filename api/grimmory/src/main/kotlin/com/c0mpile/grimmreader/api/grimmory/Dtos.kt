@@ -101,6 +101,7 @@ data class BookSummaryDto(
     val primaryFileId: Long? = null,
     val primaryFileType: String? = null,
     val primaryFileName: String? = null,
+    val fileSizeKb: Long? = null,
     val coverUpdatedOn: String? = null,
     val pageCount: Int? = null,
 )

@@ -139,10 +139,8 @@ class LibraryBrowseTest {
 
         fun ids(filter: LibraryFilter) = all.inLibrary(lib, filter, true, folders).map { it.id }.sorted()
         assertEquals(listOf(1L, 2L, 3L, 6L), ids(LibraryFilter.SERVER))
-        assertEquals(listOf(5L), ids(LibraryFilter.DEVICE))
+        assertEquals(listOf(1L, 4L, 5L, 6L), ids(LibraryFilter.DEVICE))
         assertEquals(listOf(1L), ids(LibraryFilter.DOWNLOADED))
-        // 3 has a copy in the user's own folder, so it is not missing even though it was never downloaded.
-        assertEquals(listOf(2L), ids(LibraryFilter.MISSING))
         assertEquals(listOf(1L, 2L, 4L, 5L, 6L), ids(LibraryFilter.ALL))
         // Without a server there is only the device side.
         assertEquals(

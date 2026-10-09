@@ -294,7 +294,6 @@ private fun EmptyMessage(state: LibraryUiState) {
             when {
                 state.query.isNotBlank() -> NO_MATCH
                 state.mode == BrowseMode.SERIES || state.mode == BrowseMode.COMIC_SERIES -> "No series here."
-                state.filterShown && state.filter == LibraryFilter.MISSING -> "Nothing is missing from this device."
                 state.filterShown && state.filter != LibraryFilter.ALL -> "Nothing here under ${state.filter.label()}."
                 state.scope is LibraryScope.Local -> EMPTY_LIBRARY
                 state.hasServer -> EMPTY_SERVER

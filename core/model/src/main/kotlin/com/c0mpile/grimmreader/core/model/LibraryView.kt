@@ -59,11 +59,10 @@ sealed interface LibraryScope {
 enum class BrowseMode { BOOKS, AUTHORS, SERIES, COMIC_SERIES }
 
 /**
- * What a library linked to a server shows. [SERVER] everything on the server, [DEVICE] files on this device that
- * match nothing on the server, [DOWNLOADED] server books downloaded through the app, [MISSING] server books that
- * are not on this device in any form, [ALL] the server's books and the device's together.
+ * What a library linked to a server shows. [SERVER] everything on the server, [DEVICE] every book on this device,
+ * [DOWNLOADED] server books downloaded through the app, [ALL] the server's books and the device's together.
  */
-enum class LibraryFilter { SERVER, DEVICE, DOWNLOADED, MISSING, ALL }
+enum class LibraryFilter { SERVER, DEVICE, DOWNLOADED, ALL }
 
 enum class BookSort { TITLE, AUTHOR, ADDED, RECENT }
 

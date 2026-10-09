@@ -222,6 +222,8 @@ class LibraryRepository
                 fileDao.upsert(
                     (file ?: BookFileEntity(bookId = bookId, format = format)).copy(
                         serverFileId = dto.primaryFileId,
+                        // The server's size (in KB) until the file is here; then the exact size of the copy.
+                        sizeBytes = if (file?.localUri != null) file.sizeBytes else dto.fileSizeKb?.let { it * BYTES_PER_KB },
                         format = if (file?.localUri != null) file.format else format,
                     ),
                 )
@@ -322,6 +324,7 @@ class LibraryRepository
 
         companion object {
             private const val PAGE_SIZE = 100
+            private const val BYTES_PER_KB = 1024L
             private const val SERVER_WAIT_MS = 5_000L
 
             /** The automatic refresh skips a library mirrored less than 30 minutes ago; pull-to-refresh never does. */

@@ -64,4 +64,39 @@ class BookSelectionTest {
         selection.retain(setOf(2, 3))
         assertEquals(setOf(2L, 3L), selection.ids)
     }
+
+    @Test fun downloadSkipsServerBooksAlreadyOnTheDeviceWithTheSameTitleAuthorAndSize() {
+        fun sized(
+            id: Long,
+            source: BookSource,
+            title: String,
+            kb: Long,
+            uri: String?,
+        ) = book(id, source, uri).copy(
+            title = title,
+            authors = listOf("Ada"),
+            files =
+                listOf(
+                    BookFile(
+                        id,
+                        id,
+                        BookFormat.EPUB,
+                        localUri = uri,
+                        sizeBytes =
+                            kb * 1024,
+                    ),
+                ),
+        )
+        val same = sized(10, BookSource.SERVER, "The Book", 812, null)
+        val otherSize = sized(11, BookSource.SERVER, "The Book Two", 500, null)
+        val fresh = sized(12, BookSource.SERVER, "Fresh", 100, null)
+        val device =
+            listOf(
+                sized(20, BookSource.LOCAL, "the book", 812, "content://folder/20"),
+                sized(21, BookSource.LOCAL, "The Book Two", 900, "/x"),
+            )
+        val summary = SelectionSummary(listOf(same, otherSize, fresh), canDownload = true, deviceBooks = device)
+        assertEquals(listOf(10L), summary.alreadyHere.map { it.id })
+        assertEquals(listOf(11L, 12L), summary.toDownload.map { it.id })
+    }
 }
