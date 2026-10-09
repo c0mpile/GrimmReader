@@ -140,12 +140,16 @@ private fun SidebarContent(
             onSelect(SidebarDestination.Settings)
         }
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            val name = state.userName ?: if (state.hasServer) "Signed in" else "Local reader"
-            Box(
-                Modifier.size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center,
-            ) { Text(name.take(1).uppercase(), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) }
-            Text(name, Modifier.weight(1f).padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (state.hasServer) {
+                val name = state.userName ?: "Signed in"
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) { Text(name.take(1).uppercase(), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) }
+                Text(name, Modifier.weight(1f).padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
             onCollapse?.let { collapse ->
                 IconButton(onClick = collapse) { Icon(LucideIcons.PanelLeftClose, contentDescription = "Hide sidebar") }
             }
