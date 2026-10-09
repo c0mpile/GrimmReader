@@ -2,18 +2,23 @@ package com.c0mpile.grimmreader.feature.library
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +53,7 @@ import com.c0mpile.grimmreader.core.designsystem.component.StatusChip
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.model.BookSort
 import com.c0mpile.grimmreader.core.model.BrowseMode
+import com.c0mpile.grimmreader.core.model.LibraryFilter
 import com.c0mpile.grimmreader.core.model.LibraryScope
 import com.c0mpile.grimmreader.core.model.ServerStatus
 
@@ -117,6 +123,7 @@ fun LibraryScreen(
             } else {
                 Spacer(Modifier.height(2.dp))
             }
+            if (state.filterShown) FilterRow(state.filter, viewModel::setFilter)
             PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {
                 val empty = if (state.mode == BrowseMode.BOOKS) state.books.isEmpty() else state.groups.isEmpty()
                 when {
@@ -261,6 +268,25 @@ internal fun StatusRow(
     }
 }
 
+/** Server, Device, Downloaded, Missing or All, for a library linked to the server. */
+@Composable
+private fun FilterRow(
+    filter: LibraryFilter,
+    onFilter: (LibraryFilter) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+    ) {
+        items(LibraryFilter.entries) { option ->
+            FilterChip(selected = option == filter, onClick = { onFilter(option) }, label = { Text(option.label()) })
+        }
+    }
+}
+
+private fun LibraryFilter.label() = name.lowercase().replaceFirstChar { it.uppercase() }
+
 @Composable
 private fun EmptyMessage(state: LibraryUiState) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -268,6 +294,8 @@ private fun EmptyMessage(state: LibraryUiState) {
             when {
                 state.query.isNotBlank() -> NO_MATCH
                 state.mode == BrowseMode.SERIES || state.mode == BrowseMode.COMIC_SERIES -> "No series here."
+                state.filterShown && state.filter == LibraryFilter.MISSING -> "Nothing is missing from this device."
+                state.filterShown && state.filter != LibraryFilter.ALL -> "Nothing here under ${state.filter.label()}."
                 state.scope is LibraryScope.Local -> EMPTY_LIBRARY
                 state.hasServer -> EMPTY_SERVER
                 else -> EMPTY_LOCAL

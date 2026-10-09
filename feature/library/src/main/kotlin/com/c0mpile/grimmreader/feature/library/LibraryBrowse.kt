@@ -3,7 +3,9 @@ package com.c0mpile.grimmreader.feature.library
 import com.c0mpile.grimmreader.core.model.Book
 import com.c0mpile.grimmreader.core.model.BookSort
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.LibraryFilter
 import com.c0mpile.grimmreader.core.model.LibraryScope
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 import java.text.Collator
 import java.util.Locale
 
@@ -32,6 +34,80 @@ internal fun List<Book>.inScope(scope: LibraryScope): List<Book> =
         is LibraryScope.Shelf -> filter { scope.shelfId in it.shelves }
         is LibraryScope.MagicShelf -> filter { scope.shelfId in it.magicShelves }
     }
+
+/**
+ * The books of one on-device [library] under [filter]. A library linked to a server (and a server being linked)
+ * has a server side and a device side; any other shows what is on the device. [bookFolders] are the watch folders
+ * of the on-device libraries: a server book reading a file from one is on the device from the user's own copy,
+ * not a download.
+ *
+ * A device file counts as the server's book when it has the same content (partial MD5) or, since the server
+ * does not tell the hash of a file never downloaded, the same title and an author in common. Such a file is
+ * not [LibraryFilter.DEVICE] and its server book is not [LibraryFilter.MISSING]; in [LibraryFilter.ALL] the
+ * pair shows once, as the file on the device.
+ */
+internal fun List<Book>.inLibrary(
+    library: LocalLibrary,
+    filter: LibraryFilter,
+    hasServer: Boolean,
+    bookFolders: Collection<String>,
+): List<Book> {
+    val serverId = library.serverLibraryId
+    if (!hasServer || serverId == null) return inScope(LibraryScope.Local(library.id))
+    val server = filter { it.source == BookSource.SERVER && (it.libraryId == serverId || it.localLibraryId == library.id) }
+    val device = filter { it.source != BookSource.SERVER && it.localLibraryId == library.id }
+    val pairs = Pairs(server, device)
+    return when (filter) {
+        LibraryFilter.SERVER -> server
+        LibraryFilter.DEVICE -> device.filter { it.id !in pairs.device }
+        LibraryFilter.DOWNLOADED -> server.filter { it.isDownload(bookFolders) }
+        LibraryFilter.MISSING -> server.filter { it.primaryFile?.isAvailableOffline != true && it.id !in pairs.server }
+        LibraryFilter.ALL -> server.filter { it.id !in pairs.server } + device
+    }
+}
+
+/** A server book whose file the app downloaded (app storage, or the download folder), not one read from a watch folder. */
+private fun Book.isDownload(bookFolders: Collection<String>): Boolean {
+    val uri = primaryFile?.localUri ?: return false
+    return !uri.startsWith("content://") || bookFolders.none { uri.startsWith("$it/document/") }
+}
+
+/** Which server books have a copy among the device books and which device books are a server book (by id). */
+private class Pairs(
+    server: List<Book>,
+    device: List<Book>,
+) {
+    val server = mutableSetOf<Long>()
+    val device = mutableSetOf<Long>()
+
+    init {
+        val byTitle = server.groupBy { looseKey(it.title) }
+        val byHash = server.filter { it.primaryFile?.partialMd5 != null }.groupBy { it.primaryFile?.partialMd5 }
+        for (local in device) {
+            val candidates = byHash[local.primaryFile?.partialMd5].orEmpty() + byTitle[looseKey(local.title)].orEmpty()
+            for (remote in candidates.filter { isSameBook(it, local) }) {
+                this.server += remote.id
+                this.device += local.id
+            }
+        }
+    }
+}
+
+private fun isSameBook(
+    a: Book,
+    b: Book,
+): Boolean {
+    val hashA = a.primaryFile?.partialMd5
+    val hashB = b.primaryFile?.partialMd5
+    if (hashA != null && hashB != null) return hashA == hashB
+    val title = looseKey(a.title)
+    if (title.isEmpty() || title != looseKey(b.title)) return false
+    val authorsA = a.authors.map(::looseKey).filter { it.isNotEmpty() }
+    val authorsB = b.authors.map(::looseKey).filter { it.isNotEmpty() }
+    return authorsA.isEmpty() || authorsB.isEmpty() || authorsA.any { it in authorsB }
+}
+
+private fun looseKey(s: String): String = fold(s).filter { it.isLetterOrDigit() }
 
 /** Local books, and server books downloaded to this device. */
 private val Book.onDevice: Boolean get() = source != BookSource.SERVER || primaryFile?.isAvailableOffline == true

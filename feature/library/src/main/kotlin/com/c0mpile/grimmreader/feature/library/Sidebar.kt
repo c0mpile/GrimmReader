@@ -157,7 +157,7 @@ private fun SidebarContent(
     }
 }
 
-/** The server's libraries (when connected) and the libraries on this device. */
+/** The libraries: one per server library when connected, plus the ones of the user's own. */
 private fun LazyListScope.libraries(
     state: SidebarState,
     collapsed: MutableMap<String, Boolean>,
@@ -165,23 +165,7 @@ private fun LazyListScope.libraries(
     onSelect: (SidebarDestination) -> Unit,
     onCreateLibrary: () -> Unit,
 ) {
-    if (state.hasServer) {
-        section("Libraries", collapsed) {
-            state.libraries.forEach { (library, count) ->
-                browse(
-                    LucideIcons.Library,
-                    library.name,
-                    count,
-                    LibraryScope.Server(library.id),
-                    BrowseMode.BOOKS,
-                    selected,
-                    onSelect,
-                )
-            }
-        }
-    }
-    val title = if (state.hasServer) "On this device" else "Libraries"
-    section(title, collapsed, action = Triple(LucideIcons.Plus, "New library", onCreateLibrary)) {
+    section("Libraries", collapsed, action = Triple(LucideIcons.Plus, "New library", onCreateLibrary)) {
         state.localLibraries.forEach { (library, count) ->
             val icon = if (library.serverLibraryId != null) LucideIcons.Library else LucideIcons.Smartphone
             browse(icon, library.name, count, LibraryScope.Local(library.id), BrowseMode.BOOKS, selected, onSelect)

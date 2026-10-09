@@ -5,7 +5,9 @@ import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSort
 import com.c0mpile.grimmreader.core.model.BookSource
+import com.c0mpile.grimmreader.core.model.LibraryFilter
 import com.c0mpile.grimmreader.core.model.LibraryScope
+import com.c0mpile.grimmreader.core.model.LocalLibrary
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -111,5 +113,44 @@ class LibraryBrowseTest {
         val comicGroups = groupByComicSeries(all, setOf(30L))
         assertEquals(listOf("Heroes", "Saga"), comicGroups.map { it.name })
         assertEquals(listOf("Issue 1", "Issue 2"), comicGroups.last().books.map { it.title })
+    }
+
+    @Test fun linkedLibraryViews() {
+        val lib = LocalLibrary(20, "Test", serverLibraryId = 2, folderUri = "content://tree/folder")
+        val folders = listOf("content://tree/folder")
+
+        fun with(
+            id: Long,
+            title: String,
+            authors: List<String>,
+            source: BookSource,
+            uri: String?,
+        ) = book(id, title, authors, library = if (source == BookSource.SERVER) 2 else null, localLibrary = 20, source = source)
+            .copy(files = listOf(BookFile(id, id, BookFormat.EPUB, localUri = uri)))
+        val all =
+            listOf(
+                with(1, "Downloaded", listOf("A"), BookSource.SERVER, "/app/1"),
+                with(2, "Only Server", listOf("B"), BookSource.SERVER, null),
+                with(3, "On Device Too", listOf("C"), BookSource.SERVER, null),
+                with(4, "On device too!", listOf("C"), BookSource.LOCAL, "content://tree/folder/document/4"),
+                with(5, "Only Device", listOf("D"), BookSource.LOCAL, "content://tree/folder/document/5"),
+                with(6, "Merged", listOf("E"), BookSource.SERVER, "content://tree/folder/document/6"),
+            )
+
+        fun ids(filter: LibraryFilter) = all.inLibrary(lib, filter, true, folders).map { it.id }.sorted()
+        assertEquals(listOf(1L, 2L, 3L, 6L), ids(LibraryFilter.SERVER))
+        assertEquals(listOf(5L), ids(LibraryFilter.DEVICE))
+        assertEquals(listOf(1L), ids(LibraryFilter.DOWNLOADED))
+        // 3 has a copy in the user's own folder, so it is not missing even though it was never downloaded.
+        assertEquals(listOf(2L), ids(LibraryFilter.MISSING))
+        assertEquals(listOf(1L, 2L, 4L, 5L, 6L), ids(LibraryFilter.ALL))
+        // Without a server there is only the device side.
+        assertEquals(
+            listOf(4L, 5L),
+            all.inLibrary(lib, LibraryFilter.ALL, false, folders).map { it.id }.sorted().filter {
+                it != 6L &&
+                    it != 1L
+            },
+        )
     }
 }
