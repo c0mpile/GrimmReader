@@ -70,6 +70,8 @@ data class LocalLibrary(
     val folderUri: String? = null,
     /** False once the grant on the watch folder was revoked or its volume is gone. */
     val folderAccessible: Boolean = true,
+    /** Media type: a comics library rather than a books library. Starts from the server library's type. */
+    val isComics: Boolean = false,
 )
 
 /**

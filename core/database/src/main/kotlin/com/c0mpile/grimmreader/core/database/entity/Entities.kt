@@ -54,6 +54,8 @@ data class LocalLibraryEntity(
     val serverLibraryId: Long? = null,
     val folderUri: String? = null,
     val position: Int = 0,
+    /** Media type: a comics library (its books are listed under Comic Series) instead of a books library. */
+    @ColumnInfo(defaultValue = "0") val isComics: Boolean = false,
 )
 
 /**

@@ -45,6 +45,7 @@ data class SidebarState(
     val userName: String? = null,
     val allBooks: Int = 0,
     val series: Int = 0,
+    val comicSeries: Int = 0,
     val authors: Int = 0,
     val libraries: List<Pair<Library, Int>> = emptyList(),
     /** The on-device libraries with the books in each (a folder's books plus downloads of the mirrored server library). */
@@ -76,11 +77,13 @@ class SidebarViewModel
                 session.server,
                 downloads.observe(),
             ) { books, libraries, (shelves, local), server, queue ->
+                val comics = local.filter { it.isComics }.map { it.id }.toSet()
                 SidebarState(
                     hasServer = server != null,
                     userName = server?.username,
                     allBooks = books.size,
-                    series = groupBySeries(books).size,
+                    series = groupBySeries(books, comics).size,
+                    comicSeries = groupByComicSeries(books, comics).size,
                     authors = groupByAuthor(books).size,
                     libraries = libraries.map { it to books.inScope(LibraryScope.Server(it.id)).size },
                     localLibraries = local.map { it to books.inScope(LibraryScope.Local(it.id)).size },

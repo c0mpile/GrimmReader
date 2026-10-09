@@ -123,7 +123,10 @@ fun LibraryScreen(
                     empty && !state.syncing -> EmptyMessage(state)
                     state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onRead, selection)
                     state.mode == BrowseMode.AUTHORS -> AuthorList(state.groups) { onOpenGroup(GroupKind.AUTHOR, it) }
-                    else -> SeriesCollection(state.groups, state.view.layout) { onOpenGroup(GroupKind.SERIES, it) }
+                    else -> {
+                        val kind = if (state.mode == BrowseMode.COMIC_SERIES) GroupKind.COMIC_SERIES else GroupKind.SERIES
+                        SeriesCollection(state.groups, state.view.layout) { onOpenGroup(kind, it) }
+                    }
                 }
             }
         }
@@ -170,6 +173,7 @@ private fun scopeTitle(state: LibraryUiState): String =
                 BrowseMode.BOOKS -> "All Books"
                 BrowseMode.AUTHORS -> "Authors"
                 BrowseMode.SERIES -> "Series"
+                BrowseMode.COMIC_SERIES -> "Comic Series"
             }
         LibraryScope.Unsorted -> "Unsorted"
         is LibraryScope.Local -> state.localLibraries.firstOrNull { it.id == scope.libraryId }?.name ?: "Library"
@@ -263,7 +267,7 @@ private fun EmptyMessage(state: LibraryUiState) {
         Text(
             when {
                 state.query.isNotBlank() -> NO_MATCH
-                state.mode == BrowseMode.SERIES -> "No series here."
+                state.mode == BrowseMode.SERIES || state.mode == BrowseMode.COMIC_SERIES -> "No series here."
                 state.scope is LibraryScope.Local -> EMPTY_LIBRARY
                 state.hasServer -> EMPTY_SERVER
                 else -> EMPTY_LOCAL

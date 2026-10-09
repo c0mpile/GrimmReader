@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,7 +26,7 @@ import com.c0mpile.grimmreader.core.model.LocalLibrary
 /**
  * The on-device libraries with their optional watch folder (first run and Settings → Storage). A library that
  * mirrors a server library follows the server's name and cannot be deleted; the user's own can be.
- * [onChooseFolder] opens the folder picker for the library.
+ * [onChooseFolder] opens the folder picker for the library; [onSetComics] sets its media type (comics or books).
  */
 @Composable
 fun LibraryFolderList(
@@ -34,6 +35,7 @@ fun LibraryFolderList(
     onClearFolder: (LocalLibrary) -> Unit,
     onDelete: (LocalLibrary) -> Unit,
     onAdd: (String) -> Unit,
+    onSetComics: (LocalLibrary, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -50,6 +52,10 @@ fun LibraryFolderList(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (library.folderAccessible) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Comics library", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = library.isComics, onCheckedChange = { onSetComics(library, it) })
+                }
                 Row(Modifier.offset(x = (-12).dp)) {
                     TextButton(onClick = { onChooseFolder(library) }) {
                         Text(if (library.folderUri == null) "Choose folder" else "Change folder")

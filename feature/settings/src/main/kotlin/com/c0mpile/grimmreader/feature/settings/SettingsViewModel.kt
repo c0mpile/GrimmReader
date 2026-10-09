@@ -65,6 +65,11 @@ class SettingsViewModel
             tree: Uri?,
         ) = scanning { folders.setLibraryFolder(libraryId, tree) }
 
+        fun setLibraryComics(
+            libraryId: Long,
+            isComics: Boolean,
+        ) = viewModelScope.launch { localLibraries.setComics(libraryId, isComics) }
+
         fun deleteLibrary(libraryId: Long) = viewModelScope.launch { folders.deleteLibrary(libraryId) }
 
         fun rescan() = scanning { folders.scan() }

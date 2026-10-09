@@ -81,7 +81,20 @@ class MigrationTest {
         }
     }
 
+    @Test fun librariesStartAsBooksLibraries() {
+        helper.createDatabase(DB_V7, 7).use { db ->
+            db.execSQL("INSERT INTO local_library (id, name, position) VALUES (1, 'Library', 0)")
+        }
+        helper.runMigrationsAndValidate(DB_V7, 8, true).use { db ->
+            db.query("SELECT isComics FROM local_library WHERE id = 1").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(0, c.getInt(0))
+            }
+        }
+    }
+
     private companion object {
+        const val DB_V7 = "migration-test-v7.db"
         const val DB_V6 = "migration-test-v6.db"
         const val DB = "migration-test.db"
     }

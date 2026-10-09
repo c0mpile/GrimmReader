@@ -58,6 +58,7 @@ fun SettingsScreen(
                 onAddLibrary = viewModel::addLibrary,
                 onLibraryFolder = viewModel::setLibraryFolder,
                 onDeleteLibrary = viewModel::deleteLibrary,
+                onLibraryComics = viewModel::setLibraryComics,
                 onRescan = viewModel::rescan,
                 onForgetRemoved = viewModel::forgetRemovedBooks,
             )

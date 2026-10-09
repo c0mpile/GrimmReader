@@ -107,6 +107,10 @@ private fun SidebarContent(
                 }
                 browse(LucideIcons.LibraryBig, "All Books", state.allBooks, LibraryScope.All, BrowseMode.BOOKS, selected, onSelect)
                 browse(LucideIcons.BookCopy, "Series", state.series, LibraryScope.All, BrowseMode.SERIES, selected, onSelect)
+                if (state.comicSeries > 0) {
+                    val mode = BrowseMode.COMIC_SERIES
+                    browse(LucideIcons.BookCopy, "Comic Series", state.comicSeries, LibraryScope.All, mode, selected, onSelect)
+                }
                 browse(LucideIcons.Users, "Authors", state.authors, LibraryScope.All, BrowseMode.AUTHORS, selected, onSelect)
                 if (state.hasServer && notebook) {
                     entry(LucideIcons.NotebookPen, "Notebook", null, selected == SidebarDestination.Notebook) {

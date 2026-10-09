@@ -16,7 +16,7 @@ data class BookGroup(
     val coverUri: String? get() = books.firstNotNullOfOrNull { it.coverUri }
 }
 
-enum class GroupKind { AUTHOR, SERIES }
+enum class GroupKind { AUTHOR, SERIES, COMIC_SERIES }
 
 const val UNKNOWN_AUTHOR = "Unknown author"
 
@@ -81,7 +81,26 @@ internal fun groupByAuthor(books: List<Book>): List<BookGroup> {
         .sortedWith(compareBy<BookGroup> { it.name == UNKNOWN_AUTHOR }.thenBy(collator) { it.name })
 }
 
-internal fun groupBySeries(books: List<Book>): List<BookGroup> =
+/**
+ * Series of the books that are not comics. Comics are the books of the libraries marked as comics
+ * ([comicLibraries], on-device library ids) and, outside any library, CBZ files. With no comics library
+ * marked nothing is split off, so every series shows here.
+ */
+internal fun groupBySeries(
+    books: List<Book>,
+    comicLibraries: Set<Long> = emptySet(),
+): List<BookGroup> = groupSeries(if (comicLibraries.isEmpty()) books else books.filterNot { it.isComic(comicLibraries) })
+
+/** Series of comics, kept apart from the book series; empty until a library is marked as comics. */
+internal fun groupByComicSeries(
+    books: List<Book>,
+    comicLibraries: Set<Long>,
+): List<BookGroup> = if (comicLibraries.isEmpty()) emptyList() else groupSeries(books.filter { it.isComic(comicLibraries) })
+
+private fun Book.isComic(comicLibraries: Set<Long>): Boolean =
+    if (localLibraryId != null) localLibraryId in comicLibraries else primaryFile?.format?.isComic == true
+
+private fun groupSeries(books: List<Book>): List<BookGroup> =
     books
         .filter { !it.seriesName.isNullOrBlank() }
         .groupBy { it.seriesName!!.trim() }

@@ -450,6 +450,12 @@ interface LocalLibraryDao {
         name: String,
     )
 
+    @Query("UPDATE local_library SET isComics = :isComics WHERE id = :id")
+    suspend fun setComics(
+        id: Long,
+        isComics: Boolean,
+    )
+
     @Query("UPDATE local_library SET folderUri = :folderUri WHERE id = :id")
     suspend fun setFolder(
         id: Long,

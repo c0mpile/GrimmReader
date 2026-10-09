@@ -47,6 +47,11 @@ class FirstRunViewModel
             tree: Uri?,
         ) = viewModelScope.launch { folders.setLibraryFolder(libraryId, tree) }
 
+        fun setLibraryComics(
+            libraryId: Long,
+            isComics: Boolean,
+        ) = viewModelScope.launch { localLibraries.setComics(libraryId, isComics) }
+
         fun deleteLibrary(libraryId: Long) = viewModelScope.launch { folders.deleteLibrary(libraryId) }
 
         fun finish() = viewModelScope.launch { prefs.setFirstRunDone() }
