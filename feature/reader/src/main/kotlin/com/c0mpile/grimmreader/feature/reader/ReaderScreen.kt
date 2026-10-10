@@ -193,7 +193,13 @@ fun ReaderScreen(
     lookup?.let { current ->
         DictionarySheet(
             current,
+            pronunciation =
+                viewModel.pronunciation.state
+                    .collectAsStateWithLifecycle()
+                    .value,
             onLookUp = viewModel.lookups::lookUp,
+            onSpeak = viewModel.pronunciation::speak,
+            onDismissSpeakError = viewModel.pronunciation::dismissError,
             onOpenDictionaries = {
                 viewModel.lookups.close()
                 onOpenDictionaries()

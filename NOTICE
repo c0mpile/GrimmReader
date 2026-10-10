@@ -42,3 +42,6 @@ wiktionary_stardict project, https://github.com/xxyzz/wiktionary_stardict) and F
 
 Library dependencies are declared in gradle/libs.versions.toml. All are FOSS (Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, 0BSD;
 JUnit under EPL-1.0 in tests only); none require Google Play Services.
+
+Pronunciation (core/dictionary): optional text-to-speech through the ElevenLabs API (https://elevenlabs.io), using the
+user's own API key and subject to their ElevenLabs terms. No ElevenLabs code is included.

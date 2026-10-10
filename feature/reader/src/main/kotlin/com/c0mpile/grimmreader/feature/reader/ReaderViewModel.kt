@@ -10,6 +10,7 @@ import com.c0mpile.grimmreader.core.data.progress.RemotePosition
 import com.c0mpile.grimmreader.core.data.stream.OnlineReading
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.dictionary.Dictionaries
+import com.c0mpile.grimmreader.core.dictionary.Pronunciation
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.files.DocumentStore
 import com.c0mpile.grimmreader.core.model.BookFile
@@ -116,6 +117,7 @@ class ReaderViewModel
         private val documents: DocumentStore,
         private val bookmarkRepo: BookmarkRepository,
         private val dictionaries: Dictionaries,
+        val pronunciation: Pronunciation,
         notebook: NotebookRepository,
         prefs: AppPreferences,
     ) : ViewModel() {

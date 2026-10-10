@@ -11,6 +11,7 @@ android {
 
 dependencies {
     implementation(projects.core.common)
+    implementation(projects.core.datastore)
     implementation(projects.core.files)
     implementation(projects.core.network)
     implementation(libs.kotlinx.serialization.json)
