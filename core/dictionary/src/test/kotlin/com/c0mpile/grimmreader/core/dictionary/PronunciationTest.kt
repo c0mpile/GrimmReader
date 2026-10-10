@@ -6,7 +6,7 @@ import org.junit.Test
 class PronunciationTest {
     @Test
     fun usesTheConfiguredVoiceAndModel() {
-        assertEquals("Z3R5wn05IrDiVCyEkUrK", Pronunciation.VOICE_ID)
+        assertEquals("QtY3JBOUKEB5xzrRfOKc", Pronunciation.VOICE_ID)
         assertEquals("eleven_v4_turbo", Pronunciation.MODEL_ID)
     }
 }

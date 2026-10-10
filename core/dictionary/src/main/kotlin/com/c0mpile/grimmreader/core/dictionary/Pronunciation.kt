@@ -229,7 +229,7 @@ class Pronunciation
         }
 
         companion object {
-            const val VOICE_ID = "Z3R5wn05IrDiVCyEkUrK"
+            const val VOICE_ID = "QtY3JBOUKEB5xzrRfOKc"
             const val MODEL_ID = "eleven_v4_turbo"
             private const val KEY_NAME = "elevenlabs_api_key"
             private const val ENDPOINT = "https://api.elevenlabs.io/v1/text-to-speech"
