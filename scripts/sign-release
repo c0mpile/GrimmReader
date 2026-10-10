@@ -27,6 +27,13 @@ while getopts "bi" opt; do
     esac
 done
 
+# zipalign and apksigner: use PATH, else the newest build-tools of the SDK (a terminal started from an old
+# desktop session can have a PATH without it).
+if ! command -v zipalign > /dev/null || ! command -v apksigner > /dev/null; then
+    tools=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)
+    [[ -n $tools ]] && PATH="${tools%/}:$PATH"
+fi
+
 service="${GRIMMREADER_KEYRING_SERVICE:-grimmreader-signing}"
 secret() { timeout 10 secret-tool lookup service "$service" username "$1" 2>/dev/null || true; }
 
