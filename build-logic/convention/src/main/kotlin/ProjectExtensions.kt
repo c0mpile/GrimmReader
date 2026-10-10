@@ -11,7 +11,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 internal const val COMPILE_SDK = 37
 internal const val MIN_SDK = 31
 internal const val TARGET_SDK = 37
-internal const val JDK = 21
+internal const val JDK = 25
 
 internal val Project.libs: VersionCatalog
     get() = extensions.getByType<VersionCatalogsExtension>().named("libs")

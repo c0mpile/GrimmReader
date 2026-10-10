@@ -23,7 +23,7 @@ the rest of the Grimmory web features. There is no audiobook player.
 - Tokens are encrypted with an Android Keystore key; your password is never stored. No analytics, no Google services.
 
 ## Building
-JDK 21 and the Android SDK (compile SDK 37) are required.
+JDK 25 and the Android SDK (compile SDK 37) are required.
 
 ```
 ./gradlew assembleDebug

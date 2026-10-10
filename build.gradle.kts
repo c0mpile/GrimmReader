@@ -13,8 +13,8 @@ plugins {
 
 subprojects {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
-    apply(plugin = "io.gitlab.arturbosch.detekt")
-    extensions.configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
+    apply(plugin = "dev.detekt")
+    extensions.configure<dev.detekt.gradle.extensions.DetektExtension> {
         buildUponDefaultConfig = true
         parallel = true
         config.setFrom(rootProject.file("config/detekt/detekt.yml"))
