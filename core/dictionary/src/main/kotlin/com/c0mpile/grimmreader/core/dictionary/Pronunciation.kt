@@ -135,7 +135,7 @@ class Pronunciation
             val part = File(dir, "${file.name}.part")
             try {
                 client.get().newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException(describe(response.code))
+                    if (!response.isSuccessful) throw IOException(describe(response.code, errorDetail(response.body.source())))
                     part.writeBytes(readAudio(response.body.source()))
                 }
                 check(part.renameTo(file)) { "Could not save the audio." }
@@ -152,12 +152,31 @@ class Pronunciation
             return source.readByteArray()
         }
 
-        private fun describe(code: Int) =
-            when (code) {
-                HTTP_UNAUTHORIZED -> "ElevenLabs rejected the API key."
-                HTTP_QUOTA -> "ElevenLabs rate limit or quota reached."
-                else -> "ElevenLabs answered $code."
-            }
+        /** The `detail.message` ElevenLabs sends with an error (never the request, so never the key), if any. */
+        private fun errorDetail(source: BufferedSource): String? {
+            source.request(MAX_ERROR_BYTES)
+            val text = source.buffer.readUtf8(minOf(source.buffer.size, MAX_ERROR_BYTES))
+            val detail = runCatching { JSONObject(text).opt("detail") }.getOrNull()
+            return when (detail) {
+                is JSONObject -> detail.optString("message").ifBlank { detail.optString("status") }
+                is String -> detail
+                else -> null
+            }?.takeIf { it.isNotBlank() }?.take(MAX_DETAIL_CHARS)
+        }
+
+        private fun describe(
+            code: Int,
+            detail: String?,
+        ): String {
+            val base =
+                when (code) {
+                    HTTP_UNAUTHORIZED -> "ElevenLabs rejected the API key."
+                    HTTP_PAYMENT -> "ElevenLabs needs a paid plan or credits for this request."
+                    HTTP_QUOTA -> "ElevenLabs rate limit or quota reached."
+                    else -> "ElevenLabs answered $code."
+                }
+            return if (detail == null) base else "$base ($detail)"
+        }
 
         private fun play(file: File) {
             stopPlayer()
@@ -219,7 +238,10 @@ class Pronunciation
             private const val MAX_BYTES = 2 shl 20
             private const val HASH_CHARS = 32
             private const val HTTP_UNAUTHORIZED = 401
+            private const val HTTP_PAYMENT = 402
             private const val HTTP_QUOTA = 429
+            private const val MAX_ERROR_BYTES = 2048L
+            private const val MAX_DETAIL_CHARS = 200
             private val JSON = "application/json".toMediaType()
         }
     }
