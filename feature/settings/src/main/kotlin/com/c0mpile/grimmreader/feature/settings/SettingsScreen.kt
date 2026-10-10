@@ -77,7 +77,12 @@ fun SettingsScreen(
             OutlinedButton(onClick = onOpenDictionaries) { Text("Manage dictionaries") }
             HorizontalDivider()
             Section("Pronunciation")
-            PronunciationSettings(viewModel.hasPronunciationKey.collectAsStateWithLifecycle().value == true, viewModel::setPronunciationKey)
+            PronunciationSettings(
+                viewModel.hasPronunciationKey.collectAsStateWithLifecycle().value == true,
+                viewModel.pronunciationVoice.collectAsStateWithLifecycle().value,
+                viewModel::setPronunciationKey,
+                viewModel::setPronunciationVoice,
+            )
             HorizontalDivider()
             Section("Server")
             val server = state.server
@@ -158,9 +163,12 @@ private fun ThemeMode.label() =
 @Composable
 private fun PronunciationSettings(
     hasKey: Boolean,
+    voice: String?,
     onSave: (String?) -> Unit,
+    onSaveVoice: (String?) -> Unit,
 ) {
     var key by remember { mutableStateOf("") }
+    var voiceText by remember(voice) { mutableStateOf(voice.orEmpty()) }
     Text(
         "The speaker icon in the dictionary says the word aloud with ElevenLabs. Only the word you tap is sent, " +
             "over HTTPS, and only when you tap. Your ElevenLabs API key is stored encrypted on this device.",
@@ -186,4 +194,14 @@ private fun PronunciationSettings(
         ) { Text("Save key") }
         if (hasKey) OutlinedButton(onClick = { onSave(null) }) { Text("Remove key") }
     }
+    OutlinedTextField(
+        value = voiceText,
+        onValueChange = { voiceText = it },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("ElevenLabs voice ID") },
+        supportingText = { Text("A voice your plan can use through the API (free plans: default voices only).") },
+        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+    )
+    Button(onClick = { onSaveVoice(voiceText) }, enabled = voiceText.trim() != voice.orEmpty()) { Text("Save voice") }
 }

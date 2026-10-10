@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.dictionary
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import com.c0mpile.grimmreader.core.common.AppScope
 import com.c0mpile.grimmreader.core.common.IoDispatcher
 import com.c0mpile.grimmreader.core.datastore.SecretStore
@@ -44,7 +45,7 @@ sealed interface PronunciationState {
 
 /**
  * Speaks a looked-up word with ElevenLabs text-to-speech. Runs only when the user taps the speaker icon and
- * has saved an API key (Keystore-encrypted in [SecretStore]); the audio is cached per word so a repeat costs
+ * has saved an API key and a voice ID (Keystore-encrypted in [SecretStore]); the audio is cached per word so a repeat costs
  * nothing. Uses the guarded client; nothing happens in the background.
  */
 @Singleton
@@ -67,8 +68,19 @@ class Pronunciation
         private var job: Job? = null
         private var player: MediaPlayer? = null
 
+        private val _voiceId = MutableStateFlow<String?>(null)
+
+        /** The voice the user chose in Settings; none is built in. Null until read or when unset. */
+        val voiceId: StateFlow<String?> = _voiceId.asStateFlow()
+
         suspend fun refreshKey() {
             _hasKey.value = !secrets.get(KEY_NAME).isNullOrBlank()
+            _voiceId.value = secrets.get(VOICE_NAME)?.takeIf { it.isNotBlank() }
+        }
+
+        suspend fun setVoiceId(id: String?) {
+            secrets.put(VOICE_NAME, id?.trim()?.takeIf { it.isNotEmpty() })
+            refreshKey()
         }
 
         suspend fun setApiKey(key: String?) {
@@ -91,7 +103,12 @@ class Pronunciation
                             _state.value = PronunciationState.Failed("Add an ElevenLabs API key in Settings → Pronunciation.")
                             return@launch
                         }
-                        val file = withContext(io) { cached(text) ?: fetch(text, key) }
+                        val voice = secrets.get(VOICE_NAME)?.takeIf { it.isNotBlank() }
+                        if (voice == null) {
+                            _state.value = PronunciationState.Failed("Add an ElevenLabs voice ID in Settings → Pronunciation.")
+                            return@launch
+                        }
+                        val file = withContext(io) { cached(text, voice) ?: fetch(text, key, voice) }
                         withContext(Dispatchers.Main) { play(file) }
                     } catch (e: CancellationException) {
                         throw e
@@ -105,16 +122,23 @@ class Pronunciation
             if (_state.value is PronunciationState.Failed) _state.value = PronunciationState.Idle
         }
 
-        private fun fileFor(text: String): File {
-            val hash = MessageDigest.getInstance("SHA-256").digest("$VOICE_ID|$MODEL_ID|$text".toByteArray())
+        private fun fileFor(
+            text: String,
+            voice: String,
+        ): File {
+            val hash = MessageDigest.getInstance("SHA-256").digest("$voice|$MODEL_ID|$text".toByteArray())
             return File(dir, hash.joinToString("") { "%02x".format(it) }.take(HASH_CHARS) + ".mp3")
         }
 
-        private fun cached(text: String): File? = fileFor(text).takeIf { it.length() > 0 }
+        private fun cached(
+            text: String,
+            voice: String,
+        ): File? = fileFor(text, voice).takeIf { it.length() > 0 }
 
         private fun fetch(
             text: String,
             key: String,
+            voice: String,
         ): File {
             val body =
                 JSONObject()
@@ -125,13 +149,13 @@ class Pronunciation
             val request =
                 Request
                     .Builder()
-                    .url("$ENDPOINT/$VOICE_ID?output_format=$FORMAT")
+                    .url("$ENDPOINT/${Uri.encode(voice)}?output_format=$FORMAT")
                     .header("xi-api-key", key)
                     .header("Accept", "audio/mpeg")
                     .post(body)
                     .build()
             dir.mkdirs()
-            val file = fileFor(text)
+            val file = fileFor(text, voice)
             val part = File(dir, "${file.name}.part")
             try {
                 client.get().newCall(request).execute().use { response ->
@@ -229,9 +253,9 @@ class Pronunciation
         }
 
         companion object {
-            const val VOICE_ID = "QtY3JBOUKEB5xzrRfOKc"
             const val MODEL_ID = "eleven_v4_turbo"
             private const val KEY_NAME = "elevenlabs_api_key"
+            private const val VOICE_NAME = "elevenlabs_voice_id"
             private const val ENDPOINT = "https://api.elevenlabs.io/v1/text-to-speech"
             private const val FORMAT = "mp3_44100_64"
             private const val MAX_CHARS = 100

@@ -67,6 +67,11 @@ class SettingsViewModel
             viewModelScope.launch { pronunciation.refreshKey() }
         }
 
+        /** The saved ElevenLabs voice ID, if any. */
+        val pronunciationVoice: StateFlow<String?> = pronunciation.voiceId
+
+        fun setPronunciationVoice(id: String?) = viewModelScope.launch { pronunciation.setVoiceId(id) }
+
         fun setPronunciationKey(key: String?) = viewModelScope.launch { pronunciation.setApiKey(key) }
 
         fun addLibrary(name: String) = viewModelScope.launch { localLibraries.create(name) }
