@@ -27,6 +27,8 @@ import com.c0mpile.grimmreader.core.designsystem.component.PageZone
 import com.c0mpile.grimmreader.core.designsystem.component.pageGestures
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.Locator
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -39,6 +41,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /** A chapter; [depth] is 0 for top-level entries, 1 for their sub-chapters and so on. */
 data class TocEntry(
@@ -73,6 +77,14 @@ data class SearchHit(
     val pre: String,
     val match: String,
     val post: String,
+)
+
+/** A passage of the book to read aloud: [cfi] is its range, [section] the index of the section it is in. */
+@Serializable
+data class NarrationText(
+    val text: String,
+    val cfi: String,
+    val section: Int,
 )
 
 sealed interface EbookEvent {
@@ -120,6 +132,13 @@ sealed interface EbookEvent {
         val cfi: String?,
     ) : EbookEvent
 
+    /** The page's answer to a narration request [req]; [chunks] is null when the request failed. */
+    data class Narration(
+        val req: Int,
+        val ok: Boolean,
+        val chunks: List<NarrationText>?,
+    ) : EbookEvent
+
     data class Failed(
         val message: String,
     ) : EbookEvent
@@ -128,6 +147,9 @@ sealed interface EbookEvent {
 /** Commands from Compose into the page. */
 class EbookController {
     internal var webView: WebView? = null
+
+    /** Reading the book aloud: the page cuts it into passages and marks the one being spoken. */
+    val narration = EbookNarration { webView }
 
     fun next() = call("grimm_api.next()")
 
@@ -181,6 +203,51 @@ class EbookController {
         webView?.evaluateJavascript("window.grimm_api && $js", null)
     }
 }
+
+/** Narration requests to the page script; answers arrive as [EbookEvent.Narration] and complete the request. */
+class EbookNarration internal constructor(
+    private val webView: () -> WebView?,
+) {
+    private val replies = ConcurrentHashMap<Int, CompletableDeferred<EbookEvent.Narration>>()
+    private val requests = AtomicInteger()
+
+    /** Positions narration at the visible page, at [from], or just after it. False when the book has no text. */
+    suspend fun begin(
+        from: String?,
+        after: Boolean,
+    ): Boolean = request { req -> "grimm_api.narrationBegin($req, ${Json.encodeToString(from)}, $after)" }?.ok == true
+
+    /** The next [count] passages in reading order; empty at the end of the book, null when the page did not answer. */
+    suspend fun next(count: Int): List<NarrationText>? = request { req -> "grimm_api.narrationNext($req, $count)" }?.chunks
+
+    /** Marks [passage] in the page and turns to it (when the page is visible). */
+    fun spoken(passage: NarrationText) = call("grimm_api.narrationSpoken(${Json.encodeToString(passage)})")
+
+    fun clear() = call("grimm_api.narrationClear()")
+
+    private fun call(js: String) {
+        webView()?.evaluateJavascript("window.grimm_api && $js", null)
+    }
+
+    private suspend fun request(js: (Int) -> String): EbookEvent.Narration? {
+        if (webView() == null) return null
+        val req = requests.incrementAndGet()
+        val reply = CompletableDeferred<EbookEvent.Narration>()
+        replies[req] = reply
+        try {
+            call(js(req))
+            return withTimeoutOrNull(NARRATION_TIMEOUT_MS) { reply.await() }
+        } finally {
+            replies.remove(req)
+        }
+    }
+
+    internal fun onReply(reply: EbookEvent.Narration) {
+        replies[reply.req]?.complete(reply)
+    }
+}
+
+private const val NARRATION_TIMEOUT_MS = 20_000L
 
 internal const val ORIGIN = "https://appassets.androidplatform.net"
 
@@ -275,7 +342,13 @@ private fun readerWebView(
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(this, "grimm", setOf(ORIGIN)) { _, message, _, isMainFrame, _ ->
                 // Book sections are same-origin frames; only our own page may talk to the app.
-                if (isMainFrame) message.data?.let { parse(it) }?.let(onEvent)
+                if (isMainFrame) {
+                    when (val event = message.data?.let { parse(it) }) {
+                        null -> Unit
+                        is EbookEvent.Narration -> controller.narration.onReply(event)
+                        else -> onEvent(event)
+                    }
+                }
             }
         }
         controller.webView = this
@@ -416,6 +489,7 @@ internal fun parse(data: String): EbookEvent? {
         "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
         "selection" -> parseSelection(o)
         "search" -> parseSearch(o)
+        "narration" -> parseNarration(o)
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")
         else -> null
     }
@@ -427,6 +501,19 @@ private fun parseSelection(o: JsonObject): EbookEvent? {
     val cfi = o.str("cfi")?.takeIf { it.startsWith("epubcfi(") } ?: return null
     val over = o["over"]?.jsonArray?.mapNotNull { it.jsonPrimitive.longOrNull }.orEmpty()
     return EbookEvent.Selection(text.take(MAX_SELECTION_CHARS), cfi, over)
+}
+
+private fun parseNarration(o: JsonObject): EbookEvent? {
+    val req = o["req"]?.jsonPrimitive?.intOrNull ?: return null
+    val chunks =
+        o["chunks"]?.jsonArray?.mapNotNull { e ->
+            val item = e as? JsonObject ?: return@mapNotNull null
+            val cfi = item.str("cfi")?.takeIf { it.startsWith("epubcfi(") } ?: return@mapNotNull null
+            val text = item.str("text")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            NarrationText(text, cfi, item["section"]?.jsonPrimitive?.intOrNull ?: 0)
+        }
+    val ok = o["ok"]?.jsonPrimitive?.booleanOrNull ?: (o["error"] == null)
+    return EbookEvent.Narration(req, ok, if (o["error"] != null) null else chunks.orEmpty())
 }
 
 private fun parseSearch(o: JsonObject): EbookEvent.Search? {

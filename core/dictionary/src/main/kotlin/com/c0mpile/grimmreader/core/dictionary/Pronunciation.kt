@@ -6,7 +6,12 @@ import android.media.MediaPlayer
 import android.net.Uri
 import com.c0mpile.grimmreader.core.common.AppScope
 import com.c0mpile.grimmreader.core.common.IoDispatcher
+import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SecretStore
+import com.c0mpile.grimmreader.core.datastore.SpeechProvider
+import com.c0mpile.grimmreader.core.tts.NarrationController
+import com.c0mpile.grimmreader.core.tts.SpeechUnavailableException
+import com.c0mpile.grimmreader.core.tts.SystemSpeech
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -16,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -44,7 +50,8 @@ sealed interface PronunciationState {
 }
 
 /**
- * Speaks a looked-up word or a selected passage with ElevenLabs text-to-speech. Runs only when the user taps a
+ * Speaks a looked-up word or a selected passage with the text-to-speech chosen in Settings: System (any installed
+ * Android engine, no network call from the app) or ElevenLabs. With neither on, it says so. Runs only when the user taps a
  * speaker icon and has saved an API key and a voice ID (Keystore-encrypted in [SecretStore]); the audio is cached
  * per text so a repeat costs nothing. Uses the guarded client; nothing happens in the background.
  */
@@ -55,6 +62,9 @@ class Pronunciation
         @ApplicationContext private val context: Context,
         private val client: dagger.Lazy<OkHttpClient>,
         private val secrets: SecretStore,
+        private val prefs: AppPreferences,
+        private val system: SystemSpeech,
+        private val narration: NarrationController,
         @IoDispatcher private val io: CoroutineDispatcher,
         @AppScope private val scope: CoroutineScope,
     ) {
@@ -99,6 +109,17 @@ class Pronunciation
             job =
                 scope.launch {
                     try {
+                        when (prefs.speechPrefs.first().provider) {
+                            SpeechProvider.SYSTEM -> return@launch speakWithSystem(text)
+                            SpeechProvider.NONE -> {
+                                _state.value =
+                                    PronunciationState.Failed(
+                                        "Text to speech is off. Turn on System or ElevenLabs in Settings → Text to speech.",
+                                    )
+                                return@launch
+                            }
+                            SpeechProvider.ELEVENLABS -> Unit
+                        }
                         val key = secrets.get(KEY_NAME)
                         if (key.isNullOrBlank()) {
                             _state.value = PronunciationState.Failed("Add an ElevenLabs API key in Settings → Pronunciation.")
@@ -117,6 +138,18 @@ class Pronunciation
                         _state.value = PronunciationState.Failed(e.message?.takeIf { it.isNotBlank() } ?: "Pronunciation failed")
                     }
                 }
+        }
+
+        private suspend fun speakWithSystem(text: String) {
+            narration.pause()
+            try {
+                system.say(text)
+                _state.value = PronunciationState.Idle
+            } catch (e: SpeechUnavailableException) {
+                _state.value = PronunciationState.Failed(e.message ?: "The speech engine is not available.")
+            } catch (e: IOException) {
+                _state.value = PronunciationState.Failed(e.message ?: "The speech engine failed.")
+            }
         }
 
         /** Stops what is being fetched or played. */

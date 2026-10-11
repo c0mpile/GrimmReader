@@ -21,6 +21,20 @@ import kotlinx.coroutines.flow.map
 /** Whether a server is connected; the app starts as a local reader. */
 enum class SetupState { LOCAL_ONLY, SERVER }
 
+/** Which text-to-speech backs pronunciation, Read aloud and narration; at most one is on. */
+enum class SpeechProvider { ELEVENLABS, SYSTEM, NONE }
+
+/** Text-to-speech choices: the provider, and for [SpeechProvider.SYSTEM] the engine, voice, speed and pitch. */
+data class SpeechPrefs(
+    val provider: SpeechProvider = SpeechProvider.ELEVENLABS,
+    /** Package name of the Android TTS engine; null = the system default engine. */
+    val engine: String? = null,
+    /** Voice name within that engine; null = the engine's default voice. */
+    val voice: String? = null,
+    val rate: Float = 1f,
+    val pitch: Float = 1f,
+)
+
 /** Non-secret app settings. Secrets live in [SecretStore]. */
 class AppPreferences(
     private val store: DataStore<Preferences>,
@@ -60,6 +74,41 @@ class AppPreferences(
                 turnZone = p[TURN_ZONE] ?: defaults.turnZone,
             )
         }
+
+    val speechPrefs: Flow<SpeechPrefs> =
+        store.data.map { p ->
+            SpeechPrefs(
+                provider = enumOr(p[SPEECH_PROVIDER], SpeechProvider.ELEVENLABS),
+                engine = p[SPEECH_ENGINE],
+                voice = p[SPEECH_VOICE],
+                rate = p[SPEECH_RATE] ?: 1f,
+                pitch = p[SPEECH_PITCH] ?: 1f,
+            )
+        }
+
+    suspend fun setSpeechProvider(provider: SpeechProvider) {
+        store.edit { it[SPEECH_PROVIDER] = provider.name }
+    }
+
+    /** Picking another engine drops the voice, which belongs to the old one. */
+    suspend fun setSpeechEngine(engine: String?) {
+        store.edit {
+            if (engine == null) it.remove(SPEECH_ENGINE) else it[SPEECH_ENGINE] = engine
+            it.remove(SPEECH_VOICE)
+        }
+    }
+
+    suspend fun setSpeechVoice(voice: String?) {
+        store.edit { if (voice == null) it.remove(SPEECH_VOICE) else it[SPEECH_VOICE] = voice }
+    }
+
+    suspend fun setSpeechRate(rate: Float) {
+        store.edit { it[SPEECH_RATE] = rate }
+    }
+
+    suspend fun setSpeechPitch(pitch: Float) {
+        store.edit { it[SPEECH_PITCH] = pitch }
+    }
 
     val libraryView: Flow<LibraryView> =
         store.data.map { p ->
@@ -168,5 +217,10 @@ class AppPreferences(
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
         val BOOK_FOLDERS = stringSetPreferencesKey("book_folders")
         val DOWNLOAD_FOLDER = stringPreferencesKey("download_folder")
+        val SPEECH_PROVIDER = stringPreferencesKey("speech_provider")
+        val SPEECH_ENGINE = stringPreferencesKey("speech_engine")
+        val SPEECH_VOICE = stringPreferencesKey("speech_voice")
+        val SPEECH_RATE = floatPreferencesKey("speech_rate")
+        val SPEECH_PITCH = floatPreferencesKey("speech_pitch")
     }
 }

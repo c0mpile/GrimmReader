@@ -4,10 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -16,7 +14,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,8 +24,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,13 +71,8 @@ fun SettingsScreen(
             )
             OutlinedButton(onClick = onOpenDictionaries) { Text("Manage dictionaries") }
             HorizontalDivider()
-            Section("Pronunciation")
-            PronunciationSettings(
-                viewModel.hasPronunciationKey.collectAsStateWithLifecycle().value == true,
-                viewModel.pronunciationVoice.collectAsStateWithLifecycle().value,
-                viewModel::setPronunciationKey,
-                viewModel::setPronunciationVoice,
-            )
+            Section("Text to speech")
+            SpeechSettings()
             HorizontalDivider()
             Section("Server")
             val server = state.server
@@ -159,49 +149,3 @@ private fun ThemeMode.label() =
         ThemeMode.DARK -> "Dark"
         ThemeMode.AMOLED -> "AMOLED"
     }
-
-@Composable
-private fun PronunciationSettings(
-    hasKey: Boolean,
-    voice: String?,
-    onSave: (String?) -> Unit,
-    onSaveVoice: (String?) -> Unit,
-) {
-    var key by remember { mutableStateOf("") }
-    var voiceText by remember(voice) { mutableStateOf(voice.orEmpty()) }
-    Text(
-        "The speaker icon in the dictionary says the word aloud with ElevenLabs. Only the word you tap is sent, " +
-            "over HTTPS, and only when you tap. Your ElevenLabs API key is stored encrypted on this device.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    OutlinedTextField(
-        value = key,
-        onValueChange = { key = it },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text(if (hasKey) "API key saved; enter a new one to replace" else "ElevenLabs API key") },
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            onClick = {
-                onSave(key)
-                key = ""
-            },
-            enabled = key.isNotBlank(),
-        ) { Text("Save key") }
-        if (hasKey) OutlinedButton(onClick = { onSave(null) }) { Text("Remove key") }
-    }
-    OutlinedTextField(
-        value = voiceText,
-        onValueChange = { voiceText = it },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text("ElevenLabs voice ID") },
-        supportingText = { Text("A voice your plan can use through the API (free plans: default voices only).") },
-        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-    )
-    Button(onClick = { onSaveVoice(voiceText) }, enabled = voiceText.trim() != voice.orEmpty()) { Text("Save voice") }
-}

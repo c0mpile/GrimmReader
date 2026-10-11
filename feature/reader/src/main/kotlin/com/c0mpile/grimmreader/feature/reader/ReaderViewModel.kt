@@ -22,6 +22,7 @@ import com.c0mpile.grimmreader.core.model.Highlight
 import com.c0mpile.grimmreader.core.model.Locator
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ReadingDirection
+import com.c0mpile.grimmreader.core.tts.NarrationController
 import com.c0mpile.grimmreader.reader.comic.ArchivePageSource
 import com.c0mpile.grimmreader.reader.comic.StreamingPageSource
 import com.c0mpile.grimmreader.reader.ebook.TocEntry
@@ -122,6 +123,7 @@ class ReaderViewModel
         private val highlightRepo: HighlightRepository,
         private val dictionaries: Dictionaries,
         val pronunciation: Pronunciation,
+        val narration: NarrationController,
         notebook: NotebookRepository,
         prefs: AppPreferences,
     ) : ViewModel() {
@@ -397,6 +399,7 @@ class ReaderViewModel
         }
 
         override fun onCleared() {
+            narration.release(this)
             pending.value?.let { locator -> kotlinx.coroutines.runBlocking { progress.save(bookId, locator) } }
             source?.close()
             handle?.close()

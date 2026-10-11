@@ -11,7 +11,6 @@ import com.c0mpile.grimmreader.core.data.server.ServerRepository
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.database.entity.ServerEntity
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
-import com.c0mpile.grimmreader.core.dictionary.Pronunciation
 import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.LocalLibrary
 import com.c0mpile.grimmreader.core.model.ServerStatus
@@ -46,7 +45,6 @@ class SettingsViewModel
         session: ServerSession,
         private val folders: FolderLibrary,
         private val localLibraries: LocalLibraryRepository,
-        private val pronunciation: Pronunciation,
     ) : ViewModel() {
         private val scan = MutableStateFlow(ScanState())
 
@@ -59,20 +57,6 @@ class SettingsViewModel
             ) { (appearance, server, status), libraries, (downloadFolder, setAside), scan ->
                 SettingsUiState(appearance, server, status, libraries, downloadFolder, setAside, scan.running, scan.message)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState())
-
-        /** Whether an ElevenLabs API key is saved (null until read). */
-        val hasPronunciationKey: StateFlow<Boolean?> = pronunciation.hasKey
-
-        init {
-            viewModelScope.launch { pronunciation.refreshKey() }
-        }
-
-        /** The saved ElevenLabs voice ID, if any. */
-        val pronunciationVoice: StateFlow<String?> = pronunciation.voiceId
-
-        fun setPronunciationVoice(id: String?) = viewModelScope.launch { pronunciation.setVoiceId(id) }
-
-        fun setPronunciationKey(key: String?) = viewModelScope.launch { pronunciation.setApiKey(key) }
 
         fun addLibrary(name: String) = viewModelScope.launch { localLibraries.create(name) }
 

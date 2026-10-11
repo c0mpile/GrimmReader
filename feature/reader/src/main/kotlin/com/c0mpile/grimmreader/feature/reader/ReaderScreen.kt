@@ -1,8 +1,13 @@
 package com.c0mpile.grimmreader.feature.reader
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
@@ -47,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -83,6 +90,8 @@ import com.c0mpile.grimmreader.core.designsystem.theme.paperGrain
 import com.c0mpile.grimmreader.core.model.Bookmark
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
+import com.c0mpile.grimmreader.core.tts.NarrationMeta
+import com.c0mpile.grimmreader.core.tts.NarrationStatus
 import com.c0mpile.grimmreader.reader.ebook.EbookController
 import com.c0mpile.grimmreader.reader.ebook.EbookCss
 import com.c0mpile.grimmreader.reader.ebook.EbookEvent
@@ -102,6 +111,8 @@ private sealed interface Overlay {
 
     data object Settings : Overlay
 
+    data object Narration : Overlay
+
     data class Left(
         val tab: LeftTab,
     ) : Overlay
@@ -116,6 +127,7 @@ fun ReaderScreen(
     bookId: Long,
     onBack: () -> Unit,
     onOpenDictionaries: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: ReaderViewModel = hiltViewModel<ReaderViewModel, ReaderViewModel.Factory> { it.create(bookId) },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -132,12 +144,8 @@ fun ReaderScreen(
     val controller = remember(ebook?.book, ebook?.restoreKey) { EbookController() }
     var pageReady by remember(controller) { mutableStateOf(false) }
     PageMarks(controller, pageReady, state.bookmarks.mapNotNull { it.cfi }, state.highlights.map { HighlightMark(it.id, it.cfi, it.color) })
-    LaunchedEffect(state.message) {
-        state.message?.let {
-            snackbar.showSnackbar(it, duration = SnackbarDuration.Short)
-            viewModel.messageShown()
-        }
-    }
+    NarrationHost(viewModel, controller, pageReady, state, snackbar)
+    Snack(state.message, SnackbarDuration.Short, snackbar, viewModel::messageShown)
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
     // Dropping the selection also clears it in the page; the selected word stays marked while its definitions are shown.
     val dropSelection = {
@@ -175,6 +183,7 @@ fun ReaderScreen(
                         onNext = { turnPage(1, state, controller, viewModel) },
                         onSeekFraction = controller::goToFraction,
                         onSeekPage = viewModel::goToPage,
+                        onNarrate = { overlay = if (overlay == Overlay.Narration) Overlay.None else Overlay.Narration },
                     ),
             ) {
                 QuickSettings(
@@ -197,6 +206,12 @@ fun ReaderScreen(
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 64.dp))
     }
     lookup?.let { LookupSheet(it, viewModel, onOpenDictionaries, dropSelection) }
+    if (overlay == Overlay.Narration) {
+        NarrationDialog(viewModel, onOpenSettings = {
+            close()
+            onOpenSettings()
+        }, onDismiss = close)
+    }
     if (overlay == Overlay.Settings) {
         SettingsDialog(prefs, textSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
     }
@@ -209,6 +224,104 @@ fun ReaderScreen(
             dismissButton = { TextButton(onClick = viewModel::dismissOffer) { Text("Stay here") } },
         )
     }
+}
+
+/** The reading settings dialog and the narration sheet. */
+@Composable
+private fun OverlayDialogs(
+    overlay: Overlay,
+    prefs: ReaderPrefs,
+    textSettings: Boolean,
+    viewModel: ReaderViewModel,
+    onOpenSettings: () -> Unit,
+    close: () -> Unit,
+) {
+    when (overlay) {
+        Overlay.Narration -> NarrationDialog(viewModel, onOpenSettings = { close().also { onOpenSettings() } }, onDismiss = close)
+        Overlay.Settings -> SettingsDialog(prefs, textSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
+        else -> Unit
+    }
+}
+
+/**
+ * Hands the open ebook to the narration controller (and takes it back when the page goes away), keeps the
+ * notification's title current and shows its messages.
+ */
+@Composable
+private fun NarrationHost(
+    viewModel: ReaderViewModel,
+    controller: EbookController,
+    pageReady: Boolean,
+    state: ReaderUiState,
+    snackbar: SnackbarHostState,
+) {
+    val narration = viewModel.narration
+    val meta = NarrationMeta(state.title, state.chapter)
+    val latestMeta by rememberUpdatedState(meta)
+    DisposableEffect(controller, pageReady) {
+        if (pageReady) narration.attach(viewModel, EbookNarrationSource(controller), latestMeta)
+        onDispose { narration.detach(viewModel) }
+    }
+    LaunchedEffect(meta) { narration.updateMeta(viewModel, meta) }
+    Snack(
+        narration.state
+            .collectAsStateWithLifecycle()
+            .value.message,
+        SnackbarDuration.Long,
+        snackbar,
+        narration::messageShown,
+    )
+}
+
+/** Shows [message] once in the snackbar, then reports it as shown. */
+@Composable
+private fun Snack(
+    message: String?,
+    duration: SnackbarDuration,
+    snackbar: SnackbarHostState,
+    shown: () -> Unit,
+) {
+    LaunchedEffect(message) {
+        message?.let {
+            snackbar.showSnackbar(it, duration = duration)
+            shown()
+        }
+    }
+}
+
+/** The narration sheet; asks for the notification permission first (Android 13+), which the playback controls live in. */
+@Composable
+private fun NarrationDialog(
+    viewModel: ReaderViewModel,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val narration = viewModel.narration
+    val state by narration.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { narration.toggle() }
+    val toggle = {
+        val needsPermission =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                state.status == NarrationStatus.IDLE &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) permission.launch(Manifest.permission.POST_NOTIFICATIONS) else narration.toggle()
+    }
+    NarrationSheet(
+        state,
+        NarrationActions(
+            onToggle = toggle,
+            onPrevious = { narration.skip(forward = false) },
+            onNext = { narration.skip(forward = true) },
+            onStop = narration::stop,
+            onRate = narration::setRate,
+            onSleepMinutes = narration.sleepTimer::setMinutes,
+            onSleepChapter = narration.sleepTimer::setEndOfChapter,
+            onSleepOff = narration.sleepTimer::cancel,
+            onOpenSettings = onOpenSettings,
+        ),
+        onDismiss,
+    )
 }
 
 /** Tells the page which bookmarks and highlights to mark, once it is ready and whenever they change. */
@@ -463,7 +576,7 @@ private fun Content(
                                 viewModel.selection.select(TextSelection(event.text, event.cfi, event.over))
                             }
                             EbookEvent.SelectionCleared -> viewModel.selection.clear()
-                            is EbookEvent.Failed -> Unit
+                            is EbookEvent.Failed, is EbookEvent.Narration -> Unit
                         }
                     },
                     onToggleChrome = onToggleChrome,
@@ -523,6 +636,7 @@ private class ChromeActions(
     val onNext: () -> Unit,
     val onSeekFraction: (Float) -> Unit,
     val onSeekPage: (Int) -> Unit,
+    val onNarrate: () -> Unit,
 )
 
 /**
@@ -564,6 +678,7 @@ private fun Chrome(
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (state.content is ReaderContent.Ebook) ChromeButton(LucideIcons.Volume2, "Read aloud", onClick = actions.onNarrate)
                 ChromeButton(LucideIcons.ChevronLeft, "Previous page", onClick = actions.onPrev)
                 PositionBar(state, actions.onSeekFraction, actions.onSeekPage, Modifier.weight(1f))
                 ChromeButton(LucideIcons.ChevronRight, "Next page", onClick = actions.onNext)

@@ -241,6 +241,170 @@ view.addEventListener('relocate', e => {
     })
 })
 
+// Narration. Walks the sections in reading order without rendering them (a detached document per section) and
+// hands the app passages of one or two sentences, each with the CFI of its range. The app speaks them, queued far
+// ahead, and tells us which one is being spoken so it can be marked and turned to.
+const NARR_BLOCKS = new Set([
+    'address', 'article', 'aside', 'blockquote', 'caption', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'figcaption',
+    'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'li', 'main', 'nav', 'ol',
+    'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'ul',
+])
+const NARR_SKIP = new Set(['script', 'style', 'head', 'rt', 'rp', 'svg', 'math', 'noscript', 'template', 'audio', 'video'])
+const NARR_TARGET = 120, NARR_MAX = 600, NARR_HARD = 1200
+const NARR_KEY = 'grimm-narration', NARR_COLOR = 'rgb(250, 204, 21)'
+let narr = null
+let narrChunk = null
+let narrRun = 0
+const narrReply = (req, body) => post({ t: 'narration', req, ...body })
+
+const narrBuildChunks = async index => {
+    const section = view.book.sections[index]
+    if (!section || section.linear === 'no') return []
+    let doc
+    try { doc = await section.createDocument() } catch { return [] }
+    if (!doc?.body) return []
+    const runs = []
+    let cur = null
+    const flush = () => { if (cur && cur.text.trim()) runs.push(cur); cur = null }
+    const walk = (el, block) => {
+        for (let n = el.firstChild; n; n = n.nextSibling) {
+            if (n.nodeType === 3) {
+                if (!n.data) continue
+                if (!cur || cur.block !== block) { flush(); cur = { block, parts: [], text: '' } }
+                cur.parts.push({ node: n, start: cur.text.length })
+                cur.text += n.data
+            } else if (n.nodeType === 1) {
+                const name = n.localName?.toLowerCase()
+                if (NARR_SKIP.has(name) || n.hasAttribute('hidden') || n.getAttribute('aria-hidden') === 'true') continue
+                // Footnote markers ("1", "[2]") are not read.
+                if (name === 'a' && n.parentElement?.localName === 'sup' && /^\[?\d+\]?$/.test(n.textContent.trim())) continue
+                if (name === 'br') { flush(); continue }
+                const isBlock = NARR_BLOCKS.has(name)
+                if (isBlock) flush()
+                walk(n, isBlock ? n : block)
+                if (isBlock) flush()
+            }
+        }
+    }
+    walk(doc.body, doc.body)
+    flush()
+    const chunks = []
+    for (const run of runs) {
+        const lang = run.block.closest?.('[lang]')?.getAttribute('lang') || doc.documentElement.getAttribute('lang') || undefined
+        let segmenter
+        try { segmenter = new Intl.Segmenter(lang, { granularity: 'sentence' }) } catch { segmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' }) }
+        const at = offset => {
+            // The text node and offset of a character offset of the run.
+            let part = run.parts[0]
+            for (const p of run.parts) { if (p.start <= offset) part = p; else break }
+            return [part.node, Math.min(offset - part.start, part.node.data.length)]
+        }
+        const emit = (from, to) => {
+            while (to - from > NARR_HARD) {
+                let cut = run.text.lastIndexOf(' ', from + NARR_HARD)
+                if (cut <= from) cut = from + NARR_HARD
+                emit(from, cut)
+                from = cut
+            }
+            while (from < to && /\s/.test(run.text[from])) from++
+            while (to > from && /\s/.test(run.text[to - 1])) to--
+            const text = run.text.slice(from, to).replace(/\s+/g, ' ')
+            if (!/[\p{L}\p{N}]/u.test(text)) return
+            const range = doc.createRange()
+            const [sn, so] = at(from)
+            // The end is looked up on the last character, so it stays in the node that holds it.
+            const [en, eo] = at(to - 1)
+            range.setStart(sn, so)
+            range.setEnd(en, eo + 1)
+            try { chunks.push({ text, cfi: view.getCFI(index, range), section: index }) } catch { /* no CFI for this range */ }
+        }
+        let acc = null
+        for (const { index: i, segment } of segmenter.segment(run.text)) {
+            if (acc && acc.e - acc.s + segment.length > NARR_MAX) { emit(acc.s, acc.e); acc = null }
+            acc = acc ? { s: acc.s, e: i + segment.length } : { s: i, e: i + segment.length }
+            if (acc.e - acc.s >= NARR_TARGET) { emit(acc.s, acc.e); acc = null }
+        }
+        if (acc) emit(acc.s, acc.e)
+    }
+    return chunks
+}
+
+// Where reading starts: the visible page, or a given CFI (just after it when `after`).
+const narrationBegin = async (req, from, after) => {
+    try {
+        narr = null
+        const startCfi = typeof from === 'string' && from ? (after ? CFI.collapse(from, true) : CFI.collapse(from)) : (visible ? CFI.collapse(visible) : null)
+        const index = startCfi ? (await view.resolveCFI(startCfi)).index : 0
+        narr = { index, startCfi, queue: [], done: false, first: true }
+        narrReply(req, { ok: true })
+    } catch (err) {
+        narrReply(req, { ok: false, error: String(err) })
+    }
+}
+const narrationNext = async (req, count) => {
+    const n = narr
+    try {
+        if (!n) return narrReply(req, { chunks: [], error: 'not started' })
+        while (n.queue.length < count && !n.done) {
+            if (n.index >= view.book.sections.length) { n.done = true; break }
+            let chunks = await narrBuildChunks(n.index)
+            if (n.first) {
+                n.first = false
+                // The first section starts at the page: keep what ends after its start.
+                if (n.startCfi) chunks = chunks.filter(c => CFI.compare(CFI.collapse(c.cfi, true), n.startCfi) > 0)
+            }
+            n.queue.push(...chunks)
+            n.index++
+        }
+        if (n !== narr) return
+        narrReply(req, { chunks: n.queue.splice(0, count) })
+    } catch (err) {
+        narrReply(req, { chunks: [], error: String(err) })
+    }
+}
+
+const onVisiblePage = cfi => {
+    if (!visible) return false
+    try {
+        const p = CFI.collapse(cfi)
+        return CFI.compare(p, CFI.collapse(visible)) >= 0 && CFI.compare(p, CFI.collapse(visible, true)) < 0
+    } catch { return false }
+}
+const narrationDraw = async chunk => {
+    try {
+        const r = await view.resolveCFI(chunk.cfi)
+        const c = view.renderer.getContents().find(x => x.index === r.index)
+        if (!c?.overlayer) return
+        c.overlayer.remove(NARR_KEY)
+        c.overlayer.add(NARR_KEY, r.anchor(c.doc), Overlayer.highlight, { color: NARR_COLOR })
+    } catch { /* section not shown */ }
+}
+const narrationFollow = async (chunk, run) => {
+    try {
+        if (!onVisiblePage(chunk.cfi)) {
+            await view.goTo(chunk.cfi)
+            if (run !== narrRun) return
+        }
+        await narrationDraw(chunk)
+    } catch { /* the page is not there (any more) */ }
+}
+// Only a visible page is turned and drawn; a hidden one (screen off, app in the background) catches up on return.
+const narrationSpoken = chunk => {
+    if (!chunk || typeof chunk.cfi !== 'string') return
+    narrChunk = chunk
+    const run = ++narrRun
+    if (document.visibilityState === 'visible') narrationFollow(chunk, run)
+}
+const narrationClear = () => {
+    narrChunk = null
+    narrRun++
+    for (const { overlayer } of view.renderer?.getContents?.() ?? []) overlayer?.remove(NARR_KEY)
+}
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && narrChunk) narrationFollow(narrChunk, ++narrRun)
+})
+view.addEventListener('create-overlay', e => { if (narrChunk && narrChunk.section === e.detail.index) narrationDraw(narrChunk) })
+
 window.grimm_api = {
     next: () => view.next(),
     prev: () => view.prev(),
@@ -258,6 +422,10 @@ window.grimm_api = {
     endSelection,
     clearSelection,
     setHighlights,
+    narrationBegin,
+    narrationNext,
+    narrationSpoken,
+    narrationClear,
 }
 
 try {

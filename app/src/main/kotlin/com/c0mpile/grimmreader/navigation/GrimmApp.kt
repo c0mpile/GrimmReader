@@ -241,6 +241,7 @@ private fun Screens(
                         key.bookId,
                         onBack = { backStack.removeLastOrNull() },
                         onOpenDictionaries = { backStack.add(DictionariesKey) },
+                        onOpenSettings = { backStack.add(SettingsKey) },
                     )
                 }
             },

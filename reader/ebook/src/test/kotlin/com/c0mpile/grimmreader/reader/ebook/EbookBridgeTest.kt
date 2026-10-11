@@ -99,4 +99,21 @@ class EbookBridgeTest {
         assertNull(parse("""{"t":"selection","text":"x","cfi":"javascript:alert(1)"}"""))
         assertNull(parse("""{"t":"selection","text":"x"}"""))
     }
+
+    @Test fun narrationAnswersCarryPassagesOrAFailure() {
+        val cfi = "epubcfi(/6/4!/4/2,/1:0,/1:5)"
+        val ok =
+            parse(
+                """{"t":"narration","req":4,"chunks":[{"text":"Hello there.","cfi":"$cfi","section":1},{"text":"","cfi":"$cfi","section":1}]}""",
+            )
+        assertEquals(EbookEvent.Narration(4, true, listOf(NarrationText("Hello there.", cfi, 1))), ok)
+        assertEquals(EbookEvent.Narration(5, true, emptyList()), parse("""{"t":"narration","req":5,"ok":true}"""))
+        assertEquals(EbookEvent.Narration(6, false, null), parse("""{"t":"narration","req":6,"ok":false,"error":"x"}"""))
+        assertNull(parse("""{"t":"narration","chunks":[]}"""))
+        // A passage with a locator that is not a CFI is dropped.
+        assertEquals(
+            EbookEvent.Narration(7, true, emptyList()),
+            parse("""{"t":"narration","req":7,"chunks":[{"text":"x","cfi":"javascript:1","section":0}]}"""),
+        )
+    }
 }

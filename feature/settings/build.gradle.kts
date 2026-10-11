@@ -8,5 +8,6 @@ android {
 
 dependencies {
     implementation(projects.core.dictionary)
+    implementation(projects.core.tts)
     implementation(libs.androidx.activity.compose)
 }
