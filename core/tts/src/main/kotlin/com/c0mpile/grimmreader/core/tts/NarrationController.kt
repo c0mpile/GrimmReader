@@ -1,6 +1,7 @@
 package com.c0mpile.grimmreader.core.tts
 
 import android.content.Context
+import android.util.Log
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
 import com.c0mpile.grimmreader.core.datastore.SpeechProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -292,6 +293,7 @@ class NarrationController internal constructor(
                 for (item in todo) {
                     if (mine != queue.epoch) return@withLock
                     try {
+                        Log.d(TAG, "enqueue seq=${item.seq} skip=${item.skip} chars=${item.text.length}")
                         speech.enqueue(item.text, "n$mine:${item.seq}")
                     } catch (e: CancellationException) {
                         throw e
@@ -307,6 +309,7 @@ class NarrationController internal constructor(
 
     private fun onSpeech(event: SpeechEvent) {
         if (!playing) return
+        Log.d(TAG, "event $event")
         val (epoch, seq) = queue.parse(event.id) ?: return
         if (epoch != queue.epoch) return
         when (event) {
@@ -338,6 +341,7 @@ class NarrationController internal constructor(
     private fun chapterEnded(): Boolean = queue.head?.let { sleepTimer.chapterEnded(it.chunk.section) } == true
 
     private companion object {
+        const val TAG = "GrimmNarration"
         const val BATCH = 4
         const val TICK_MS = 300L
         const val AHEAD_CHARS = 3_000

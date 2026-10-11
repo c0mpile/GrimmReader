@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.tts
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -187,6 +188,7 @@ internal class BufferedSpeech(
         /** The engine cannot do this: end the session and hand what is left to the fallback (nothing when it was closed on purpose). */
         private fun fail() {
             if (closed.get()) return
+            Log.w(TAG, "buffered narration failed: ${unfinished.size} passages go to direct speech")
             val rest = unfinished.toList()
             close()
             ended(this)
@@ -229,6 +231,7 @@ internal class BufferedSpeech(
                 fail()
                 return false
             }
+            Log.d(TAG, "rendered ${item.id} chars=${text.length} ms=${wav.durationMs} last=$last")
             aheadMs.addAndGet(wav.durationMs)
             clips.trySend(Clip(item, file, wav, last, text.length))
             return true
@@ -287,6 +290,7 @@ internal class BufferedSpeech(
                 // A passage rendered in pieces has one mark: it starts with the first piece and ends with the last.
                 val m = mark?.takeIf { it.id == clip.item.id } ?: Mark(clip.item.id, written, trackNo).also { marks.add(it) }
                 mark = m
+                Log.d(TAG, "play ${clip.item.id} chars=${clip.chars} frames=${clip.wav.dataLength / clip.wav.frameSize}")
                 m.pieces.add(clip.chars to clip.wav.dataLength / clip.wav.frameSize)
                 val bytes = writeClip(t, clip)
                 if (bytes < 0) {
@@ -356,6 +360,7 @@ internal class BufferedSpeech(
     }
 
     companion object {
+        private const val TAG = "GrimmNarration"
         const val SYNTH_PREFIX = "syn-"
         private const val AHEAD_MS = 90_000L
         private const val RENDER_TIMEOUT_MS = 90_000L
