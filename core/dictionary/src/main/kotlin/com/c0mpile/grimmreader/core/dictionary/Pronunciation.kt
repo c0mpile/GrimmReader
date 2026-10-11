@@ -44,9 +44,9 @@ sealed interface PronunciationState {
 }
 
 /**
- * Speaks a looked-up word with ElevenLabs text-to-speech. Runs only when the user taps the speaker icon and
- * has saved an API key and a voice ID (Keystore-encrypted in [SecretStore]); the audio is cached per word so a repeat costs
- * nothing. Uses the guarded client; nothing happens in the background.
+ * Speaks a looked-up word or a selected passage with ElevenLabs text-to-speech. Runs only when the user taps a
+ * speaker icon and has saved an API key and a voice ID (Keystore-encrypted in [SecretStore]); the audio is cached
+ * per text so a repeat costs nothing. Uses the guarded client; nothing happens in the background.
  */
 @Singleton
 class Pronunciation
@@ -88,9 +88,10 @@ class Pronunciation
             refreshKey()
         }
 
+        /** Speaks [passage]; one that is longer than [MAX_CHARS] is cut at a word boundary. */
         @Synchronized
-        fun speak(word: String) {
-            val text = word.trim().take(MAX_CHARS)
+        fun speak(passage: String) {
+            val text = cut(passage.trim())
             if (text.isEmpty()) return
             job?.cancel()
             stopPlayer()
@@ -118,8 +119,23 @@ class Pronunciation
                 }
         }
 
+        /** Stops what is being fetched or played. */
+        @Synchronized
+        fun stop() {
+            job?.cancel()
+            stopPlayer()
+            _state.value = PronunciationState.Idle
+        }
+
         fun dismissError() {
             if (_state.value is PronunciationState.Failed) _state.value = PronunciationState.Idle
+        }
+
+        private fun cut(text: String): String {
+            if (text.length <= MAX_CHARS) return text
+            val head = text.take(MAX_CHARS)
+            val space = head.lastIndexOf(' ')
+            return if (space > MAX_CHARS / 2) head.take(space) else head
         }
 
         private fun fileFor(
@@ -253,13 +269,13 @@ class Pronunciation
         }
 
         companion object {
+            const val MAX_CHARS = 1000
             const val MODEL_ID = "eleven_v4_turbo"
             private const val KEY_NAME = "elevenlabs_api_key"
             private const val VOICE_NAME = "elevenlabs_voice_id"
             private const val ENDPOINT = "https://api.elevenlabs.io/v1/text-to-speech"
             private const val FORMAT = "mp3_44100_64"
-            private const val MAX_CHARS = 100
-            private const val MAX_BYTES = 2 shl 20
+            private const val MAX_BYTES = 8 shl 20
             private const val HASH_CHARS = 32
             private const val HTTP_UNAUTHORIZED = 401
             private const val HTTP_PAYMENT = 402

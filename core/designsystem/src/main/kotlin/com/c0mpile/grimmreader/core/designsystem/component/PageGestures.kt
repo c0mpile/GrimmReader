@@ -48,7 +48,9 @@ data class PageTurns(
  * to the left. Multi-touch (pinch) and movements a child consumed (panning a zoomed page) are ignored.
  *
  * A touch held still for the long-press timeout goes to [onLongPress] (with where it is, in px) as soon as the
- * timeout passes; the rest of that touch is then ignored. With [onLongPress] null a long hold does nothing.
+ * timeout passes; the rest of that touch is then ignored, except that the finger's moves go to [onLongPressDrag]
+ * and its lift to [onLongPressEnd] (selecting text by long press and drag). With [onLongPress] null a long hold
+ * does nothing.
  *
  * The lambdas are captured once per [turns]; pass ones that read current state.
  */
@@ -57,13 +59,22 @@ fun Modifier.pageGestures(
     onTap: ((PageZone) -> Unit)?,
     onSwipe: (toLeft: Boolean) -> Unit,
     onLongPress: ((Offset) -> Unit)? = null,
+    onLongPressDrag: ((Offset) -> Unit)? = null,
+    onLongPressEnd: (() -> Unit)? = null,
 ): Modifier =
     pointerInput(turns, onTap != null, onLongPress != null) {
         val minSwipe = SWIPE_DP.dp.toPx()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val touch = Touch()
-            val lifted = if (onLongPress != null) followOrLongPress(down, touch, onLongPress) else follow(down, touch)
+            val lifted =
+                if (onLongPress !=
+                    null
+                ) {
+                    followOrLongPress(down, touch, onLongPress, onLongPressDrag, onLongPressEnd)
+                } else {
+                    follow(down, touch)
+                }
             val up = touch.up
             if (!lifted || up == null) return@awaitEachGesture
             val zone = turns.zone(down.position.x, size.width.toFloat())
@@ -86,12 +97,15 @@ private class Touch {
 
 /**
  * Like [follow], but a touch still held without moving when the long-press timeout passes goes to [onLongPress];
- * the rest of that touch is swallowed (false: neither a tap nor a swipe).
+ * the rest of that touch is swallowed (false: neither a tap nor a swipe), its moves go to [onDrag] and its end
+ * to [onEnd].
  */
 private suspend fun AwaitPointerEventScope.followOrLongPress(
     down: PointerInputChange,
     touch: Touch,
     onLongPress: (Offset) -> Unit,
+    onDrag: ((Offset) -> Unit)?,
+    onEnd: (() -> Unit)?,
 ): Boolean {
     val lifted = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { follow(down, touch) }
     if (lifted != null) return lifted
@@ -100,7 +114,9 @@ private suspend fun AwaitPointerEventScope.followOrLongPress(
     do {
         val event = awaitPointerEvent()
         event.changes.forEach { it.consume() }
+        event.changes.firstOrNull { it.id == down.id && it.pressed }?.let { onDrag?.invoke(it.position) }
     } while (event.changes.any { it.pressed })
+    onEnd?.invoke()
     return false
 }
 

@@ -209,6 +209,29 @@ data class BookmarkEntity(
     val deleted: Boolean = false,
 )
 
+/**
+ * A text highlight in an ebook at [cfi] (a range CFI, as the web reader's annotations use), with the [text] it
+ * covers and its `#RRGGBB` [color]. Local only for now: [serverId] is reserved for syncing with the server's
+ * annotations.
+ */
+@Entity(
+    tableName = "highlight",
+    foreignKeys = [ForeignKey(BookEntity::class, ["id"], ["bookId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("bookId")],
+)
+data class HighlightEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bookId: Long,
+    val serverId: Long? = null,
+    val cfi: String,
+    val text: String,
+    val color: String,
+    val chapter: String? = null,
+    /** Position (0..100) in the book, for ordering. */
+    val percent: Float? = null,
+    val createdAt: Long,
+)
+
 /** A server shelf ([magic] = rule-based, read-only) in server order. */
 @Entity(
     tableName = "shelf",

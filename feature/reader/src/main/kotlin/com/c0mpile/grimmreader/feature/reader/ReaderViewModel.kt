@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.feature.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.bookmark.BookmarkRepository
+import com.c0mpile.grimmreader.core.data.highlight.HighlightRepository
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.notebook.NotebookRepository
 import com.c0mpile.grimmreader.core.data.progress.ProgressRepository
@@ -17,6 +18,7 @@ import com.c0mpile.grimmreader.core.model.BookFile
 import com.c0mpile.grimmreader.core.model.BookFormat
 import com.c0mpile.grimmreader.core.model.BookSource
 import com.c0mpile.grimmreader.core.model.Bookmark
+import com.c0mpile.grimmreader.core.model.Highlight
 import com.c0mpile.grimmreader.core.model.Locator
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ReadingDirection
@@ -92,6 +94,7 @@ data class ReaderUiState(
     val bookmarks: List<Bookmark> = emptyList(),
     /** The bookmark on the current page, if any (drives the filled bookmark icon). */
     val bookmarkHere: Bookmark? = null,
+    val highlights: List<Highlight> = emptyList(),
     val message: String? = null,
     /** Page turns since the book was opened (drives the E-ink refresh flash). */
     val pageTurns: Int = 0,
@@ -116,6 +119,7 @@ class ReaderViewModel
         private val online: OnlineReading,
         private val documents: DocumentStore,
         private val bookmarkRepo: BookmarkRepository,
+        private val highlightRepo: HighlightRepository,
         private val dictionaries: Dictionaries,
         val pronunciation: Pronunciation,
         notebook: NotebookRepository,
@@ -142,6 +146,10 @@ class ReaderViewModel
         /** The dictionary sheet for long-pressed words. */
         val lookups = WordLookups(viewModelScope, dictionaries)
 
+        /** The text selection and what is done with it. */
+        val selection =
+            SelectionActions(viewModelScope, bookId, highlightRepo) { text -> _state.update { it.copy(message = text) } }
+
         /** Search and the server notebook, for the side panels. */
         val panels = PanelData(viewModelScope, notebook)
 
@@ -151,6 +159,12 @@ class ReaderViewModel
                 .observe(bookId)
                 .onEach { list -> _state.update { it.copy(bookmarks = list, bookmarkHere = here(list)) } }
                 .launchIn(viewModelScope)
+            highlightRepo
+                .observe(bookId)
+                .onEach { list ->
+                    selection.known = list
+                    _state.update { it.copy(highlights = list) }
+                }.launchIn(viewModelScope)
             // Push at most every 2 s of idle time; flush() covers pause and close.
             pending
                 .filterNotNull()

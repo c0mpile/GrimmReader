@@ -88,6 +88,7 @@ import com.c0mpile.grimmreader.reader.ebook.EbookCss
 import com.c0mpile.grimmreader.reader.ebook.EbookEvent
 import com.c0mpile.grimmreader.reader.ebook.EbookLayout
 import com.c0mpile.grimmreader.reader.ebook.EbookReader
+import com.c0mpile.grimmreader.reader.ebook.HighlightMark
 import com.c0mpile.grimmreader.reader.ebook.PageColors
 import com.c0mpile.grimmreader.reader.paged.PagedReader
 import kotlinx.coroutines.delay
@@ -120,6 +121,7 @@ fun ReaderScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.readerPrefs.collectAsStateWithLifecycle()
     val lookup by viewModel.lookups.current.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.current.collectAsStateWithLifecycle()
     var chrome by rememberSaveable { mutableStateOf(true) }
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
     var fullscreen by rememberSaveable { mutableStateOf(false) }
@@ -129,8 +131,7 @@ fun ReaderScreen(
     val ebook = state.content as? ReaderContent.Ebook
     val controller = remember(ebook?.book, ebook?.restoreKey) { EbookController() }
     var pageReady by remember(controller) { mutableStateOf(false) }
-    val bookmarkCfis = state.bookmarks.mapNotNull { it.cfi }
-    LaunchedEffect(controller, pageReady, bookmarkCfis) { if (pageReady) controller.setBookmarks(bookmarkCfis) }
+    PageMarks(controller, pageReady, state.bookmarks.mapNotNull { it.cfi }, state.highlights.map { HighlightMark(it.id, it.cfi, it.color) })
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(it, duration = SnackbarDuration.Short)
@@ -138,9 +139,11 @@ fun ReaderScreen(
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flush() }
-    // The looked-up word stays highlighted while its definitions are shown.
-    val lookupOpen = lookup != null
-    LaunchedEffect(controller, lookupOpen) { if (!lookupOpen) controller.clearLookup() }
+    // Dropping the selection also clears it in the page; the selected word stays marked while its definitions are shown.
+    val dropSelection = {
+        viewModel.selection.clear()
+        controller.clearSelection()
+    }
     ImmersiveMode(fullscreen)
     val textSettings = state.content !is ReaderContent.Paged
     val panelOpen = overlay is Overlay.Left || overlay is Overlay.Right
@@ -149,7 +152,9 @@ fun ReaderScreen(
         Box(Modifier.fillMaxSize().then(if (panelOpen) Modifier.blur(PANEL_BLUR) else Modifier)) {
             // While the bars are shown, a tap on the page only hides them; nothing turns.
             val turns = if (chrome) PageTurns.Off else prefs.pageTurns()
-            Content(state.content, prefs, turns, viewModel, controller, onPageReady = { pageReady = true }, onToggleChrome = {
+            Content(state.content, prefs, turns, selection != null, viewModel, controller, onPageReady = {
+                pageReady = true
+            }, onToggleChrome = {
                 chrome = !chrome
                 if (overlay == Overlay.QuickSettings) overlay = Overlay.None
             })
@@ -188,25 +193,10 @@ fun ReaderScreen(
             searchable = ebook != null,
             onOverlay = { overlay = it },
         )
+        SelectionHost(state, viewModel, controller, hidden = lookup != null || panelOpen, Modifier.align(Alignment.BottomCenter))
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 64.dp))
     }
-    lookup?.let { current ->
-        DictionarySheet(
-            current,
-            pronunciation =
-                viewModel.pronunciation.state
-                    .collectAsStateWithLifecycle()
-                    .value,
-            onLookUp = viewModel.lookups::lookUp,
-            onSpeak = viewModel.pronunciation::speak,
-            onDismissSpeakError = viewModel.pronunciation::dismissError,
-            onOpenDictionaries = {
-                viewModel.lookups.close()
-                onOpenDictionaries()
-            },
-            onDismiss = viewModel.lookups::close,
-        )
-    }
+    lookup?.let { LookupSheet(it, viewModel, onOpenDictionaries, dropSelection) }
     if (overlay == Overlay.Settings) {
         SettingsDialog(prefs, textSettings, onChange = viewModel::setReaderPrefs, onDismiss = close)
     }
@@ -219,6 +209,84 @@ fun ReaderScreen(
             dismissButton = { TextButton(onClick = viewModel::dismissOffer) { Text("Stay here") } },
         )
     }
+}
+
+/** Tells the page which bookmarks and highlights to mark, once it is ready and whenever they change. */
+@Composable
+private fun PageMarks(
+    controller: EbookController,
+    ready: Boolean,
+    bookmarks: List<String>,
+    highlights: List<HighlightMark>,
+) {
+    LaunchedEffect(controller, ready, bookmarks) { if (ready) controller.setBookmarks(bookmarks) }
+    LaunchedEffect(controller, ready, highlights) { if (ready) controller.setHighlights(highlights) }
+}
+
+/** Definitions of the looked-up word; closing it also drops the selection the word came from. */
+@Composable
+private fun LookupSheet(
+    lookup: WordLookup,
+    viewModel: ReaderViewModel,
+    onOpenDictionaries: () -> Unit,
+    dropSelection: () -> Unit,
+) {
+    DictionarySheet(
+        lookup,
+        pronunciation =
+            viewModel.pronunciation.state
+                .collectAsStateWithLifecycle()
+                .value,
+        onLookUp = viewModel.lookups::lookUp,
+        onSpeak = viewModel.pronunciation::speak,
+        onDismissSpeakError = viewModel.pronunciation::dismissError,
+        onOpenDictionaries = {
+            viewModel.lookups.close()
+            dropSelection()
+            onOpenDictionaries()
+        },
+        onDismiss = {
+            viewModel.lookups.close()
+            dropSelection()
+        },
+    )
+}
+
+/** The bar for the selected text, above the bottom bar; [hidden] while something else (definitions, a panel) is open. */
+@Composable
+private fun SelectionHost(
+    state: ReaderUiState,
+    viewModel: ReaderViewModel,
+    controller: EbookController,
+    hidden: Boolean,
+    modifier: Modifier,
+) {
+    val selection by viewModel.selection.current.collectAsStateWithLifecycle()
+    val pronunciation by viewModel.pronunciation.state.collectAsStateWithLifecycle()
+    val current = selection
+    if (current == null || hidden) return
+    val speech = viewModel.pronunciation
+    SelectionBar(
+        current,
+        pronunciation,
+        onColor = { color ->
+            viewModel.selection.highlight(color, state.chapter, state.percent)
+            controller.clearSelection()
+        },
+        onRemove = {
+            viewModel.selection.removeSelected()
+            controller.clearSelection()
+        },
+        onSpeak = { speech.speak(current.text) },
+        onStop = speech::stop,
+        onDefine = { viewModel.lookups.lookUp(current.text) },
+        onDismissSpeakError = speech::dismissError,
+        onClose = {
+            viewModel.selection.clear()
+            controller.clearSelection()
+        },
+        modifier = modifier.safeDrawingPadding().padding(bottom = SELECTION_BAR_LIFT),
+    )
 }
 
 /** The left (contents, bookmarks, highlights) and right (search, notes) panels. */
@@ -249,6 +317,11 @@ private fun BoxScope.Panels(
                 openBookmark(bookmark, controller, viewModel)
             },
             onDeleteBookmark = viewModel::removeBookmark,
+            onHighlight = { highlight ->
+                close()
+                controller.goTo(highlight.cfi)
+            },
+            onDeleteHighlight = viewModel.selection::remove,
             onLoadAnnotations = viewModel.panels::loadAnnotations,
         )
     }
@@ -274,6 +347,9 @@ private fun BoxScope.Panels(
 }
 
 private val PANEL_BLUR = 6.dp
+
+/** Keeps the selection bar clear of the bottom bar. */
+private val SELECTION_BAR_LIFT = 96.dp
 
 private fun ReaderPrefs.pageTurns() = PageTurns(edge = turnZone / PERCENT_F, taps = tapToTurn, swipes = swipeToTurn)
 
@@ -347,6 +423,7 @@ private fun Content(
     content: ReaderContent,
     prefs: ReaderPrefs,
     turns: PageTurns,
+    selecting: Boolean,
     viewModel: ReaderViewModel,
     controller: EbookController,
     onPageReady: () -> Unit,
@@ -370,6 +447,7 @@ private fun Content(
                     animated = LocalMotionEnabled.current && !page.instantTurns,
                     turns = turns,
                     controller = controller,
+                    selecting = selecting,
                     onEvent = { event ->
                         when (event) {
                             is EbookEvent.Ready -> {
@@ -380,10 +458,11 @@ private fun Content(
                                 viewModel.onEbookPosition(event.locator, event.tocLabel, event.hasPosition, event.bookmark)
                             is EbookEvent.BookmarkHere -> viewModel.onEbookBookmarkHere(event.cfi)
                             is EbookEvent.Search -> viewModel.panels.onSearch(event)
-                            is EbookEvent.Lookup -> {
+                            is EbookEvent.Selection -> {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.lookups.lookUp(event.word)
+                                viewModel.selection.select(TextSelection(event.text, event.cfi, event.over))
                             }
+                            EbookEvent.SelectionCleared -> viewModel.selection.clear()
                             is EbookEvent.Failed -> Unit
                         }
                     },

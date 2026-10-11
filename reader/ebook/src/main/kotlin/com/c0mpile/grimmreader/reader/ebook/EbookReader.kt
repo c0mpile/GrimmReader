@@ -38,6 +38,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /** A chapter; [depth] is 0 for top-level entries, 1 for their sub-chapters and so on. */
 data class TocEntry(
@@ -53,6 +54,14 @@ data class EbookLayout(
     val columns: Int,
     val maxInlineSize: Int,
     val maxBlockSize: Int,
+)
+
+/** A highlight to draw: [color] is `#RRGGBB`. */
+@Serializable
+data class HighlightMark(
+    val id: Long,
+    val cfi: String,
+    val color: String,
 )
 
 /** A search stops after this many hits (MAX_HITS in reader.js). */
@@ -93,10 +102,18 @@ sealed interface EbookEvent {
         val bookmark: String? = null,
     ) : EbookEvent
 
-    /** A long press landed on [word], now highlighted until [EbookController.clearLookup]. */
-    data class Lookup(
-        val word: String,
+    /**
+     * The user selected [text] (long press, optionally dragged), shown selected until
+     * [EbookController.clearSelection]. [cfi] is its range; [over] are the ids of the highlights it touches.
+     */
+    data class Selection(
+        val text: String,
+        val cfi: String,
+        val over: List<Long> = emptyList(),
     ) : EbookEvent
+
+    /** The page dropped the selection (it turned or changed). */
+    data object SelectionCleared : EbookEvent
 
     /** The bookmark on the visible page changed after [EbookController.setBookmarks]. */
     data class BookmarkHere(
@@ -139,13 +156,25 @@ class EbookController {
     /** The page answers with [EbookEvent.BookmarkHere]. */
     fun setBookmarks(cfis: List<String>) = call("grimm_api.setBookmarks(${Json.encodeToString(cfis)})")
 
-    /** Finds the word at [x], [y] (CSS px of the reader view); the page answers with [EbookEvent.Lookup] if there is one. */
-    fun lookupAt(
+    /** Starts a selection on the word at [x], [y] (CSS px of the reader view), if there is one. */
+    fun selectAt(
         x: Float,
         y: Float,
-    ) = call("grimm_api.lookupAt($x, $y)")
+    ) = call("grimm_api.selectAt($x, $y)")
 
-    fun clearLookup() = call("grimm_api.clearLookup()")
+    /** Extends the selection to the word at [x], [y]. */
+    fun extendTo(
+        x: Float,
+        y: Float,
+    ) = call("grimm_api.extendTo($x, $y)")
+
+    /** The finger lifted: the page answers with [EbookEvent.Selection] if something is selected. */
+    fun endSelection() = call("grimm_api.endSelection()")
+
+    fun clearSelection() = call("grimm_api.clearSelection()")
+
+    /** Draws these highlights (`id`, `cfi`, `color` each) over the page, and no others. */
+    fun setHighlights(highlights: List<HighlightMark>) = call("grimm_api.setHighlights(${Json.encodeToString(highlights)})")
 
     /** No-op until the page script defined its API (styles can change before the book is open). */
     private fun call(js: String) {
@@ -170,21 +199,27 @@ fun EbookReader(
     animated: Boolean,
     turns: PageTurns,
     controller: EbookController,
+    selecting: Boolean,
     onEvent: (EbookEvent) -> Unit,
     onToggleChrome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val events by rememberUpdatedState(onEvent)
     val density = LocalDensity.current.density
-    // Long press: look the word up; the WebView's CSS px are dp at the default zoom.
-    val lookup: (Offset) -> Unit = { at -> controller.lookupAt(at.x / density, at.y / density) }
+    // Long press selects a word, dragging extends it; the WebView's CSS px are dp at the default zoom.
+    val selection =
+        Selection(
+            start = { at -> controller.selectAt(at.x / density, at.y / density) },
+            drag = { at -> controller.extendTo(at.x / density, at.y / density) },
+            end = controller::endSelection,
+        )
     val startUrl = remember(book) { startUrl(fileName, initialCfi, css, layout, animated) }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context -> readerWebView(context, book, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
-        TapZones(turns, controller, onToggleChrome, lookup)
+        TapZones(turns, controller, selecting, onToggleChrome, selection)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
     LaunchedEffect(animated) { controller.setAnimated(animated) }
@@ -247,32 +282,43 @@ private fun readerWebView(
     }
 }
 
+private class Selection(
+    val start: (Offset) -> Unit,
+    val drag: (Offset) -> Unit,
+    val end: () -> Unit,
+)
+
 /**
  * Takes every touch (the WebView gets none): taps and swipes in the edge zones turn, the middle toggles the bars,
- * a long press anywhere goes to [onLongPress].
+ * a long press anywhere starts a selection. While [selecting], a tap only drops the selection.
  */
 @Composable
 private fun TapZones(
     turns: PageTurns,
     controller: EbookController,
+    selecting: Boolean,
     onToggleChrome: () -> Unit,
-    onLongPress: ((Offset) -> Unit)?,
+    selection: Selection,
 ) {
     val toggle by rememberUpdatedState(onToggleChrome)
+    val isSelecting by rememberUpdatedState(selecting)
     Box(
         Modifier
             .fillMaxSize()
             .pageGestures(
                 turns,
                 onTap = { zone ->
-                    when (zone) {
-                        PageZone.LEFT -> controller.prev()
-                        PageZone.RIGHT -> controller.next()
-                        PageZone.MIDDLE -> toggle()
+                    when {
+                        isSelecting -> controller.clearSelection()
+                        zone == PageZone.LEFT -> controller.prev()
+                        zone == PageZone.RIGHT -> controller.next()
+                        else -> toggle()
                     }
                 },
                 onSwipe = { toLeft -> if (toLeft) controller.next() else controller.prev() },
-                onLongPress = onLongPress,
+                onLongPress = selection.start,
+                onLongPressDrag = selection.drag,
+                onLongPressEnd = selection.end,
             ),
     )
 }
@@ -368,16 +414,19 @@ internal fun parse(data: String): EbookEvent? {
             )
         }
         "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
-        "lookup" ->
-            o
-                .str("word")
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() && it.length <= MAX_LOOKUP_CHARS }
-                ?.let { EbookEvent.Lookup(it) }
+        "selection" -> parseSelection(o)
         "search" -> parseSearch(o)
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")
         else -> null
     }
+}
+
+private fun parseSelection(o: JsonObject): EbookEvent? {
+    if (o["cleared"]?.jsonPrimitive?.booleanOrNull == true) return EbookEvent.SelectionCleared
+    val text = o.str("text")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val cfi = o.str("cfi")?.takeIf { it.startsWith("epubcfi(") } ?: return null
+    val over = o["over"]?.jsonArray?.mapNotNull { it.jsonPrimitive.longOrNull }.orEmpty()
+    return EbookEvent.Selection(text.take(MAX_SELECTION_CHARS), cfi, over)
 }
 
 private fun parseSearch(o: JsonObject): EbookEvent.Search? {
@@ -404,4 +453,4 @@ private fun parseSearch(o: JsonObject): EbookEvent.Search? {
 private fun JsonObject.str(key: String) = this[key]?.jsonPrimitive?.contentOrNull
 
 private const val PERCENT = 100f
-private const val MAX_LOOKUP_CHARS = 64
+private const val MAX_SELECTION_CHARS = 5000

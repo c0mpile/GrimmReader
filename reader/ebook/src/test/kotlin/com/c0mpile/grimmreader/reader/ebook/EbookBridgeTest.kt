@@ -91,10 +91,12 @@ class EbookBridgeTest {
         assertNull(parse("""{"t":"search","items":[]}"""))
     }
 
-    @Test fun lookupCarriesTheWordOnly() {
-        assertEquals(EbookEvent.Lookup("serendipity"), parse("""{"t":"lookup","word":" serendipity "}"""))
-        assertNull(parse("""{"t":"lookup","word":""}"""))
-        assertNull(parse("""{"t":"lookup"}"""))
-        assertNull(parse("""{"t":"lookup","word":"${"x".repeat(65)}"}"""))
+    @Test fun selectionCarriesTextCfiAndTouchedHighlights() {
+        val json = """{"t":"selection","text":" a few words ","cfi":"epubcfi(/6/4!/4/2,/1:0,/1:5)","over":[3,9]}"""
+        assertEquals(EbookEvent.Selection("a few words", "epubcfi(/6/4!/4/2,/1:0,/1:5)", listOf(3L, 9L)), parse(json))
+        assertEquals(EbookEvent.SelectionCleared, parse("""{"t":"selection","cleared":true}"""))
+        assertNull(parse("""{"t":"selection","text":"","cfi":"epubcfi(/6/4)"}"""))
+        assertNull(parse("""{"t":"selection","text":"x","cfi":"javascript:alert(1)"}"""))
+        assertNull(parse("""{"t":"selection","text":"x"}"""))
     }
 }

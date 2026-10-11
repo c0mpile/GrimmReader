@@ -62,9 +62,8 @@ const search = async (query, id) => {
     }
 }
 
-// Word lookup: the word at a point of the page (CSS px of this window), found in the section frame under it.
+// Word at a point of the page (CSS px of this window), found in the section frame under it.
 // The caret nearest the point is used, so a point in a margin must still fall on the word's own box.
-const LOOKUP_KEY = 'grimm-lookup'
 const LOOKUP_SLOP = 4
 const wordInDoc = (doc, x, y) => {
     let node, offset
@@ -94,16 +93,38 @@ const wordInDoc = (doc, x, y) => {
     }
     return null
 }
-const clearLookup = () => {
+// Selection: a long press selects the word under the finger, dragging extends it by whole words, lifting reports
+// the text and its CFI. The page itself gets no touches, so this is driven by the app's gesture layer.
+const SEL_KEY = 'grimm-selection'
+const SEL_COLOR = 'rgb(96, 165, 250)'
+const MAX_SELECTION = 5000
+let sel = null
+const snapped = (node, offset, forward) => {
+    if (!node || node.nodeType !== 3) return { node, offset }
+    const seg = new Intl.Segmenter(undefined, { granularity: 'word' }).segment(node.data).containing(Math.min(offset, node.data.length - 1))
+    if (!seg?.isWordLike) return { node, offset }
+    return { node, offset: forward ? seg.index + seg.segment.length : seg.index }
+}
+const clearSelection = () => {
     for (const { doc, overlayer } of view.renderer?.getContents?.() ?? []) {
-        overlayer?.remove(LOOKUP_KEY)
+        overlayer?.remove(SEL_KEY)
         doc?.getSelection()?.removeAllRanges()
     }
+    sel = null
 }
-const lookupAt = (x, y) => {
-    if (!ready || !Number.isFinite(x) || !Number.isFinite(y)) return
-    clearLookup()
-    for (const { doc, overlayer } of view.renderer?.getContents?.() ?? []) {
+const drawSelection = () => {
+    if (sel.overlayer) {
+        sel.overlayer.remove(SEL_KEY)
+        sel.overlayer.add(SEL_KEY, sel.range, Overlayer.highlight, { color: SEL_COLOR })
+    } else {
+        const s = sel.doc.getSelection()
+        s.removeAllRanges()
+        s.addRange(sel.range)
+    }
+}
+// The section frame under a point of this window, with the point in the frame's own CSS px.
+const frameAt = (x, y) => {
+    for (const { doc, overlayer, index } of view.renderer?.getContents?.() ?? []) {
         const frame = doc?.defaultView?.frameElement
         if (!frame) continue
         const rect = frame.getBoundingClientRect()
@@ -111,13 +132,87 @@ const lookupAt = (x, y) => {
         // Fixed-layout pages are scaled frames.
         const sx = frame.clientWidth ? rect.width / frame.clientWidth : 1
         const sy = frame.clientHeight ? rect.height / frame.clientHeight : 1
-        const found = wordInDoc(doc, (x - rect.left) / sx, (y - rect.top) / sy)
-        if (!found) return
-        if (overlayer) overlayer.add(LOOKUP_KEY, found.range, Overlayer.highlight, { color: 'rgb(250, 204, 21)' })
-        else doc.getSelection()?.addRange(found.range)
-        post({ t: 'lookup', word: found.word })
-        return
+        return { doc, overlayer, index, x: (x - rect.left) / sx, y: (y - rect.top) / sy }
     }
+    return null
+}
+const selectAt = (x, y) => {
+    clearSelection()
+    if (!ready || !Number.isFinite(x) || !Number.isFinite(y)) return
+    const at = frameAt(x, y)
+    const found = at && wordInDoc(at.doc, at.x, at.y)
+    if (!found) return
+    sel = { doc: at.doc, overlayer: at.overlayer, index: at.index, anchor: found.range.cloneRange(), range: found.range }
+    drawSelection()
+}
+const extendTo = (x, y) => {
+    if (!sel || !Number.isFinite(x) || !Number.isFinite(y)) return
+    const at = frameAt(x, y)
+    if (!at || at.doc !== sel.doc) return
+    let node, offset
+    const caret = at.doc.caretPositionFromPoint?.(at.x, at.y)
+    if (caret) { node = caret.offsetNode; offset = caret.offset }
+    else {
+        const r = at.doc.caretRangeFromPoint?.(at.x, at.y)
+        if (!r) return
+        node = r.startContainer; offset = r.startOffset
+    }
+    if (!node || node.nodeType !== 3) return
+    const probe = sel.doc.createRange()
+    probe.setStart(node, offset)
+    probe.collapse(true)
+    const range = sel.doc.createRange()
+    if (probe.compareBoundaryPoints(Range.START_TO_START, sel.anchor) < 0) {
+        const p = snapped(node, offset, false)
+        range.setStart(p.node, p.offset)
+        range.setEnd(sel.anchor.endContainer, sel.anchor.endOffset)
+    } else {
+        const p = snapped(node, offset, true)
+        range.setStart(sel.anchor.startContainer, sel.anchor.startOffset)
+        range.setEnd(p.node, p.offset)
+    }
+    sel.range = range
+    drawSelection()
+}
+// Ids of the highlights the selection touches, so the app can offer to remove them.
+const overlapping = async () => {
+    const ids = []
+    for (const h of highlights) {
+        if (h.index !== sel.index) continue
+        try {
+            const r = (await view.resolveCFI(h.cfi)).anchor(sel.doc)
+            if (sel.range.compareBoundaryPoints(Range.END_TO_START, r) < 0 && sel.range.compareBoundaryPoints(Range.START_TO_END, r) > 0) ids.push(h.id)
+        } catch { /* a highlight that no longer resolves */ }
+    }
+    return ids
+}
+const endSelection = async () => {
+    const current = sel
+    if (!current) return
+    const text = current.range.toString().replace(/\s+/g, ' ').trim().slice(0, MAX_SELECTION)
+    if (!text) return clearSelection()
+    const over = await overlapping()
+    if (sel === current) post({ t: 'selection', text, cfi: view.getCFI(current.index, current.range), over })
+}
+
+// Highlights of this book, drawn over the page; sections other than the visible one are drawn when they load.
+let highlights = []
+const paint = h => view.addAnnotation({ value: h.cfi, color: h.color }).catch(() => {})
+view.addEventListener('draw-annotation', e => e.detail.draw(Overlayer.highlight, { color: e.detail.annotation.color }))
+view.addEventListener('create-overlay', e => highlights.filter(h => h.index === e.detail.index).forEach(paint))
+let highlightRun = 0
+const setHighlights = async list => {
+    const run = ++highlightRun
+    const next = []
+    for (const h of Array.isArray(list) ? list : []) {
+        if (!Number.isInteger(h?.id) || typeof h.cfi !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(h.color)) continue
+        try { next.push({ id: h.id, cfi: h.cfi, color: h.color, index: (await view.resolveCFI(h.cfi)).index }) } catch { /* skip */ }
+    }
+    if (run !== highlightRun) return
+    const keep = new Set(next.map(h => h.cfi))
+    for (const old of highlights) if (!keep.has(old.cfi)) view.deleteAnnotation({ value: old.cfi }).catch(() => {})
+    highlights = next
+    highlights.forEach(paint)
 }
 
 // The bookmark whose position starts on the visible page (web bookmarks are range CFIs too), or null.
@@ -137,6 +232,7 @@ view.addEventListener('relocate', e => {
     if (!ready || !d.cfi || d.cfi === lastCfi) return
     lastCfi = d.cfi
     visible = d.cfi
+    if (sel) { clearSelection(); post({ t: 'selection', cleared: true }) }
     post({
         t: 'relocate', cfi: d.cfi, bookmark: bookmarkHere(),
         fraction: typeof d.fraction === 'number' ? d.fraction : null,
@@ -157,8 +253,11 @@ window.grimm_api = {
     setLayout: applyLayout,
     search: (query, id) => { search(query, id) },
     clearSearch: () => { searchId++; view.clearSearch() },
-    lookupAt,
-    clearLookup,
+    selectAt,
+    extendTo,
+    endSelection,
+    clearSelection,
+    setHighlights,
 }
 
 try {

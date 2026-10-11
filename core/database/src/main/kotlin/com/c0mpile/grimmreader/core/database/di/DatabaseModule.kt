@@ -45,6 +45,8 @@ object DaoModule {
 
     @Provides fun bookmarkDao(db: GrimmDatabase) = db.bookmarkDao()
 
+    @Provides fun highlightDao(db: GrimmDatabase) = db.highlightDao()
+
     @Provides fun shelfDao(db: GrimmDatabase) = db.shelfDao()
 
     @Provides fun localLibraryDao(db: GrimmDatabase) = db.localLibraryDao()

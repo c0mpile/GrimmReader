@@ -75,6 +75,7 @@ import com.c0mpile.grimmreader.core.designsystem.component.BookCover
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.model.Bookmark
+import com.c0mpile.grimmreader.core.model.Highlight
 import com.c0mpile.grimmreader.core.model.NotebookEntry
 import com.c0mpile.grimmreader.reader.ebook.MAX_SEARCH_HITS
 import com.c0mpile.grimmreader.reader.ebook.SearchHit
@@ -161,6 +162,8 @@ internal fun LeftPanel(
     onChapter: (TocEntry) -> Unit,
     onBookmark: (Bookmark) -> Unit,
     onDeleteBookmark: (Bookmark) -> Unit,
+    onHighlight: (Highlight) -> Unit,
+    onDeleteHighlight: (Highlight) -> Unit,
     onLoadAnnotations: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -185,7 +188,7 @@ internal fun LeftPanel(
             listOf(
                 PanelTab("Contents", LucideIcons.Book),
                 PanelTab("Bookmarks", LucideIcons.Bookmark, badge = state.bookmarks.size),
-                PanelTab("Highlights", LucideIcons.PenLine),
+                PanelTab("Highlights", LucideIcons.PenLine, badge = state.highlights.size),
             ),
             selected = tab.ordinal,
             onSelect = { onTab(LeftTab.entries[it]) },
@@ -200,8 +203,66 @@ internal fun LeftPanel(
             LeftTab.BOOKMARKS -> BookmarkList(state.bookmarks, state.bookmarkHere, onBookmark, onDeleteBookmark)
             LeftTab.HIGHLIGHTS -> {
                 LaunchedEffect(Unit) { onLoadAnnotations() }
-                AnnotationList(annotations, highlights = true)
+                HighlightList(state.highlights, annotations, onHighlight, onDeleteHighlight)
             }
+        }
+    }
+}
+
+/** This device's highlights (tap to jump, trash to remove), then the ones the server notebook has. */
+@Composable
+private fun HighlightList(
+    highlights: List<Highlight>,
+    annotations: Annotations,
+    onOpen: (Highlight) -> Unit,
+    onDelete: (Highlight) -> Unit,
+) {
+    val server = (annotations as? Annotations.Loaded)?.highlights.orEmpty()
+    if (highlights.isEmpty() && server.isEmpty()) {
+        if (annotations is Annotations.Loading) {
+            Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            EmptyState(LucideIcons.PenLine, "No highlights yet", "Press and hold a word, drag to extend the selection, then pick a colour.")
+        }
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(highlights, key = { "h${it.id}" }) { highlight ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(highlight) }
+                    .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val accent = parseColor(highlight.color) ?: MaterialTheme.colorScheme.primary
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(accent),
+                )
+                Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(highlight.text, style = MaterialTheme.typography.bodyMedium, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                    val meta = listOfNotNull(highlight.chapter, highlight.createdAt.takeIf { it > 0 }?.let(::date)).joinToString(" · ")
+                    if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, color = mutedText())
+                }
+                IconButton(onClick = { onDelete(highlight) }) {
+                    Icon(LucideIcons.Trash, contentDescription = "Delete highlight", tint = mutedText(), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+        if (server.isNotEmpty()) {
+            item(key = "server") {
+                Text(
+                    "From the server",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = mutedText(),
+                    modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
+                )
+            }
+            items(server, key = { "s${it.id}" }) { AnnotationItem(it, highlight = true) }
         }
     }
 }

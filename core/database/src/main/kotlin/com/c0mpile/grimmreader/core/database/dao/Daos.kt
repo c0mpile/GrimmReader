@@ -14,6 +14,7 @@ import com.c0mpile.grimmreader.core.database.entity.BookmarkEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadState
 import com.c0mpile.grimmreader.core.database.entity.DownloadWithBook
+import com.c0mpile.grimmreader.core.database.entity.HighlightEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.LocalLibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
@@ -355,6 +356,18 @@ interface BookmarkDao {
     suspend fun markDeleted(id: Long)
 
     @Query("DELETE FROM bookmark WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface HighlightDao {
+    @Query("SELECT * FROM highlight WHERE bookId = :bookId")
+    fun observe(bookId: Long): Flow<List<HighlightEntity>>
+
+    @Insert
+    suspend fun insert(highlight: HighlightEntity): Long
+
+    @Query("DELETE FROM highlight WHERE id = :id")
     suspend fun delete(id: Long)
 }
 

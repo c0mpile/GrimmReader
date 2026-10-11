@@ -7,6 +7,7 @@ import com.c0mpile.grimmreader.core.database.dao.BookDao
 import com.c0mpile.grimmreader.core.database.dao.BookFileDao
 import com.c0mpile.grimmreader.core.database.dao.BookmarkDao
 import com.c0mpile.grimmreader.core.database.dao.DownloadDao
+import com.c0mpile.grimmreader.core.database.dao.HighlightDao
 import com.c0mpile.grimmreader.core.database.dao.LibraryDao
 import com.c0mpile.grimmreader.core.database.dao.LocalLibraryDao
 import com.c0mpile.grimmreader.core.database.dao.OutboxDao
@@ -18,6 +19,7 @@ import com.c0mpile.grimmreader.core.database.entity.BookFileEntity
 import com.c0mpile.grimmreader.core.database.entity.BookShelfEntity
 import com.c0mpile.grimmreader.core.database.entity.BookmarkEntity
 import com.c0mpile.grimmreader.core.database.entity.DownloadEntity
+import com.c0mpile.grimmreader.core.database.entity.HighlightEntity
 import com.c0mpile.grimmreader.core.database.entity.LibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.LocalLibraryEntity
 import com.c0mpile.grimmreader.core.database.entity.OutboxOpEntity
@@ -28,7 +30,7 @@ import com.c0mpile.grimmreader.core.database.entity.ShelfEntity
 /**
  * Test builds are installed on real devices, so schema changes ship with a migration (v2: libraries; v3: CB7 and
  * CBR books removed, see [MIGRATION_2_3]; v4: bookmarks; v5: shelves;
- * v6: book description, publisher and date; v7: on-device libraries).
+ * v6: book description, publisher and date; v7: on-device libraries; v9: highlights).
  */
 @Database(
     entities = [
@@ -40,11 +42,12 @@ import com.c0mpile.grimmreader.core.database.entity.ShelfEntity
         DownloadEntity::class,
         LibraryEntity::class,
         BookmarkEntity::class,
+        HighlightEntity::class,
         ShelfEntity::class,
         BookShelfEntity::class,
         LocalLibraryEntity::class,
     ],
-    version = 8,
+    version = 9,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 3, to = 4),
@@ -52,6 +55,7 @@ import com.c0mpile.grimmreader.core.database.entity.ShelfEntity
         AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 8, to = 9),
     ],
 )
 abstract class GrimmDatabase : RoomDatabase() {
@@ -70,6 +74,8 @@ abstract class GrimmDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
 
     abstract fun bookmarkDao(): BookmarkDao
+
+    abstract fun highlightDao(): HighlightDao
 
     abstract fun shelfDao(): ShelfDao
 
