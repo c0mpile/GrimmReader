@@ -29,6 +29,21 @@ internal class Pending(
     val text: String,
 )
 
+/** The first sentence of [text] (at least ~60 characters, at most ~200) and the rest; no rest when it is short or has no break. */
+internal fun splitHead(text: String): Pair<String, String?> {
+    val end =
+        Regex("""[.!?…]["'”’)]*\s""")
+            .findAll(text)
+            .map { it.range.last }
+            .firstOrNull { it + 1 in HEAD_MIN..HEAD_MAX }
+    if (end == null) return text to null
+    val tail = text.substring(end + 1).trim()
+    return if (tail.isEmpty()) text to null else text.substring(0, end + 1).trim() to tail
+}
+
+private const val HEAD_MIN = 60
+private const val HEAD_MAX = 200
+
 /**
  * Speaks queued text without the pauses an engine leaves between utterances: it has the engine render the passages to
  * audio files well ahead of the one being played and plays the files back to back through one [AudioTrack]. The
@@ -81,10 +96,12 @@ internal class BufferedSpeech(
         var started = false
     }
 
+    /** A rendered piece of a passage; the passage is heard once its [last] piece has been played. */
     private class Clip(
         val item: Pending,
         val file: File,
         val wav: Wav,
+        val last: Boolean,
     )
 
     private inner class Session {
@@ -139,29 +156,44 @@ internal class BufferedSpeech(
         }
 
         private suspend fun renderLoop() {
+            var first = true
             for (item in inbox) {
-                while (aheadMs.get() > AHEAD_MS) delay(POLL_MS)
-                val id = "$SYNTH_PREFIX${synthIds.incrementAndGet()}"
-                val file = File(dir, "$id.wav")
-                val done = CompletableDeferred<Boolean>().also { waiting[id] = it }
-                val started =
-                    try {
-                        synthesize(item.text, id, file)
-                    } catch (_: SpeechUnavailableException) {
-                        false
-                    }
-                val ok = started && withTimeoutOrNull(RENDER_TIMEOUT_MS) { done.await() } == true
-                waiting.remove(id)
-                currentCoroutineContext().ensureActive()
-                val wav = if (ok) readWav(file) else null
-                if (wav == null) {
-                    file.delete()
-                    fail()
-                    return
-                }
-                aheadMs.addAndGet(wav.durationMs)
-                clips.trySend(Clip(item, file, wav))
+                // The first passage is rendered in two pieces so the sound starts after a short sentence, not a whole passage.
+                val (head, tail) = if (first) splitHead(item.text) else item.text to null
+                first = false
+                if (!render(item, head, tail == null)) return
+                if (tail != null && !render(item, tail, true)) return
             }
+        }
+
+        /** Renders [text] to a file and queues it for playing; false when the engine cannot (the fallback has been called). */
+        private suspend fun render(
+            item: Pending,
+            text: String,
+            last: Boolean,
+        ): Boolean {
+            while (aheadMs.get() > AHEAD_MS) delay(POLL_MS)
+            val id = "$SYNTH_PREFIX${synthIds.incrementAndGet()}"
+            val file = File(dir, "$id.wav")
+            val done = CompletableDeferred<Boolean>().also { waiting[id] = it }
+            val started =
+                try {
+                    synthesize(text, id, file)
+                } catch (_: SpeechUnavailableException) {
+                    false
+                }
+            val ok = started && withTimeoutOrNull(RENDER_TIMEOUT_MS) { done.await() } == true
+            waiting.remove(id)
+            currentCoroutineContext().ensureActive()
+            val wav = if (ok) readWav(file) else null
+            if (wav == null) {
+                file.delete()
+                fail()
+                return false
+            }
+            aheadMs.addAndGet(wav.durationMs)
+            clips.trySend(Clip(item, file, wav, last))
+            return true
         }
 
         private fun newTrack(wav: Wav): AudioTrack {
@@ -192,6 +224,7 @@ internal class BufferedSpeech(
         private suspend fun playLoop() {
             var format: Pair<Int, Int>? = null
             var written = 0L
+            var mark: Mark? = null
             for (clip in clips) {
                 aheadMs.addAndGet(-clip.wav.durationMs)
                 val now = clip.wav.sampleRate to clip.wav.channels
@@ -212,15 +245,19 @@ internal class BufferedSpeech(
                         return
                     }
                 }
-                val mark = Mark(clip.item.id, written, trackNo)
-                marks.add(mark)
+                // A passage rendered in pieces has one mark: it starts with the first piece and ends with the last.
+                val m = mark?.takeIf { it.id == clip.item.id } ?: Mark(clip.item.id, written, trackNo).also { marks.add(it) }
+                mark = m
                 val bytes = writeClip(t, clip)
                 if (bytes < 0) {
                     fail()
                     return
                 }
                 written += bytes / clip.wav.frameSize
-                mark.end = written
+                if (clip.last) {
+                    m.end = written
+                    mark = null
+                }
                 clip.file.delete()
             }
         }

@@ -19,8 +19,8 @@ android {
     namespace = "com.c0mpile.grimmreader"
     defaultConfig {
         applicationId = "com.c0mpile.grimmreader"
-        versionCode = 9
-        versionName = "0.1.8"
+        versionCode = 10
+        versionName = "0.1.9"
     }
     buildTypes {
         debug {

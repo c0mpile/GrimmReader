@@ -79,3 +79,24 @@ class WavTest {
         assertNull(readWav(tmp.newFile().also { it.writeText("not audio at all") }))
     }
 }
+
+class SplitHeadTest {
+    private val sentence = "It was a bright cold day in April, and the clocks were striking thirteen."
+
+    @Test fun splitsAfterTheFirstSentenceOfUsableLength() {
+        val (head, tail) = splitHead("$sentence Winston Smith slipped quickly through the glass doors.")
+        assertEquals(sentence, head)
+        assertEquals("Winston Smith slipped quickly through the glass doors.", tail)
+    }
+
+    @Test fun keepsShortOrBreaklessTextWhole() {
+        assertNull(splitHead("Short one. Two.").second)
+        assertNull(splitHead("x".repeat(500)).second)
+        assertNull(splitHead(sentence).second)
+    }
+
+    @Test fun skipsATooShortFirstSentence() {
+        val text = "Yes. $sentence Then more text follows here."
+        assertEquals("Yes. $sentence", splitHead(text).first)
+    }
+}
