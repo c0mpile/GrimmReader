@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,22 +81,24 @@ internal fun QuickSettings(
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(12.dp)
+    // Never taller than the room between the bars, so on a short (landscape) screen it scrolls instead of being cut off.
+    val maxHeight = (LocalConfiguration.current.screenHeightDp - POPOVER_RESERVED_DP).dp
     Surface(
-        modifier.width(320.dp).border(1.dp, MaterialTheme.colorScheme.outline, shape),
+        modifier.width(320.dp).heightIn(max = maxHeight).border(1.dp, MaterialTheme.colorScheme.outline, shape),
         shape = shape,
         color = MaterialTheme.colorScheme.background,
         shadowElevation = 8.dp,
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
             Text("Page", style = MaterialTheme.typography.bodyLarge)
-            ThemeDots(prefs, onChange, Modifier.padding(top = 10.dp, bottom = 6.dp))
+            ThemeDots(prefs, onChange, Modifier.padding(top = 6.dp, bottom = 2.dp))
             if (textSettings) {
-                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
-                FontSizeRow(prefs, onChange)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+                FontSizeRow(prefs, onChange)
+                HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
                 LineHeightRow(prefs, onChange, label = "Line Spacing")
             }
-            HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 16.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+            HorizontalDivider(Modifier.padding(top = 6.dp, bottom = 10.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
             val button = RoundedCornerShape(8.dp)
             Row(
                 Modifier
@@ -104,7 +107,7 @@ internal fun QuickSettings(
                     .background(raised())
                     .border(1.dp, MaterialTheme.colorScheme.outline, button)
                     .clickable(role = Role.Button, onClick = onMore)
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -139,24 +142,27 @@ private fun ThemeDots(
             ) {
                 Row(
                     Modifier
-                        .size(36.dp)
+                        .size(30.dp)
                         .border(if (selected) 2.dp else 1.dp, ring, CircleShape)
                         .padding(3.dp)
                         .clip(CircleShape)
                         .background(swatch.background),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
-                ) { Spacer(Modifier.size(10.dp).clip(CircleShape).background(swatch.text)) }
+                ) { Spacer(Modifier.size(8.dp).clip(CircleShape).background(swatch.text)) }
                 Text(
                     theme.label(),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (selected) MaterialTheme.colorScheme.primary else mutedText(),
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
     }
 }
+
+/** Screen height not available to the quick settings popover: the two bars and their margins. */
+private const val POPOVER_RESERVED_DP = 170
 
 @Composable
 private fun FontSizeRow(
@@ -242,8 +248,8 @@ internal fun SettingsDialog(
                 Column(
                     Modifier
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     when (tab) {
                         SettingsTab.THEME -> ThemeTab(prefs, onChange)
@@ -257,7 +263,7 @@ internal fun SettingsDialog(
     }
 }
 
-private const val DIALOG_HEIGHT = 0.85f
+private const val DIALOG_HEIGHT = 0.78f
 private val DIALOG_MAX_HEIGHT = 760.dp
 
 @Composable
@@ -270,15 +276,15 @@ private fun ThemeTab(
         val swatch = theme.palette(prefs.einkTint)
         OptionCard(prefs.pageTheme == theme, { onChange(prefs.copy(pageTheme = theme)) }, modifier) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Swatch(swatch.background)
                     Swatch(swatch.text)
                 }
                 Text(
                     theme.label(),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
         }
@@ -292,7 +298,7 @@ private fun EinkOptions(
     prefs: ReaderPrefs,
     onChange: (ReaderPrefs) -> Unit,
 ) {
-    SectionHeader("E-ink", Modifier.padding(top = 8.dp))
+    SectionHeader("E-ink", Modifier.padding(top = 4.dp))
     CardGrid(EinkTint.entries, columns = 2) { tint, modifier ->
         OptionCard(prefs.einkTint == tint, { onChange(prefs.copy(einkTint = tint)) }, modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -324,7 +330,7 @@ private fun TypographyTab(
     SectionHeader("Font settings")
     FontSizeRow(prefs, onChange)
     LineHeightRow(prefs, onChange, label = "Line Height")
-    SectionHeader("Font family", Modifier.padding(top = 8.dp))
+    SectionHeader("Font family", Modifier.padding(top = 4.dp))
     FontPicker(prefs.fontFamily, onSelect = { onChange(prefs.copy(fontFamily = it)) })
 }
 
@@ -377,7 +383,7 @@ private fun LayoutTab(
             description = "height",
         )
     }
-    SectionHeader("Text options", Modifier.padding(top = 8.dp))
+    SectionHeader("Text options", Modifier.padding(top = 4.dp))
     SettingSwitch("Justify Text", prefs.justify) { onChange(prefs.copy(justify = it)) }
     SettingSwitch("Hyphenate", prefs.hyphenate) { onChange(prefs.copy(hyphenate = it)) }
 }
@@ -391,21 +397,21 @@ private fun ControlsTab(
     AnimationChoice(prefs, onChange)
     SettingSwitch("Tap to turn", prefs.tapToTurn) { onChange(prefs.copy(tapToTurn = it)) }
     SettingSwitch("Swipe to turn", prefs.swipeToTurn) { onChange(prefs.copy(swipeToTurn = it)) }
-    Text("Turn zone width", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+    Text("Turn zone width", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 2.dp))
     CardGrid(TURN_ZONES, columns = TURN_ZONES.size) { zone, modifier ->
         OptionCard(prefs.turnZone == zone, { onChange(prefs.copy(turnZone = zone)) }, modifier) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 ZoneSketch(zone)
-                Text("$zone%", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+                Text("$zone%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 3.dp))
             }
         }
     }
     Text(
         "Taps and swipes turn the page only in the left and right zones. A tap in the middle shows or hides " +
             "the bars; while they are shown, a tap on the page hides them.",
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodySmall,
         color = mutedText(),
-        modifier = Modifier.padding(top = 4.dp),
+        modifier = Modifier.padding(top = 2.dp),
     )
 }
 
@@ -416,7 +422,7 @@ private fun AnimationChoice(
     onChange: (ReaderPrefs) -> Unit,
 ) {
     val current = prefs.animation(LocalMotionEnabled.current)
-    Text("Page animation", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+    Text("Page animation", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 2.dp))
     CardGrid(PageAnimation.entries, columns = PageAnimation.entries.size) { mode, modifier ->
         OptionCard(current == mode, { onChange(prefs.copy(pageAnimation = mode)) }, modifier) {
             Text(
@@ -425,16 +431,16 @@ private fun AnimationChoice(
                     PageAnimation.TURN -> "Page turn"
                     PageAnimation.NONE -> "Off"
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelLarge,
             )
         }
     }
     Text(
         "Page turn is for ebooks; comics and PDFs slide. It also applies when narration moves to the next page. " +
             "Until you choose, pages slide unless the phone's animations are off.",
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodySmall,
         color = mutedText(),
-        modifier = Modifier.padding(bottom = 8.dp),
+        modifier = Modifier.padding(bottom = 4.dp),
     )
 }
 
@@ -444,32 +450,32 @@ private fun ZoneSketch(zone: Int) {
     val accent = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
     Row(
         Modifier
-            .width(40.dp)
-            .height(28.dp)
+            .width(36.dp)
+            .height(22.dp)
             .clip(RoundedCornerShape(3.dp))
             .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)),
     ) {
         val edge = zone / PERCENT.toFloat()
-        Spacer(Modifier.weight(edge).height(28.dp).background(accent))
+        Spacer(Modifier.weight(edge).height(22.dp).background(accent))
         Spacer(Modifier.weight(1 - 2 * edge))
-        Spacer(Modifier.weight(edge).height(28.dp).background(accent))
+        Spacer(Modifier.weight(edge).height(22.dp).background(accent))
     }
 }
 
 private val TURN_ZONES = listOf(15, 20, 25, 33)
 
-/** Equal-width cards in rows; 3 per row on wide dialogs, 2 on narrow ones, unless [columns] is given. */
+/** Equal-width cards in rows; 4 per row on wide dialogs, 3 on narrow ones, unless [columns] is given. */
 @Composable
 internal fun <T> CardGrid(
     items: List<T>,
     columns: Int? = null,
     card: @Composable (T, Modifier) -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        val perRow = columns ?: if (maxWidth >= WIDE_GRID) 3 else 2
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+        val perRow = columns ?: if (maxWidth >= WIDE_GRID) 4 else 3
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items.chunked(perRow).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.forEach { card(it, Modifier.weight(1f)) }
                     repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
                 }
@@ -478,7 +484,7 @@ internal fun <T> CardGrid(
     }
 }
 
-private val WIDE_GRID = 420.dp
+private val WIDE_GRID = 480.dp
 
 internal fun PageTheme.label() =
     when (this) {

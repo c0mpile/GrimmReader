@@ -61,11 +61,25 @@ fun DashboardScreen(
             viewModel.messageShown()
         }
     }
+    // One book at a time; the same book can be in several rows.
+    val selection = rememberBookSelection()
+    SelectionBackHandler(selection)
+    val listed = (state.continueReading + state.recentlyAdded + state.discover).distinctBy { it.id }
+    LaunchedEffect(listed) { selection.retain(listed.mapTo(HashSet()) { it.id }) }
     Scaffold(
-        topBar = { TopAppBar(navigationIcon = { SidebarButton() }, title = { Text("Dashboard") }) },
+        topBar = {
+            if (selection.active) {
+                SelectionTopBar(selection, listed, allowAll = false)
+            } else {
+                TopAppBar(navigationIcon = { SidebarButton() }, title = { Text("Dashboard") })
+            }
+        },
+        bottomBar = { SelectionActionBar(selection, listed, snackbar) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { picker.launch(READABLE_TYPES) }) {
-                Icon(LucideIcons.FolderOpen, contentDescription = "Open a file")
+            if (!selection.active) {
+                FloatingActionButton(onClick = { picker.launch(READABLE_TYPES) }) {
+                    Icon(LucideIcons.FolderOpen, contentDescription = "Open a file")
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -93,12 +107,13 @@ fun DashboardScreen(
                             rows.flatMapTo(HashSet()) { (title, books) -> books.map { BookDrawerState.key(title, it.id) } },
                         )
                     }
+                    LaunchedEffect(selection.active) { if (selection.active) drawer.close() }
                     LazyColumn(
                         Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        rows.forEach { (title, books) -> shelfRow(title, books, drawer, onRead) }
+                        rows.forEach { (title, books) -> shelfRow(title, books, drawer, selection, onRead) }
                     }
                 }
             }
@@ -110,21 +125,24 @@ private fun androidx.compose.foundation.lazy.LazyListScope.shelfRow(
     title: String,
     books: List<Book>,
     drawer: BookDrawerState,
+    selection: BookSelection,
     onRead: (Long) -> Unit,
 ) {
     if (books.isEmpty()) return
-    item(key = title) { BookRow(title, books, drawer, onRead) }
+    item(key = title) { BookRow(title, books, drawer, selection, onRead) }
 }
 
 /**
  * A titled card with an accent underline and a horizontal row of covers, after the web dashboard.
- * A tapped book's actions drawer slides open under the covers, inside the card.
+ * A tapped book's actions drawer slides open under the covers, inside the card. A long press selects the book
+ * (one at a time, for Delete / Reset progress / Download); while one is selected, a tap selects another.
  */
 @Composable
 private fun BookRow(
     title: String,
     books: List<Book>,
     drawer: BookDrawerState,
+    selection: BookSelection,
     onRead: (Long) -> Unit,
 ) {
     Column(
@@ -151,7 +169,9 @@ private fun BookRow(
                     title = book.title,
                     author = book.authors.joinToString(", "),
                     coverModel = book.coverUri,
-                    onClick = { drawer.toggle(title, book.id) },
+                    onClick = { if (selection.active) selection.selectOnly(book.id) else drawer.toggle(title, book.id) },
+                    onLongClick = { selection.selectOnly(book.id) },
+                    checked = selection.isSelected(book.id).takeIf { selection.active },
                     modifier = Modifier.width(COVER_WIDTH.dp),
                     progressPercent = book.progressPercent,
                     badge = book.primaryFile?.format?.name,

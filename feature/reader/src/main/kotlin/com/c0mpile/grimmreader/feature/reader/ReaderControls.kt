@@ -25,6 +25,8 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +38,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -78,7 +81,10 @@ internal fun PanelTabs(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+        // Every label is one line; when one is too wide for its tab, all of them shrink together.
+        val fit = remember(tabs.map { it.label }, LocalConfiguration.current.screenWidthDp) { mutableFloatStateOf(1f) }
+        val base = MaterialTheme.typography.bodyMedium
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
             tabs.forEachIndexed { index, tab ->
                 val active = index == selected
                 val color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -86,7 +92,7 @@ internal fun PanelTabs(
                     Modifier
                         .weight(1f)
                         .clickable(role = Role.Tab) { onSelect(index) }
-                        .padding(top = 12.dp),
+                        .padding(top = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     tab.icon?.let { icon ->
@@ -98,9 +104,12 @@ internal fun PanelTabs(
                     Text(
                         tab.label,
                         color = color,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = base.copy(fontSize = base.fontSize * fit.floatValue),
                         fontWeight = if (active) FontWeight.Medium else null,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+                        maxLines = 1,
+                        softWrap = false,
+                        onTextLayout = { if (it.didOverflowWidth && fit.floatValue > MIN_TAB_FIT) fit.floatValue *= TAB_FIT_STEP },
+                        modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
                     )
                     Box(
                         Modifier
@@ -144,6 +153,8 @@ private fun Badge(
 }
 
 private const val MAX_BADGE = 99
+private const val MIN_TAB_FIT = 0.6f
+private const val TAB_FIT_STEP = 0.94f
 
 /** "FONT SETTINGS": small caps label over a hairline, like the web settings dialog. */
 @Composable
@@ -151,15 +162,15 @@ internal fun SectionHeader(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().padding(top = 8.dp)) {
+    Column(modifier.fillMaxWidth().padding(top = 4.dp)) {
         Text(
             text.uppercase(),
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelMedium,
             letterSpacing = 1.sp,
             color = mutedText(),
             fontWeight = FontWeight.SemiBold,
         )
-        HorizontalDivider(Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+        HorizontalDivider(Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
     }
 }
 
@@ -170,7 +181,7 @@ internal fun SettingRow(
     modifier: Modifier = Modifier,
     control: @Composable () -> Unit,
 ) {
-    Row(modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         control()
     }
@@ -214,7 +225,7 @@ internal fun Stepper(
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(4.dp),
+            .padding(3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StepButton(LucideIcons.Minus, "Decrease $description".trim(), onMinus)
@@ -223,7 +234,7 @@ internal fun Stepper(
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(min = 56.dp).padding(horizontal = 4.dp),
+            modifier = Modifier.widthIn(min = 44.dp).padding(horizontal = 4.dp),
         )
         StepButton(LucideIcons.Plus, "Increase $description".trim(), onPlus)
     }
@@ -237,7 +248,7 @@ private fun StepButton(
 ) {
     Box(
         Modifier
-            .size(36.dp)
+            .size(30.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(raised())
             .clickable(enabled = onClick != null, role = Role.Button, onClickLabel = description) { onClick?.invoke() },
@@ -275,7 +286,7 @@ internal fun OptionCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(6.dp)
     Box(
         modifier
             .clip(shape)
@@ -285,7 +296,7 @@ internal fun OptionCard(
                 if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                 shape,
             ).clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(12.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) { content() }
 }
@@ -298,8 +309,8 @@ internal fun Swatch(
 ) {
     Box(
         modifier
-            .width(36.dp)
-            .height(24.dp)
+            .width(28.dp)
+            .height(16.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(color)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),

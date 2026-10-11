@@ -1,16 +1,21 @@
 package com.c0mpile.grimmreader.navigation
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -183,6 +188,7 @@ private fun Screens(
     devServerUrl: String,
     go: (SidebarDestination) -> Unit,
 ) {
+    ConfirmExit(enabled = backStack.size <= 1)
     NavDisplay(
         backStack = backStack,
         onBack = { backStack.removeLastOrNull() },
@@ -249,3 +255,27 @@ private fun Screens(
 }
 
 private val WIDE = 840.dp
+
+/**
+ * Back on the first screen would close the app: ask first. Screens with their own back handling (a selection, an
+ * open panel) are composed later and take back before this does.
+ */
+@Composable
+private fun ConfirmExit(enabled: Boolean) {
+    var asking by rememberSaveable { mutableStateOf(false) }
+    val activity = LocalActivity.current
+    BackHandler(enabled = enabled) { asking = true }
+    if (asking) {
+        AlertDialog(
+            onDismissRequest = { asking = false },
+            title = { Text("Close GrimmReader?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    asking = false
+                    activity?.finish()
+                }) { Text("Close") }
+            },
+            dismissButton = { TextButton(onClick = { asking = false }) { Text("Stay") } },
+        )
+    }
+}

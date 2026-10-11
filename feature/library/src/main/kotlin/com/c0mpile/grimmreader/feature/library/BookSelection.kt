@@ -63,6 +63,11 @@ internal class BookSelection(
         ids = if (bookId in ids) ids - bookId else ids + bookId
     }
 
+    /** Single selection (the dashboard): [bookId] becomes the only selected book, or nothing when it was it already. */
+    fun selectOnly(bookId: Long) {
+        ids = if (ids == setOf(bookId)) emptySet() else setOf(bookId)
+    }
+
     /** Selects every listed book, or clears the selection when all of them are selected already. */
     fun toggleAll(listed: Collection<Long>) {
         ids = if (ids.containsAll(listed)) emptySet() else listed.toSet()
@@ -98,18 +103,21 @@ internal fun SelectionBackHandler(selection: BookSelection) {
 internal fun SelectionTopBar(
     selection: BookSelection,
     books: List<Book>,
+    allowAll: Boolean = true,
 ) {
     val all = books.isNotEmpty() && selection.ids.size == books.size
     TopAppBar(
         navigationIcon = { IconButton(onClick = selection::clear) { Icon(LucideIcons.X, contentDescription = "Clear selection") } },
         title = { Text("${selection.ids.size} selected", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         actions = {
-            IconButton(onClick = { selection.toggleAll(books.map { it.id }) }) {
-                Icon(
-                    LucideIcons.CheckCheck,
-                    contentDescription = if (all) "Deselect all" else "Select all",
-                    tint = if (all) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
+            if (allowAll) {
+                IconButton(onClick = { selection.toggleAll(books.map { it.id }) }) {
+                    Icon(
+                        LucideIcons.CheckCheck,
+                        contentDescription = if (all) "Deselect all" else "Select all",
+                        tint = if (all) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         },
     )
