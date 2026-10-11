@@ -27,6 +27,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.io.File
 import java.io.IOException
 import java.util.Locale
 import javax.inject.Inject
@@ -79,7 +80,29 @@ class SystemSpeech
         private var releaseJob: Job? = null
         private var counter = 0
 
+        // Narration is rendered to audio files ahead of time and played gaplessly; an engine that cannot is spoken to directly.
+        private val buffer =
+            BufferedSpeech(
+                File(context.cacheDir, "narration"),
+                synthesize = ::renderToFile,
+                emit = { _events.tryEmit(it) },
+                onFallback = ::fallBack,
+            )
+
+        @Volatile private var bufferBroken = false
+
+        @Volatile private var stops = 0
+
         override suspend fun enqueue(
+            text: String,
+            id: String,
+        ) {
+            if (bufferBroken) return speak(text, id)
+            ensure()
+            buffer.enqueue(Pending(id, text.take(TextToSpeech.getMaxSpeechInputLength())))
+        }
+
+        private suspend fun speak(
             text: String,
             id: String,
         ) {
@@ -89,7 +112,35 @@ class SystemSpeech
             if (result != TextToSpeech.SUCCESS) _events.tryEmit(SpeechEvent.Failed(id, "The speech engine refused the text."))
         }
 
+        private suspend fun renderToFile(
+            text: String,
+            synthId: String,
+            file: File,
+        ): Boolean {
+            val t = ensure()
+            return withContext(Dispatchers.Main) { t.synthesizeToFile(text, null, file, synthId) } == TextToSpeech.SUCCESS
+        }
+
+        /** The engine cannot render files: from now on (for this engine) it speaks directly, starting with what was left. */
+        private fun fallBack(rest: List<Pending>) {
+            bufferBroken = true
+            val mine = stops
+            scope.launch {
+                for (item in rest) {
+                    if (mine != stops) return@launch
+                    try {
+                        speak(item.text, item.id)
+                    } catch (e: SpeechUnavailableException) {
+                        _events.tryEmit(SpeechEvent.Failed(item.id, e.message ?: "The speech engine is not available."))
+                        return@launch
+                    }
+                }
+            }
+        }
+
         override fun stop() {
+            stops++
+            buffer.stop()
             tts?.stop()
         }
 
@@ -112,7 +163,7 @@ class SystemSpeech
                             _events.asSharedFlow().first { it.id == id && it !is SpeechEvent.Started }
                         }
                     stop()
-                    enqueue(text, id)
+                    speak(text, id)
                     val end = outcome.await()
                     if (end is SpeechEvent.Failed) throw IOException(end.message)
                 }
@@ -165,6 +216,7 @@ class SystemSpeech
                         tts = t
                         engineOf = p.engine
                         voiceOf = null
+                        bufferBroken = false
                     }
                     configure(t, p)
                     t
@@ -223,15 +275,21 @@ class SystemSpeech
             t.setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String) {
+                        if (buffer.isSynth(utteranceId)) return
                         _events.tryEmit(SpeechEvent.Started(utteranceId))
                     }
 
                     override fun onDone(utteranceId: String) {
+                        if (buffer.isSynth(utteranceId)) {
+                            buffer.onSynth(utteranceId, true)
+                            return
+                        }
                         _events.tryEmit(SpeechEvent.Done(utteranceId))
                     }
 
                     @Deprecated("Replaced by the overload with an error code.")
                     override fun onError(utteranceId: String) {
+                        if (buffer.isSynth(utteranceId)) return buffer.onSynth(utteranceId, false)
                         _events.tryEmit(SpeechEvent.Failed(utteranceId, "The speech engine failed."))
                     }
 
@@ -239,6 +297,7 @@ class SystemSpeech
                         utteranceId: String,
                         errorCode: Int,
                     ) {
+                        if (buffer.isSynth(utteranceId)) return buffer.onSynth(utteranceId, false)
                         _events.tryEmit(SpeechEvent.Failed(utteranceId, "The speech engine failed (error $errorCode)."))
                     }
 
@@ -246,6 +305,7 @@ class SystemSpeech
                         utteranceId: String,
                         interrupted: Boolean,
                     ) {
+                        if (buffer.isSynth(utteranceId)) return buffer.onSynth(utteranceId, false)
                         _events.tryEmit(SpeechEvent.Stopped(utteranceId))
                     }
                 },
