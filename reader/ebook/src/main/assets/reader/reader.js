@@ -16,6 +16,9 @@ let bookmarks = []
 let searchId = 0
 
 const MAX_HITS = 500
+// Top/bottom (side, when vertical) margin of the page. The paginator's default is 48px, room for a running head
+// and page number, which this reader does not show; the safe-area padding already keeps text clear of the bars.
+const PAGE_MARGIN = 8
 const clamp = (v, lo, hi) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null
 // Paginator layout; values are checked here too, they end up in CSS.
 const applyLayout = l => {
@@ -23,6 +26,7 @@ const applyLayout = l => {
     if (!r || !l || typeof l !== 'object') return
     const gap = clamp(l.gap, 0, 0.5), cols = clamp(l.columns, 1, 4)
     const width = clamp(l.maxInlineSize, 200, 4000), height = clamp(l.maxBlockSize, 200, 8000)
+    r.setAttribute('margin', `${PAGE_MARGIN}px`)
     if (gap != null) r.setAttribute('gap', `${Math.round(gap * 1000) / 10}%`)
     if (cols != null) r.setAttribute('max-column-count', String(Math.round(cols)))
     if (width != null) r.setAttribute('max-inline-size', `${Math.round(width)}px`)
