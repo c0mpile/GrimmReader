@@ -89,6 +89,15 @@ private class FakeSource(
         spokenNow = chunk
     }
 
+    val progress = mutableListOf<Int>()
+
+    override fun progress(
+        chunk: NarrationChunk,
+        chars: Int,
+    ) {
+        progress += chars
+    }
+
     override fun clearSpoken() {
         cleared = true
     }
@@ -196,6 +205,33 @@ class NarrationControllerTest {
             r.controller.start(NarrationPoint(1f, 2f))
             runCurrent()
             assertNull(source.resumes.last())
+            r.controller.stop()
+        }
+
+    @Test fun thePageIsToldHowFarThePassageHasBeenHeard() =
+        runTest {
+            val r = rig()
+            r.systemOn()
+            val source = FakeSource(listOf(NarrationChunk("One two three four.", "cfi1", 0), passage(2)))
+            r.controller.attach(7L, source, NarrationMeta("Book"))
+            r.controller.start()
+            runCurrent()
+            r.speech.shared.tryEmit(
+                SpeechEvent.Started(
+                    r.speech.queued
+                        .first()
+                        .second,
+                ),
+            )
+            r.speech.heard = 9
+            advanceTimeBy(700)
+            runCurrent()
+            // "One two t": seven characters that are not spaces.
+            assertEquals(7, source.progress.last())
+            r.controller.pause()
+            val n = source.progress.size
+            advanceTimeBy(2_000)
+            assertEquals(n, source.progress.size)
             r.controller.stop()
         }
 

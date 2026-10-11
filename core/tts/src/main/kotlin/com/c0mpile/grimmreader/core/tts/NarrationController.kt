@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -50,6 +51,7 @@ class NarrationController internal constructor(
     private var owner: Any? = null
     private var fetching: Job? = null
     private var idleJob: Job? = null
+    private var ticker: Job? = null
     private var fetchFailures = 0
     private val place = NarrationPlace(queue, speech, prefs, scope)
     private val submitLock = Mutex()
@@ -162,6 +164,7 @@ class NarrationController internal constructor(
     fun pause() {
         if (_state.value.status == NarrationStatus.IDLE) return
         if (playing) place.remember(owner)
+        ticker?.cancel()
         flush(releaseAudio = true)
         _state.update { it.copy(status = NarrationStatus.PAUSED) }
         idleJob?.cancel()
@@ -188,6 +191,7 @@ class NarrationController internal constructor(
         fetching?.cancel()
         sleepTimer.clear()
         idleJob?.cancel()
+        ticker?.cancel()
         flush(releaseAudio = true)
         source?.clearSpoken()
         queue.clear()
@@ -233,6 +237,14 @@ class NarrationController internal constructor(
         _state.update { it.copy(status = NarrationStatus.PLAYING) }
         NarrationService.start(context)
         queue.head?.let { source?.spoken(it.chunk) }
+        ticker?.cancel()
+        ticker =
+            scope.launch {
+                while (isActive) {
+                    delay(TICK_MS)
+                    source?.let(place::report)
+                }
+            }
         topUp()
     }
 
@@ -327,6 +339,7 @@ class NarrationController internal constructor(
 
     private companion object {
         const val BATCH = 4
+        const val TICK_MS = 300L
         const val AHEAD_CHARS = 3_000
         const val AHEAD_MAX = 16
         const val FETCH_TIMEOUT_MS = 15_000L

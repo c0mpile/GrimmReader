@@ -23,5 +23,10 @@ internal class EbookNarrationSource(
 
     override fun spoken(chunk: NarrationChunk) = ebook.narration.spoken(NarrationText(chunk.text, chunk.locator, chunk.section))
 
+    override fun progress(
+        chunk: NarrationChunk,
+        chars: Int,
+    ) = ebook.narration.progress(chars)
+
     override fun clearSpoken() = ebook.narration.clear()
 }

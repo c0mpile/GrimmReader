@@ -282,6 +282,9 @@ class EbookNarration internal constructor(
     /** Marks [passage] in the page and turns to it (when the page is visible). */
     fun spoken(passage: NarrationText) = call("grimm_api.narrationSpoken(${Json.encodeToString(passage)})")
 
+    /** [chars] non-space characters of the passage being spoken have been heard; the page turns where it runs onto the next. */
+    fun progress(chars: Int) = call("grimm_api.narrationProgress($chars)")
+
     fun clear() = call("grimm_api.narrationClear()")
 
     private fun call(js: String) {

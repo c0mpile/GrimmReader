@@ -531,20 +531,87 @@ const narrationFollow = async (chunk, run) => {
         await narrationDraw(chunk)
     } catch { /* the page is not there (any more) */ }
 }
+// How many non-space characters of the passage lie on the visible page (Infinity when it ends there): the voice turns
+// the page when it gets that far, not only when the next passage starts, so a passage across a page break is not read
+// from a page that has not been turned to.
+let narrBreak = Infinity
+const narrBreakAt = async chunk => {
+    try {
+        const r = await view.resolveCFI(chunk.cfi)
+        const c = view.renderer.getContents().find(x => x.index === r.index)
+        if (!c || !visible) return Infinity
+        const end = CFI.collapse(visible, true)
+        const range = r.anchor(c.doc)
+        const onPage = (node, off) => {
+            const p = c.doc.createRange()
+            p.setStart(node, off)
+            p.collapse(true)
+            return CFI.compare(CFI.collapse(view.getCFI(r.index, p)), end) < 0
+        }
+        const parts = []
+        const walker = c.doc.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT)
+        let count = 0
+        for (let n = walker.currentNode.nodeType === 3 ? walker.currentNode : walker.nextNode(); n; n = walker.nextNode()) {
+            if (!range.intersectsNode(n) || narrSkipped(n)) continue
+            const from = n === range.startContainer ? range.startOffset : 0
+            const to = n === range.endContainer ? range.endOffset : n.data.length
+            parts.push({ n, from, to, before: count })
+            count += n.data.slice(from, to).replace(/\s/g, '').length
+        }
+        // The first part that starts off the page, then the first character in the part before it that does.
+        let lo = 0, hi = parts.length
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1
+            if (onPage(parts[mid].n, parts[mid].from)) lo = mid + 1; else hi = mid
+        }
+        if (lo === 0) return Infinity
+        const p = parts[lo - 1]
+        if (lo === parts.length && onPage(p.n, Math.max(p.to - 1, p.from))) return Infinity
+        let a = p.from, b = p.to
+        while (a < b) {
+            const mid = (a + b) >> 1
+            if (onPage(p.n, mid)) a = mid + 1; else b = mid
+        }
+        return p.before + p.n.data.slice(p.from, a).replace(/\s/g, '').length
+    } catch { return Infinity }
+}
+const narrationFollowAndArm = async (chunk, run) => {
+    narrBreak = Infinity
+    await narrationFollow(chunk, run)
+    if (run !== narrRun) return
+    const b = await narrBreakAt(chunk)
+    if (run === narrRun) narrBreak = b
+}
+const narrationProgress = async heard => {
+    const chunk = narrChunk
+    if (!chunk || !(heard >= narrBreak) || document.visibilityState !== 'visible') return
+    narrBreak = Infinity
+    const run = narrRun
+    try {
+        if (animMode === 'turn') await askTurn(); else await view.next()
+        if (run !== narrRun) return
+        await narrationDraw(chunk)
+        const b = await narrBreakAt(chunk)
+        // A page that has not been reported yet would give the same answer again: do not turn twice.
+        if (run === narrRun && b > heard) narrBreak = b
+    } catch { /* the page is not there (any more) */ }
+}
 // Only a visible page is turned and drawn; a hidden one (screen off, app in the background) catches up on return.
 const narrationSpoken = chunk => {
     if (!chunk || typeof chunk.cfi !== 'string') return
     narrChunk = chunk
+    narrBreak = Infinity
     const run = ++narrRun
-    if (document.visibilityState === 'visible') narrationFollow(chunk, run)
+    if (document.visibilityState === 'visible') narrationFollowAndArm(chunk, run)
 }
 const narrationClear = () => {
     narrChunk = null
+    narrBreak = Infinity
     narrRun++
     for (const { overlayer } of view.renderer?.getContents?.() ?? []) overlayer?.remove(NARR_KEY)
 }
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && narrChunk) narrationFollow(narrChunk, ++narrRun)
+    if (document.visibilityState === 'visible' && narrChunk) narrationFollowAndArm(narrChunk, ++narrRun)
 })
 view.addEventListener('create-overlay', e => { if (narrChunk && narrChunk.section === e.detail.index) narrationDraw(narrChunk) })
 
@@ -572,6 +639,7 @@ window.grimm_api = {
     clearSelection,
     setHighlights,
     narrationBegin,
+    narrationProgress,
     narrationNext,
     narrationSpoken,
     narrationClear,

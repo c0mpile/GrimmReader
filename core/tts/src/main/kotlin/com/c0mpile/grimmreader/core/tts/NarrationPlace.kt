@@ -34,6 +34,18 @@ internal class NarrationPlace(
         scope.launch { prefs.setNarrationResume(id, NarrationResume(head.chunk.locator, heardWords)) }
     }
 
+    /** Tells the page how far the passage being spoken has been heard (when the output can tell). */
+    fun report(source: NarrationSource) {
+        val head = queue.head ?: return
+        val heard = speech.heardChars(queue.id(head)) ?: return
+        source.progress(
+            head.chunk,
+            head.chunk.text
+                .take(head.skip + heard)
+                .count { it != ' ' },
+        )
+    }
+
     fun forget(book: Any?) {
         val id = book as? Long ?: return
         scope.launch { prefs.setNarrationResume(id, null) }

@@ -38,6 +38,15 @@ interface NarrationSource {
     /** [chunk] is being spoken now: mark it in the page and turn to it. */
     fun spoken(chunk: NarrationChunk)
 
+    /**
+     * [chars] non-space characters of [chunk], the passage being spoken, have been heard: a passage that runs onto the
+     * next page turns the page where the voice gets there.
+     */
+    fun progress(
+        chunk: NarrationChunk,
+        chars: Int,
+    ) = Unit
+
     /** Narration ended: remove the mark. */
     fun clearSpoken()
 }
