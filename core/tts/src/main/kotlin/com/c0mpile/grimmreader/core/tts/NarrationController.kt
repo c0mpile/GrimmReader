@@ -87,7 +87,7 @@ class NarrationController internal constructor(
         meta: NarrationMeta,
     ) {
         // Another reader (another book) than the one being narrated: that narration ends.
-        if (this.owner !== owner && _state.value.status != NarrationStatus.IDLE) stop()
+        if (this.owner != owner && _state.value.status != NarrationStatus.IDLE) stop()
         this.owner = owner
         this.source = source
         _state.update { it.copy(meta = meta) }
@@ -103,14 +103,14 @@ class NarrationController internal constructor(
 
     /** The reader's page went away; narration goes on from what is queued until the page comes back. */
     fun detach(owner: Any) {
-        if (this.owner !== owner) return
+        if (this.owner != owner) return
         source = null
         fetching?.cancel()
     }
 
     /** The reader is closed for good. */
     fun release(owner: Any) {
-        if (this.owner !== owner) return
+        if (this.owner != owner) return
         stop()
         this.owner = null
         source = null
@@ -120,15 +120,15 @@ class NarrationController internal constructor(
         owner: Any,
         meta: NarrationMeta,
     ) {
-        if (this.owner === owner) _state.update { it.copy(meta = meta) }
+        if (this.owner == owner) _state.update { it.copy(meta = meta) }
     }
 
     fun messageShown() = _state.update { it.copy(message = null) }
 
-    /** Starts reading at the top of the visible page. */
-    fun start() {
+    /** Starts reading at the first word of the visible page, or at the word [at] (also while reading: it starts over there). */
+    fun start(at: NarrationPoint? = null) {
         val src = source ?: return
-        if (_state.value.status != NarrationStatus.IDLE) return
+        if (_state.value.status != NarrationStatus.IDLE && at == null) return
         scope.launch {
             if (prefs.speechPrefs.first().provider != SpeechProvider.SYSTEM) {
                 say("Turn on System text-to-speech in Settings to have books read aloud.")
@@ -138,7 +138,7 @@ class NarrationController internal constructor(
             flush()
             _state.update { it.copy(status = NarrationStatus.LOADING, message = null) }
             NarrationService.start(context)
-            if (src.begin(null, after = false)) {
+            if (src.begin(null, after = false, at = at)) {
                 play()
             } else {
                 stop("There is no text to read here.")

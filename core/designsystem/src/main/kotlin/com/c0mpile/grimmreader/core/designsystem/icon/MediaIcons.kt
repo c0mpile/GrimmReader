@@ -2,7 +2,7 @@ package com.c0mpile.grimmreader.core.designsystem.icon
 
 import androidx.compose.ui.graphics.vector.ImageVector
 
-/** Transport icons from Lucide (ISC licence), written out by hand like [FilledIcons]; not generated. */
+/** Transport and highlighter icons from Lucide (ISC licence), written out by hand like [FilledIcons]; not generated. */
 @Suppress("MaxLineLength")
 object MediaIcons {
     val Play: ImageVector by lazy {
@@ -26,6 +26,12 @@ object MediaIcons {
         lucide("skip-forward") {
             stroke("M21 4v16")
             stroke("M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z")
+        }
+    }
+    val Highlighter: ImageVector by lazy {
+        lucide("highlighter") {
+            stroke("m9 11-6 6v3h9l3-3")
+            stroke("m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4")
         }
     }
     val Square: ImageVector by lazy {

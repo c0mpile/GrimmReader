@@ -100,6 +100,19 @@ class EbookBridgeTest {
         assertNull(parse("""{"t":"selection","text":"x"}"""))
     }
 
+    @Test fun selectionHandlesComeWithTheSelectionAndWhenTheyMove() {
+        val points = HandlePoints(HandlePoint(10f, 20f), HandlePoint(110.5f, 20f))
+        assertEquals(
+            EbookEvent.Selection("two words", "epubcfi(/6/4!/4/2,/1:0,/1:9)", emptyList(), points),
+            parse(
+                """{"t":"selection","text":"two words","cfi":"epubcfi(/6/4!/4/2,/1:0,/1:9)","over":[],"handles":{"sx":10,"sy":20,"ex":110.5,"ey":20}}""",
+            ),
+        )
+        assertEquals(EbookEvent.Handles(points), parse("""{"t":"handles","sx":10,"sy":20,"ex":110.5,"ey":20}"""))
+        // Without both points there are no handles.
+        assertNull(parse("""{"t":"handles","sx":10,"sy":20}"""))
+    }
+
     @Test fun narrationAnswersCarryPassagesOrAFailure() {
         val cfi = "epubcfi(/6/4!/4/2,/1:0,/1:5)"
         val ok =

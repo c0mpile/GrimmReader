@@ -52,6 +52,14 @@ data class PageTurns(
  * and its lift to [onLongPressEnd] (selecting text by long press and drag). With [onLongPress] null a long hold
  * does nothing.
  *
+ * With [onPointTap], a tap goes there with where it is (in px) instead of anywhere else (highlight mode: a
+ * tap picks the word under it).
+ *
+ * With [onDoubleTap], a second [PageZone.MIDDLE] tap shortly after and near the first goes to it (with where it
+ * is, in px) instead of [onTap]; the first tap was already reported, so [onDoubleTap] undoes what it did.
+ * Edge taps turn the page at once and are never part of a double tap. [history] must outlive the modifier
+ * (remember it): [turns] changes, which restarts the gesture handling, when the bars toggle.
+ *
  * The lambdas are captured once per [turns]; pass ones that read current state.
  */
 fun Modifier.pageGestures(
@@ -61,8 +69,11 @@ fun Modifier.pageGestures(
     onLongPress: ((Offset) -> Unit)? = null,
     onLongPressDrag: ((Offset) -> Unit)? = null,
     onLongPressEnd: (() -> Unit)? = null,
+    onDoubleTap: ((Offset) -> Unit)? = null,
+    history: TapHistory = TapHistory(),
+    onPointTap: ((Offset) -> Unit)? = null,
 ): Modifier =
-    pointerInput(turns, onTap != null, onLongPress != null) {
+    pointerInput(turns, onTap != null, onLongPress != null, onDoubleTap != null, onPointTap != null) {
         val minSwipe = SWIPE_DP.dp.toPx()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -83,12 +94,47 @@ fun Modifier.pageGestures(
             when {
                 !touch.dragged && onTap != null && held < viewConfiguration.longPressTimeoutMillis -> {
                     up.consume()
-                    onTap(if (turns.taps) zone else PageZone.MIDDLE)
+                    val tapZone = if (turns.taps) zone else PageZone.MIDDLE
+                    if (onPointTap != null) {
+                        onPointTap(up.position)
+                        return@awaitEachGesture
+                    }
+                    val double = onDoubleTap != null && history.isDoubleTap(up, tapZone, viewConfiguration.doubleTapTimeoutMillis, minSwipe)
+                    history.update(up, tapZone, double)
+                    if (double) onDoubleTap?.invoke(up.position) else onTap(tapZone)
                 }
                 touch.dragged && turns.swipes && zone != PageZone.MIDDLE && isSwipe(move, minSwipe) -> onSwipe(move.x < 0)
             }
         }
     }
+
+/** The last middle tap (when and where), kept by the caller so a double tap is seen across gesture restarts. */
+class TapHistory {
+    private var time = NONE
+    private var at = Offset.Zero
+
+    internal fun isDoubleTap(
+        tap: PointerInputChange,
+        zone: PageZone,
+        timeoutMillis: Long,
+        slop: Float,
+    ): Boolean =
+        zone == PageZone.MIDDLE && time != NONE && tap.uptimeMillis - time <= timeoutMillis && (tap.position - at).getDistance() <= slop
+
+    /** A middle tap that was not a double tap may start one; anything else ends the chance. */
+    internal fun update(
+        tap: PointerInputChange,
+        zone: PageZone,
+        double: Boolean,
+    ) {
+        time = if (zone == PageZone.MIDDLE && !double) tap.uptimeMillis else NONE
+        at = tap.position
+    }
+
+    private companion object {
+        const val NONE = -1L
+    }
+}
 
 private class Touch {
     var up: PointerInputChange? = null

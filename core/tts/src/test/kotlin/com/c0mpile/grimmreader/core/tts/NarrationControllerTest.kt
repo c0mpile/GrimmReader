@@ -56,12 +56,15 @@ private class FakeSource(
     var spokenNow: NarrationChunk? = null
     var cleared = false
     val begun = mutableListOf<Pair<String?, Boolean>>()
+    val points = mutableListOf<NarrationPoint?>()
 
     override suspend fun begin(
         from: String?,
         after: Boolean,
+        at: NarrationPoint?,
     ): Boolean {
         begun += from to after
+        points += at
         if (from != null) cursor = book.indexOfFirst { it.locator == from } + if (after) 1 else 0
         return book.isNotEmpty()
     }
@@ -133,6 +136,38 @@ class NarrationControllerTest {
                     .first,
             )
             r.controller.stop()
+        }
+
+    @Test fun aPointedWordStartsTheReadingThereEvenWhileReading() =
+        runTest {
+            val r = rig()
+            r.systemOn()
+            val source = FakeSource((1..30).map { passage(it) })
+            r.controller.attach(this, source, NarrationMeta("Book"))
+            r.controller.start()
+            runCurrent()
+            assertEquals(listOf<NarrationPoint?>(null), source.points)
+            r.controller.start(NarrationPoint(12f, 34f))
+            runCurrent()
+            assertEquals(NarrationPoint(12f, 34f), source.points.last())
+            assertEquals(NarrationStatus.PLAYING, r.controller.state.value.status)
+            r.controller.stop()
+        }
+
+    @Test fun aRebuiltReaderOfTheSameBookKeepsTheNarrationGoing() =
+        runTest {
+            val r = rig()
+            r.systemOn()
+            r.controller.attach(7L, FakeSource((1..30).map { passage(it) }), NarrationMeta("Book"))
+            r.controller.start()
+            runCurrent()
+            r.controller.detach(7L)
+            r.controller.attach(7L, FakeSource((1..30).map { passage(it) }), NarrationMeta("Book"))
+            runCurrent()
+            assertEquals(NarrationStatus.PLAYING, r.controller.state.value.status)
+            // Another book ends it.
+            r.controller.attach(8L, FakeSource((1..30).map { passage(it) }), NarrationMeta("Other"))
+            assertEquals(NarrationStatus.IDLE, r.controller.state.value.status)
         }
 
     @Test fun markingFollowsWhatIsSpokenAndFinishingTheBookStops() =

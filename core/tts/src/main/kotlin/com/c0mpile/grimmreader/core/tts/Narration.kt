@@ -9,15 +9,23 @@ data class NarrationChunk(
     val section: Int,
 )
 
+/** A spot of the page the user pointed at, in the page's CSS px; narration starts at the word there. */
+data class NarrationPoint(
+    val x: Float,
+    val y: Float,
+)
+
 /** The text of the open book, as the reader provides it. Calls come from the main thread. */
 interface NarrationSource {
     /**
-     * Positions the source: at the start of the visible page when [from] is null, at [from] otherwise, or just
-     * after [from] when [after]. Returns false when the book has no text to read.
+     * Positions the source: at the first word of the visible page when [from] is null, at [from] otherwise, or
+     * just after [from] when [after]; the word at [at] wins over all of these. Returns false when the book has no
+     * text to read.
      */
     suspend fun begin(
         from: String?,
         after: Boolean,
+        at: NarrationPoint? = null,
     ): Boolean
 
     /** The next passages in reading order; an empty list means the end of the book, null that the page failed to answer. */

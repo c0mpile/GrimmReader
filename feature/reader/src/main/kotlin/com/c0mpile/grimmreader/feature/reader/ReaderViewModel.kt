@@ -114,7 +114,7 @@ data class ReaderUiState(
 class ReaderViewModel
     @AssistedInject
     constructor(
-        @Assisted private val bookId: Long,
+        @Assisted val bookId: Long,
         private val library: LibraryRepository,
         private val progress: ProgressRepository,
         private val online: OnlineReading,
@@ -399,7 +399,7 @@ class ReaderViewModel
         }
 
         override fun onCleared() {
-            narration.release(this)
+            narration.release(bookId)
             pending.value?.let { locator -> kotlinx.coroutines.runBlocking { progress.save(bookId, locator) } }
             source?.close()
             handle?.close()

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -82,6 +83,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.c0mpile.grimmreader.core.designsystem.component.PageTurns
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
+import com.c0mpile.grimmreader.core.designsystem.icon.MediaIcons
 import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.designsystem.theme.PageImages
 import com.c0mpile.grimmreader.core.designsystem.theme.colorFilter
@@ -91,6 +93,7 @@ import com.c0mpile.grimmreader.core.model.Bookmark
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.tts.NarrationMeta
+import com.c0mpile.grimmreader.core.tts.NarrationPoint
 import com.c0mpile.grimmreader.core.tts.NarrationStatus
 import com.c0mpile.grimmreader.reader.ebook.EbookController
 import com.c0mpile.grimmreader.reader.ebook.EbookCss
@@ -137,6 +140,7 @@ fun ReaderScreen(
     var chrome by rememberSaveable { mutableStateOf(true) }
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
     var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var highlighting by rememberSaveable { mutableStateOf(false) }
     val motion = LocalMotionEnabled.current
     val snackbar = remember { SnackbarHostState() }
     // One controller per ebook view, hoisted so the panels and the position bar can jump through it.
@@ -160,7 +164,7 @@ fun ReaderScreen(
         Box(Modifier.fillMaxSize().then(if (panelOpen) Modifier.blur(PANEL_BLUR) else Modifier)) {
             // While the bars are shown, a tap on the page only hides them; nothing turns.
             val turns = if (chrome) PageTurns.Off else prefs.pageTurns()
-            Content(state.content, prefs, turns, selection != null, viewModel, controller, onPageReady = {
+            Content(state.content, prefs, turns, selection != null, highlighting, viewModel, controller, onPageReady = {
                 pageReady = true
             }, onToggleChrome = {
                 chrome = !chrome
@@ -184,6 +188,11 @@ fun ReaderScreen(
                         onSeekFraction = controller::goToFraction,
                         onSeekPage = viewModel::goToPage,
                         onNarrate = { overlay = if (overlay == Overlay.Narration) Overlay.None else Overlay.Narration },
+                        highlighting = highlighting,
+                        onHighlight = {
+                            highlighting = !highlighting
+                            dropSelection()
+                        },
                     ),
             ) {
                 QuickSettings(
@@ -202,7 +211,7 @@ fun ReaderScreen(
             searchable = ebook != null,
             onOverlay = { overlay = it },
         )
-        SelectionHost(state, viewModel, controller, hidden = lookup != null || panelOpen, Modifier.align(Alignment.BottomCenter))
+        SelectionHost(state, viewModel, controller, hidden = lookup != null || panelOpen)
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 64.dp))
     }
     lookup?.let { LookupSheet(it, viewModel, onOpenDictionaries, dropSelection) }
@@ -259,10 +268,10 @@ private fun NarrationHost(
     val meta = NarrationMeta(state.title, state.chapter)
     val latestMeta by rememberUpdatedState(meta)
     DisposableEffect(controller, pageReady) {
-        if (pageReady) narration.attach(viewModel, EbookNarrationSource(controller), latestMeta)
-        onDispose { narration.detach(viewModel) }
+        if (pageReady) narration.attach(viewModel.bookId, EbookNarrationSource(controller), latestMeta)
+        onDispose { narration.detach(viewModel.bookId) }
     }
-    LaunchedEffect(meta) { narration.updateMeta(viewModel, meta) }
+    LaunchedEffect(meta) { narration.updateMeta(viewModel.bookId, meta) }
     Snack(
         narration.state
             .collectAsStateWithLifecycle()
@@ -365,19 +374,23 @@ private fun LookupSheet(
     )
 }
 
-/** The bar for the selected text, above the bottom bar; [hidden] while something else (definitions, a panel) is open. */
+/**
+ * The bar for the selected text: above the bottom bar, or at the top when the selection (and so its drag handles)
+ * is in the lower part of the page; [hidden] while something else (definitions, a panel) is open.
+ */
 @Composable
-private fun SelectionHost(
+private fun BoxScope.SelectionHost(
     state: ReaderUiState,
     viewModel: ReaderViewModel,
     controller: EbookController,
     hidden: Boolean,
-    modifier: Modifier,
 ) {
     val selection by viewModel.selection.current.collectAsStateWithLifecycle()
     val pronunciation by viewModel.pronunciation.state.collectAsStateWithLifecycle()
     val current = selection
     if (current == null || hidden) return
+    val lowest = controller.handles.points?.let { maxOf(it.start.y, it.end.y) } ?: 0f
+    val low = lowest > LocalConfiguration.current.screenHeightDp * LOW_SELECTION
     val speech = viewModel.pronunciation
     SelectionBar(
         current,
@@ -398,7 +411,12 @@ private fun SelectionHost(
             viewModel.selection.clear()
             controller.clearSelection()
         },
-        modifier = modifier.safeDrawingPadding().padding(bottom = SELECTION_BAR_LIFT),
+        modifier =
+            if (low) {
+                Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = SELECTION_BAR_TOP)
+            } else {
+                Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = SELECTION_BAR_LIFT)
+            },
     )
 }
 
@@ -432,7 +450,7 @@ private fun BoxScope.Panels(
             onDeleteBookmark = viewModel::removeBookmark,
             onHighlight = { highlight ->
                 close()
-                controller.goTo(highlight.cfi)
+                controller.goTo(highlight.cfi, readFromHere = true)
             },
             onDeleteHighlight = viewModel.selection::remove,
             onLoadAnnotations = viewModel.panels::loadAnnotations,
@@ -463,6 +481,10 @@ private val PANEL_BLUR = 6.dp
 
 /** Keeps the selection bar clear of the bottom bar. */
 private val SELECTION_BAR_LIFT = 96.dp
+private val SELECTION_BAR_TOP = 64.dp
+
+/** A selection below this share of the screen height puts its bar at the top, clear of the handles. */
+private const val LOW_SELECTION = 0.4f
 
 private fun ReaderPrefs.pageTurns() = PageTurns(edge = turnZone / PERCENT_F, taps = tapToTurn, swipes = swipeToTurn)
 
@@ -537,6 +559,7 @@ private fun Content(
     prefs: ReaderPrefs,
     turns: PageTurns,
     selecting: Boolean,
+    highlighting: Boolean,
     viewModel: ReaderViewModel,
     controller: EbookController,
     onPageReady: () -> Unit,
@@ -561,6 +584,7 @@ private fun Content(
                     turns = turns,
                     controller = controller,
                     selecting = selecting,
+                    highlighting = highlighting,
                     onEvent = { event ->
                         when (event) {
                             is EbookEvent.Ready -> {
@@ -576,11 +600,12 @@ private fun Content(
                                 viewModel.selection.select(TextSelection(event.text, event.cfi, event.over))
                             }
                             EbookEvent.SelectionCleared -> viewModel.selection.clear()
-                            is EbookEvent.Failed, is EbookEvent.Narration -> Unit
+                            is EbookEvent.Failed, is EbookEvent.Narration, is EbookEvent.Handles -> Unit
                         }
                     },
                     onToggleChrome = onToggleChrome,
                     modifier = Modifier.fillMaxSize().background(page.background).safeDrawingPadding(),
+                    onWordDoubleTap = { x, y -> viewModel.narration.start(NarrationPoint(x, y)) },
                 )
             }
         }
@@ -637,6 +662,8 @@ private class ChromeActions(
     val onSeekFraction: (Float) -> Unit,
     val onSeekPage: (Int) -> Unit,
     val onNarrate: () -> Unit,
+    val highlighting: Boolean,
+    val onHighlight: () -> Unit,
 )
 
 /**
@@ -674,6 +701,8 @@ private fun Chrome(
                     .blockTouches()
                     .background(CHROME_BG)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+                    // Lifted off the system gesture area, so a swipe up from the edge does not land on the slider.
+                    .padding(bottom = BAR_LIFT)
                     .height(56.dp)
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -709,17 +738,7 @@ private fun TopBar(
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (canRead) {
-            ChromeButton(LucideIcons.Menu, "Contents and bookmarks") { actions.onOverlay(Overlay.Left(LeftTab.CONTENTS)) }
-            val marked = state.bookmarkHere != null
-            ChromeButton(
-                if (marked) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
-                if (marked) "Remove bookmark" else "Add bookmark",
-                tint = if (marked) CHROME_ACCENT else CHROME_FG,
-                onClick = actions.onToggleBookmark,
-            )
-            if (ebook) ChromeButton(LucideIcons.Search, "Search") { actions.onOverlay(Overlay.Right(RightTab.SEARCH)) }
-        }
+        if (canRead) TopBarStart(state, ebook, actions)
         TitleBlock(state.title, state.location?.takeIf { ebook }, Modifier.weight(1f))
         if (canRead) {
             if (wide || !ebook) ChromeButton(LucideIcons.FileText, "Notes") { actions.onOverlay(Overlay.Right(RightTab.NOTES)) }
@@ -735,6 +754,32 @@ private fun TopBar(
             ) { actions.onOverlay(Overlay.QuickSettings) }
         }
         ChromeButton(LucideIcons.X, "Close book", onClick = actions.onClose)
+    }
+}
+
+/** Contents, bookmark and, for ebooks, search and highlight: the left end of the top bar. */
+@Composable
+private fun RowScope.TopBarStart(
+    state: ReaderUiState,
+    ebook: Boolean,
+    actions: ChromeActions,
+) {
+    ChromeButton(LucideIcons.Menu, "Contents and bookmarks") { actions.onOverlay(Overlay.Left(LeftTab.CONTENTS)) }
+    val marked = state.bookmarkHere != null
+    ChromeButton(
+        if (marked) LucideIcons.BookmarkCheck else LucideIcons.Bookmark,
+        if (marked) "Remove bookmark" else "Add bookmark",
+        tint = if (marked) CHROME_ACCENT else CHROME_FG,
+        onClick = actions.onToggleBookmark,
+    )
+    if (ebook) {
+        ChromeButton(LucideIcons.Search, "Search") { actions.onOverlay(Overlay.Right(RightTab.SEARCH)) }
+        ChromeButton(
+            MediaIcons.Highlighter,
+            if (actions.highlighting) "Stop highlighting" else "Highlight text",
+            tint = if (actions.highlighting) CHROME_ACCENT else CHROME_FG,
+            onClick = actions.onHighlight,
+        )
     }
 }
 
@@ -839,6 +884,7 @@ private fun PositionBar(
 
 private const val PERCENT = 100f
 private const val WIDE_BAR_DP = 600
+private val BAR_LIFT = 20.dp
 
 /** Reader chrome colours (web: black bars, white icons, primary-400 accent). */
 private val CHROME_BG = Color(0xF20A0A0A)

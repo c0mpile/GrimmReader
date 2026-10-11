@@ -186,13 +186,47 @@ const overlapping = async () => {
     }
     return ids
 }
+// Where the selection's two handles go: under the start of its first line and the end of its last, in this window's CSS px.
+const handlePoints = () => {
+    const frame = sel?.doc.defaultView?.frameElement
+    if (!frame) return null
+    const rect = frame.getBoundingClientRect()
+    const sx = frame.clientWidth ? rect.width / frame.clientWidth : 1
+    const sy = frame.clientHeight ? rect.height / frame.clientHeight : 1
+    const boxes = Array.from(sel.range.getClientRects()).filter(r => r.width > 0 && r.height > 0)
+    if (!boxes.length) return null
+    const first = boxes[0], last = boxes[boxes.length - 1]
+    return { sx: rect.left + first.left * sx, sy: rect.top + first.bottom * sy, ex: rect.left + last.right * sx, ey: rect.top + last.bottom * sy }
+}
+// A handle was dragged to a point: the start (or the end) of the selection moves to the word there, never past the other end.
+const moveHandle = (end, x, y) => {
+    if (!sel || !Number.isFinite(x) || !Number.isFinite(y)) return
+    const at = frameAt(x, y)
+    if (!at || at.doc !== sel.doc) return
+    let node, offset
+    const caret = at.doc.caretPositionFromPoint?.(at.x, at.y)
+    if (caret) { node = caret.offsetNode; offset = caret.offset }
+    else {
+        const r = at.doc.caretRangeFromPoint?.(at.x, at.y)
+        if (!r) return
+        node = r.startContainer; offset = r.startOffset
+    }
+    if (!node || node.nodeType !== 3) return
+    const where = sel.range.comparePoint(node, offset)
+    if (end ? where < 0 : where > 0) return
+    const p = snapped(node, offset, end)
+    if (end) sel.range.setEnd(p.node, p.offset)
+    else sel.range.setStart(p.node, p.offset)
+    drawSelection()
+    post({ t: 'handles', ...handlePoints() })
+}
 const endSelection = async () => {
     const current = sel
     if (!current) return
     const text = current.range.toString().replace(/\s+/g, ' ').trim().slice(0, MAX_SELECTION)
     if (!text) return clearSelection()
     const over = await overlapping()
-    if (sel === current) post({ t: 'selection', text, cfi: view.getCFI(current.index, current.range), over })
+    if (sel === current) post({ t: 'selection', text, cfi: view.getCFI(current.index, current.range), over, handles: handlePoints() })
 }
 
 // Highlights of this book, drawn over the page; sections other than the visible one are drawn when they load.
@@ -253,16 +287,22 @@ const NARR_SKIP = new Set(['script', 'style', 'head', 'rt', 'rp', 'svg', 'math',
 const NARR_TARGET = 120, NARR_MAX = 600, NARR_HARD = 1200
 const NARR_KEY = 'grimm-narration', NARR_COLOR = 'rgb(250, 204, 21)'
 let narr = null
+let narrStart = null
 let narrChunk = null
 let narrRun = 0
 const narrReply = (req, body) => post({ t: 'narration', req, ...body })
 
-const narrBuildChunks = async index => {
+// The passages of a section. With `startCfi` (a point in this section) the passage holding it starts at that point.
+const narrBuildChunks = async (index, startCfi) => {
     const section = view.book.sections[index]
     if (!section || section.linear === 'no') return []
     let doc
     try { doc = await section.createDocument() } catch { return [] }
     if (!doc?.body) return []
+    let startRange = null
+    if (startCfi) {
+        try { startRange = (await view.resolveCFI(startCfi)).anchor(doc) } catch { /* read the whole passage */ }
+    }
     const runs = []
     let cur = null
     const flush = () => { if (cur && cur.text.trim()) runs.push(cur); cur = null }
@@ -308,14 +348,26 @@ const narrBuildChunks = async index => {
             }
             while (from < to && /\s/.test(run.text[from])) from++
             while (to > from && /\s/.test(run.text[to - 1])) to--
-            const text = run.text.slice(from, to).replace(/\s+/g, ' ')
-            if (!/[\p{L}\p{N}]/u.test(text)) return
+            if (from >= to) return
             const range = doc.createRange()
-            const [sn, so] = at(from)
+            let [sn, so] = at(from)
             // The end is looked up on the last character, so it stays in the node that holds it.
             const [en, eo] = at(to - 1)
             range.setStart(sn, so)
             range.setEnd(en, eo + 1)
+            if (startRange && range.comparePoint(startRange.startContainer, startRange.startOffset) === 0) {
+                // The reading starts inside this passage: drop what comes before the start.
+                const before = doc.createRange()
+                before.setStart(sn, so)
+                before.setEnd(startRange.startContainer, startRange.startOffset)
+                from += before.toString().length
+                while (from < to && /\s/.test(run.text[from])) from++
+                if (from >= to) return
+                ;[sn, so] = at(from)
+                range.setStart(sn, so)
+            }
+            const text = run.text.slice(from, to).replace(/\s+/g, ' ')
+            if (!/[\p{L}\p{N}]/u.test(text)) return
             try { chunks.push({ text, cfi: view.getCFI(index, range), section: index }) } catch { /* no CFI for this range */ }
         }
         let acc = null
@@ -330,12 +382,40 @@ const narrBuildChunks = async index => {
 }
 
 // Where reading starts: the visible page, or a given CFI (just after it when `after`).
-const narrationBegin = async (req, from, after) => {
+// The first word of the visible page (top of its first column), found by probing the page row by row.
+// foliate's own visible range starts at the first whole element, which skips the tail of a paragraph from the page before.
+const firstWordOnPage = () => {
+    const box = view.renderer?.getBoundingClientRect?.()
+    if (!box) return null
+    for (let y = box.top + 4; y < box.bottom; y += 8) {
+        for (let x = box.left + 4; x < box.right; x += 12) {
+            const at = frameAt(x, y)
+            const found = at && wordInDoc(at.doc, at.x, at.y)
+            if (found) return { index: at.index, range: found.range }
+        }
+    }
+    return null
+}
+const narrationBegin = async (req, from, after, x, y) => {
     try {
         narr = null
-        const startCfi = typeof from === 'string' && from ? (after ? CFI.collapse(from, true) : CFI.collapse(from)) : (visible ? CFI.collapse(visible) : null)
+        let startCfi = typeof from === 'string' && from ? (after ? CFI.collapse(from, true) : CFI.collapse(from)) : (visible ? CFI.collapse(visible) : null)
+        // A word of the page (double tap) starts the reading there; with nothing given, the first word on the page.
+        let word = null
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+            const at = frameAt(x, y)
+            const found = at && wordInDoc(at.doc, at.x, at.y)
+            if (found) word = { index: at.index, range: found.range }
+        } else if (!from) {
+            // A spot asked for with goTo wins while it is still on the page; else the page's first word.
+            if (narrStart && onVisiblePage(narrStart)) startCfi = CFI.collapse(narrStart)
+            else word = firstWordOnPage()
+        }
+        narrStart = null
+        if (word) startCfi = CFI.collapse(view.getCFI(word.index, word.range))
         const index = startCfi ? (await view.resolveCFI(startCfi)).index : 0
-        narr = { index, startCfi, queue: [], done: false, first: true }
+        // The page start and a tapped word start the first passage mid-way; just after a passage starts the next one whole.
+        narr = { index, startCfi, trim: !after, queue: [], done: false, first: true }
         narrReply(req, { ok: true })
     } catch (err) {
         narrReply(req, { ok: false, error: String(err) })
@@ -347,7 +427,7 @@ const narrationNext = async (req, count) => {
         if (!n) return narrReply(req, { chunks: [], error: 'not started' })
         while (n.queue.length < count && !n.done) {
             if (n.index >= view.book.sections.length) { n.done = true; break }
-            let chunks = await narrBuildChunks(n.index)
+            let chunks = await narrBuildChunks(n.index, n.first && n.trim ? n.startCfi : null)
             if (n.first) {
                 n.first = false
                 // The first section starts at the page: keep what ends after its start.
@@ -408,7 +488,11 @@ view.addEventListener('create-overlay', e => { if (narrChunk && narrChunk.sectio
 window.grimm_api = {
     next: () => view.next(),
     prev: () => view.prev(),
-    goTo: target => view.goTo(target),
+    // `from`: the page is opened to read from here (a highlight): narration starts at this spot while it is on the page.
+    goTo: (target, from) => {
+        if (from) narrStart = typeof target === 'string' ? target : null
+        return view.goTo(target)
+    },
     goToFraction: f => view.goToFraction(f),
     setStyle: css => view.renderer.setStyles?.(css),
     // Bookmark CFIs of this book; answers with the one on the visible page.
@@ -419,6 +503,7 @@ window.grimm_api = {
     clearSearch: () => { searchId++; view.clearSearch() },
     selectAt,
     extendTo,
+    moveHandle,
     endSelection,
     clearSelection,
     setHighlights,

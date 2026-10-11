@@ -24,6 +24,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.c0mpile.grimmreader.core.designsystem.component.PageTurns
 import com.c0mpile.grimmreader.core.designsystem.component.PageZone
+import com.c0mpile.grimmreader.core.designsystem.component.TapHistory
 import com.c0mpile.grimmreader.core.designsystem.component.pageGestures
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.Locator
@@ -122,6 +123,12 @@ sealed interface EbookEvent {
         val text: String,
         val cfi: String,
         val over: List<Long> = emptyList(),
+        val handles: HandlePoints? = null,
+    ) : EbookEvent
+
+    /** The selection's handles moved ([EbookHandles.move]). */
+    data class Handles(
+        val points: HandlePoints,
     ) : EbookEvent
 
     /** The page dropped the selection (it turned or changed). */
@@ -151,12 +158,21 @@ class EbookController {
     /** Reading the book aloud: the page cuts it into passages and marks the one being spoken. */
     val narration = EbookNarration { webView }
 
+    /** The selection's drag handles. */
+    val handles = EbookHandles { webView }
+
     fun next() = call("grimm_api.next()")
 
     fun prev() = call("grimm_api.prev()")
 
-    /** Arguments are JSON-encoded, so book data can never break out of the string literal. */
-    fun goTo(target: String) = call("grimm_api.goTo(${Json.encodeToString(target)})")
+    /**
+     * Arguments are JSON-encoded, so book data can never break out of the string literal. With [readFromHere],
+     * narration started on that page begins at [target] (a highlight's first word) rather than at the page's first word.
+     */
+    fun goTo(
+        target: String,
+        readFromHere: Boolean = false,
+    ) = call("grimm_api.goTo(${Json.encodeToString(target)}, $readFromHere)")
 
     /** Jumps to a position 0..1 through the book (foliate's fraction, weighted like the progress). */
     fun goToFraction(fraction: Float) = call("grimm_api.goToFraction(${fraction.coerceIn(0f, 1f)})")
@@ -182,7 +198,10 @@ class EbookController {
     fun selectAt(
         x: Float,
         y: Float,
-    ) = call("grimm_api.selectAt($x, $y)")
+    ) {
+        handles.points = null
+        call("grimm_api.selectAt($x, $y)")
+    }
 
     /** Extends the selection to the word at [x], [y]. */
     fun extendTo(
@@ -193,7 +212,10 @@ class EbookController {
     /** The finger lifted: the page answers with [EbookEvent.Selection] if something is selected. */
     fun endSelection() = call("grimm_api.endSelection()")
 
-    fun clearSelection() = call("grimm_api.clearSelection()")
+    fun clearSelection() {
+        handles.points = null
+        call("grimm_api.clearSelection()")
+    }
 
     /** Draws these highlights (`id`, `cfi`, `color` each) over the page, and no others. */
     fun setHighlights(highlights: List<HighlightMark>) = call("grimm_api.setHighlights(${Json.encodeToString(highlights)})")
@@ -211,11 +233,16 @@ class EbookNarration internal constructor(
     private val replies = ConcurrentHashMap<Int, CompletableDeferred<EbookEvent.Narration>>()
     private val requests = AtomicInteger()
 
-    /** Positions narration at the visible page, at [from], or just after it. False when the book has no text. */
+    /**
+     * Positions narration at the first word of the visible page, at [from], or just after it; the word at
+     * [x], [y] (CSS px of the reader view) wins. False when the book has no text.
+     */
     suspend fun begin(
         from: String?,
         after: Boolean,
-    ): Boolean = request { req -> "grimm_api.narrationBegin($req, ${Json.encodeToString(from)}, $after)" }?.ok == true
+        x: Float? = null,
+        y: Float? = null,
+    ): Boolean = request { req -> "grimm_api.narrationBegin($req, ${Json.encodeToString(from)}, $after, $x, $y)" }?.ok == true
 
     /** The next [count] passages in reading order; empty at the end of the book, null when the page did not answer. */
     suspend fun next(count: Int): List<NarrationText>? = request { req -> "grimm_api.narrationNext($req, $count)" }?.chunks
@@ -270,6 +297,8 @@ fun EbookReader(
     onEvent: (EbookEvent) -> Unit,
     onToggleChrome: () -> Unit,
     modifier: Modifier = Modifier,
+    highlighting: Boolean = false,
+    onWordDoubleTap: ((x: Float, y: Float) -> Unit)? = null,
 ) {
     val events by rememberUpdatedState(onEvent)
     val density = LocalDensity.current.density
@@ -286,7 +315,24 @@ fun EbookReader(
             modifier = Modifier.fillMaxSize(),
             factory = { context -> readerWebView(context, book, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
-        TapZones(turns, controller, selecting, onToggleChrome, selection)
+        TapZones(
+            turns,
+            controller,
+            selecting,
+            highlighting,
+            onToggleChrome,
+            selection,
+            onWordDoubleTap?.let { tap ->
+                { at: Offset ->
+                    tap(
+                        at.x / density,
+                        at.y / density,
+                    )
+                }
+            },
+        )
+        // Above the tap zones, so a handle takes its own touches.
+        SelectionHandles(controller.handles)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
     LaunchedEffect(animated) { controller.setAnimated(animated) }
@@ -346,7 +392,12 @@ private fun readerWebView(
                     when (val event = message.data?.let { parse(it) }) {
                         null -> Unit
                         is EbookEvent.Narration -> controller.narration.onReply(event)
-                        else -> onEvent(event)
+                        is EbookEvent.Handles -> controller.handles.points = event.points
+                        else -> {
+                            if (event is EbookEvent.Selection) controller.handles.points = event.handles
+                            if (event is EbookEvent.SelectionCleared) controller.handles.points = null
+                            onEvent(event)
+                        }
                     }
                 }
             }
@@ -363,35 +414,72 @@ private class Selection(
 
 /**
  * Takes every touch (the WebView gets none): taps and swipes in the edge zones turn, the middle toggles the bars,
- * a long press anywhere starts a selection. While [selecting], a tap only drops the selection.
+ * a long press anywhere starts a selection, and in highlight mode a tap does. While [selecting], a tap only drops
+ * the selection. A double tap in the middle (it first toggled the bars, which it takes back) goes to [onDoubleTap]
+ * with the spot in px.
  */
 @Composable
 private fun TapZones(
     turns: PageTurns,
     controller: EbookController,
     selecting: Boolean,
+    highlighting: Boolean,
     onToggleChrome: () -> Unit,
     selection: Selection,
+    onDoubleTap: ((Offset) -> Unit)?,
 ) {
     val toggle by rememberUpdatedState(onToggleChrome)
     val isSelecting by rememberUpdatedState(selecting)
+    val doubleTap by rememberUpdatedState(onDoubleTap)
+    val history = remember { TapHistory() }
+    val last =
+        remember {
+            object {
+                var toggled = false
+            }
+        }
     Box(
         Modifier
             .fillMaxSize()
             .pageGestures(
                 turns,
                 onTap = { zone ->
+                    last.toggled = false
                     when {
                         isSelecting -> controller.clearSelection()
                         zone == PageZone.LEFT -> controller.prev()
                         zone == PageZone.RIGHT -> controller.next()
-                        else -> toggle()
+                        else -> {
+                            last.toggled = true
+                            toggle()
+                        }
                     }
                 },
                 onSwipe = { toLeft -> if (toLeft) controller.next() else controller.prev() },
                 onLongPress = selection.start,
                 onLongPressDrag = selection.drag,
                 onLongPressEnd = selection.end,
+                onDoubleTap =
+                    if (onDoubleTap == null) {
+                        null
+                    } else {
+                        { at ->
+                            if (last.toggled) toggle()
+                            last.toggled = false
+                            doubleTap?.invoke(at)
+                        }
+                    },
+                history = history,
+                // Highlight mode: a tap picks the word under it (the handles then widen it).
+                onPointTap =
+                    if (highlighting) {
+                        { at ->
+                            selection.start(at)
+                            selection.end()
+                        }
+                    } else {
+                        null
+                    },
             ),
     )
 }
@@ -488,6 +576,7 @@ internal fun parse(data: String): EbookEvent? {
         }
         "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
         "selection" -> parseSelection(o)
+        "handles" -> parseHandles(o)?.let { EbookEvent.Handles(it) }
         "search" -> parseSearch(o)
         "narration" -> parseNarration(o)
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")
@@ -500,7 +589,15 @@ private fun parseSelection(o: JsonObject): EbookEvent? {
     val text = o.str("text")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val cfi = o.str("cfi")?.takeIf { it.startsWith("epubcfi(") } ?: return null
     val over = o["over"]?.jsonArray?.mapNotNull { it.jsonPrimitive.longOrNull }.orEmpty()
-    return EbookEvent.Selection(text.take(MAX_SELECTION_CHARS), cfi, over)
+    return EbookEvent.Selection(text.take(MAX_SELECTION_CHARS), cfi, over, (o["handles"] as? JsonObject)?.let(::parseHandles))
+}
+
+private fun parseHandles(o: JsonObject): HandlePoints? {
+    val sx = o["sx"]?.jsonPrimitive?.floatOrNull ?: return null
+    val sy = o["sy"]?.jsonPrimitive?.floatOrNull ?: return null
+    val ex = o["ex"]?.jsonPrimitive?.floatOrNull ?: return null
+    val ey = o["ey"]?.jsonPrimitive?.floatOrNull ?: return null
+    return HandlePoints(HandlePoint(sx, sy), HandlePoint(ex, ey))
 }
 
 private fun parseNarration(o: JsonObject): EbookEvent? {
