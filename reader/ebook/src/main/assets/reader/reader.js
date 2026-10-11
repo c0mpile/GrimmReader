@@ -276,7 +276,7 @@ view.addEventListener('relocate', e => {
 })
 
 // Narration. Walks the sections in reading order without rendering them (a detached document per section) and
-// hands the app passages of one or two sentences, each with the CFI of its range. The app speaks them, queued far
+// hands the app passages of a few sentences, each with the CFI of its range. The app speaks them, queued far
 // ahead, and tells us which one is being spoken so it can be marked and turned to.
 const NARR_BLOCKS = new Set([
     'address', 'article', 'aside', 'blockquote', 'caption', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'figcaption',
@@ -284,7 +284,8 @@ const NARR_BLOCKS = new Set([
     'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'ul',
 ])
 const NARR_SKIP = new Set(['script', 'style', 'head', 'rt', 'rp', 'svg', 'math', 'noscript', 'template', 'audio', 'video'])
-const NARR_TARGET = 120, NARR_MAX = 600, NARR_HARD = 1200
+// Long passages: a speech engine pauses between utterances, so fewer and longer ones sound smoother.
+const NARR_TARGET = 400, NARR_MAX = 900, NARR_HARD = 1500
 const NARR_KEY = 'grimm-narration', NARR_COLOR = 'rgb(250, 204, 21)'
 let narr = null
 let narrStart = null

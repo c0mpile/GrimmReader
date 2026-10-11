@@ -50,6 +50,7 @@ class NarrationController internal constructor(
     private var owner: Any? = null
     private var fetching: Job? = null
     private var idleJob: Job? = null
+    private var fetchFailures = 0
     private val submitLock = Mutex()
     private val session = PlaybackSession(context, onPause = ::pause, onResume = ::resume, isPlaying = { playing })
 
@@ -95,6 +96,7 @@ class NarrationController internal constructor(
         // The page was rebuilt (rotation): continue after the last passage that was fetched.
         fetching?.cancel()
         queue.ended = false
+        fetchFailures = 0
         scope.launch {
             val last = queue.lastFetched
             if (source.begin(last?.locator, after = last != null)) topUp() else queue.ended = true
@@ -136,6 +138,7 @@ class NarrationController internal constructor(
             }
             queue.clear()
             flush()
+            fetchFailures = 0
             _state.update { it.copy(status = NarrationStatus.LOADING, message = null) }
             NarrationService.start(context)
             if (src.begin(null, after = false, at = at)) {
@@ -233,10 +236,19 @@ class NarrationController internal constructor(
             scope.launch {
                 val got = withTimeoutOrNull(FETCH_TIMEOUT_MS) { src.next(BATCH) }
                 if (got == null) {
-                    pause()
-                    say("The page stopped responding.")
+                    // What is queued keeps playing; the page gets a few more tries before narration gives up.
+                    if (++fetchFailures > MAX_FETCH_FAILURES) {
+                        fetching = null
+                        pause()
+                        say("The page stopped responding.")
+                        return@launch
+                    }
+                    delay(RETRY_MS * fetchFailures)
+                    fetching = null
+                    topUp()
                     return@launch
                 }
+                fetchFailures = 0
                 if (got.isEmpty()) queue.ended = true else queue.add(got)
                 fetching = null
                 when {
@@ -304,6 +316,8 @@ class NarrationController internal constructor(
         const val AHEAD_CHARS = 3_000
         const val AHEAD_MAX = 16
         const val FETCH_TIMEOUT_MS = 15_000L
+        const val MAX_FETCH_FAILURES = 5
+        const val RETRY_MS = 2_000L
         const val PAUSED_LIMIT_MS = 30 * 60_000L
     }
 }

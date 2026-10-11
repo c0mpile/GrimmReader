@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.reader.ebook
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -265,7 +266,11 @@ class EbookNarration internal constructor(
     ): Boolean = request { req -> "grimm_api.narrationBegin($req, ${Json.encodeToString(from)}, $after, $x, $y)" }?.ok == true
 
     /** The next [count] passages in reading order; empty at the end of the book, null when the page did not answer. */
-    suspend fun next(count: Int): List<NarrationText>? = request { req -> "grimm_api.narrationNext($req, $count)" }?.chunks
+    suspend fun next(count: Int): List<NarrationText>? =
+        request { req -> "grimm_api.narrationNext($req, $count)" }
+            .also {
+                if (it?.chunks == null) Log.w(TAG, "narration: " + if (it == null) "no answer from the page" else "page script failed")
+            }?.chunks
 
     /** Marks [passage] in the page and turns to it (when the page is visible). */
     fun spoken(passage: NarrationText) = call("grimm_api.narrationSpoken(${Json.encodeToString(passage)})")
@@ -295,6 +300,7 @@ class EbookNarration internal constructor(
 }
 
 private const val NARRATION_TIMEOUT_MS = 20_000L
+private const val TAG = "GrimmNarration"
 
 internal const val ORIGIN = "https://appassets.androidplatform.net"
 

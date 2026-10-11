@@ -55,6 +55,7 @@ private class FakeSource(
     var cursor = 0
     var spokenNow: NarrationChunk? = null
     var cleared = false
+    var failures = 0
     val begun = mutableListOf<Pair<String?, Boolean>>()
     val points = mutableListOf<NarrationPoint?>()
 
@@ -69,7 +70,13 @@ private class FakeSource(
         return book.isNotEmpty()
     }
 
-    override suspend fun next(count: Int): List<NarrationChunk> = book.drop(cursor).take(count).also { cursor += it.size }
+    override suspend fun next(count: Int): List<NarrationChunk>? =
+        if (failures > 0) {
+            failures--
+            null
+        } else {
+            book.drop(cursor).take(count).also { cursor += it.size }
+        }
 
     override fun spoken(chunk: NarrationChunk) {
         spokenNow = chunk
@@ -117,6 +124,24 @@ class NarrationControllerTest {
         prefs.setSpeechProvider(SpeechProvider.SYSTEM)
         scope.runCurrent()
     }
+
+    @Test fun aPageThatAnswersLateDoesNotStopNarration() =
+        runTest {
+            val r = rig()
+            r.systemOn()
+            val source = FakeSource((1..30).map { passage(it) })
+            source.failures = 2
+            r.controller.attach(this, source, NarrationMeta("Book"))
+            r.controller.start()
+            runCurrent()
+            assertEquals(NarrationStatus.PLAYING, r.controller.state.value.status)
+            assertNull(r.controller.state.value.message)
+            advanceTimeBy(10_000)
+            runCurrent()
+            assertEquals(NarrationStatus.PLAYING, r.controller.state.value.status)
+            assertTrue(r.speech.queued.size >= 8)
+            r.controller.stop()
+        }
 
     @Test fun queuesPassagesAheadSoTheVoiceNeverWaits() =
         runTest {
