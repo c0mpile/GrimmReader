@@ -13,7 +13,7 @@
 # The keystore is written to a private temp file on tmpfs for the signing only, then removed.
 # Fallback while migrating: GRIMMREADER_KEYSTORE_PROPERTIES, default .local/signing/keystore.properties
 # (storeFile=, alias=, password=). Passwords are never printed.
-# Output: .local/apk/GrimmReader-<version>-<commit>-release.apk
+# Output: .local/apk/GrimmReader-<version>-release.apk
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
 
@@ -73,7 +73,7 @@ unsigned=$(ls app/build/outputs/apk/release/*-unsigned.apk 2>/dev/null | head -1
 [[ -n $unsigned ]] || { echo "sign-release: no unsigned release APK; run with -b" >&2; exit 1; }
 
 version=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/' || true)
-out=".local/apk/GrimmReader-${version:-dev}-$(git rev-parse --short HEAD)-release.apk"
+out=".local/apk/GrimmReader-${version:-dev}-release.apk"
 mkdir -p .local/apk
 aligned=$(mktemp --suffix=.apk)
 rm -f "$aligned" "$out"
