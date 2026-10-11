@@ -51,6 +51,7 @@ class NarrationController internal constructor(
     private var fetching: Job? = null
     private var idleJob: Job? = null
     private var fetchFailures = 0
+    private val place = NarrationPlace(queue, speech, prefs, scope)
     private val submitLock = Mutex()
     private val session = PlaybackSession(context, onPause = ::pause, onResume = ::resume, isPlaying = { playing })
 
@@ -141,7 +142,8 @@ class NarrationController internal constructor(
             fetchFailures = 0
             _state.update { it.copy(status = NarrationStatus.LOADING, message = null) }
             NarrationService.start(context)
-            if (src.begin(null, after = false, at = at)) {
+            val resume = if (at == null) place.saved(owner) else null
+            if (src.begin(null, after = false, at = at, resume = resume)) {
                 play()
             } else {
                 stop("There is no text to read here.")
@@ -159,6 +161,7 @@ class NarrationController internal constructor(
 
     fun pause() {
         if (_state.value.status == NarrationStatus.IDLE) return
+        if (playing) place.remember(owner)
         flush(releaseAudio = true)
         _state.update { it.copy(status = NarrationStatus.PAUSED) }
         idleJob?.cancel()
@@ -173,7 +176,15 @@ class NarrationController internal constructor(
         if (_state.value.status == NarrationStatus.PAUSED) play()
     }
 
-    fun stop(message: String? = null) {
+    fun stop(
+        message: String? = null,
+        finished: Boolean = false,
+    ) {
+        if (finished) {
+            place.forget(owner)
+        } else if (playing) {
+            place.remember(owner)
+        }
         fetching?.cancel()
         sleepTimer.clear()
         idleJob?.cancel()
@@ -190,7 +201,7 @@ class NarrationController internal constructor(
         flush()
         queue.head?.let { source?.spoken(it.chunk) }
         if (!playing) return
-        if (queue.isEmpty && queue.ended) stop("End of the book.") else topUp()
+        if (queue.isEmpty && queue.ended) stop("End of the book.", finished = true) else topUp()
     }
 
     /** Speech speed (1 = normal); a passage being spoken starts over at the new speed. */
@@ -252,7 +263,7 @@ class NarrationController internal constructor(
                 if (got.isEmpty()) queue.ended = true else queue.add(got)
                 fetching = null
                 when {
-                    queue.ended && queue.isEmpty -> stop("End of the book.")
+                    queue.ended && queue.isEmpty -> stop("End of the book.", finished = true)
                     !chapterEnded() -> topUp()
                 }
             }
@@ -269,7 +280,7 @@ class NarrationController internal constructor(
                 for (item in todo) {
                     if (mine != queue.epoch) return@withLock
                     try {
-                        speech.enqueue(item.chunk.text, "n$mine:${item.seq}")
+                        speech.enqueue(item.text, "n$mine:${item.seq}")
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: SpeechUnavailableException) {
@@ -288,14 +299,17 @@ class NarrationController internal constructor(
         if (epoch != queue.epoch) return
         when (event) {
             is SpeechEvent.Started -> {
-                if (queue.head?.seq == seq) source?.spoken(queue.head!!.chunk)
+                if (queue.head?.seq == seq) {
+                    source?.spoken(queue.head!!.chunk)
+                    place.save(owner, queue.head!!)
+                }
                 topUp()
             }
             is SpeechEvent.Done -> {
                 queue.finished(seq)
                 when {
                     chapterEnded() -> Unit
-                    queue.isEmpty && queue.ended -> stop("End of the book.")
+                    queue.isEmpty && queue.ended -> stop("End of the book.", finished = true)
                     queue.isEmpty && source == null -> pause()
                     else -> topUp()
                 }

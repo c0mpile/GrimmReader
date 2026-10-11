@@ -397,7 +397,38 @@ const firstWordOnPage = () => {
     }
     return null
 }
-const narrationBegin = async (req, from, after, x, y) => {
+// The first character of the word after `skip` non-space characters of the passage at `cfi` (as narration read them).
+const narrSkipped = n => {
+    for (let el = n.parentElement; el && el.localName !== 'body'; el = el.parentElement) {
+        const name = el.localName?.toLowerCase()
+        if (NARR_SKIP.has(name) || el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return true
+        if (name === 'a' && el.parentElement?.localName === 'sup' && /^\[?\d+\]?$/.test(el.textContent.trim())) return true
+    }
+    return false
+}
+const resumeWord = async (cfi, skip) => {
+    try {
+        const r = await view.resolveCFI(cfi)
+        const doc = await view.book.sections[r.index].createDocument()
+        const range = r.anchor(doc)
+        const walker = doc.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT)
+        let left = skip
+        for (let n = walker.currentNode.nodeType === 3 ? walker.currentNode : walker.nextNode(); n; n = walker.nextNode()) {
+            if (!range.intersectsNode(n) || narrSkipped(n)) continue
+            const to = n === range.endContainer ? range.endOffset : n.data.length
+            for (let i = n === range.startContainer ? range.startOffset : 0; i < to; i++) {
+                if (/\s/.test(n.data[i])) continue
+                if (left-- > 0) continue
+                const at = doc.createRange()
+                at.setStart(n, i)
+                at.collapse(true)
+                return { index: r.index, range: at }
+            }
+        }
+    } catch { /* the passage is gone: start at the page */ }
+    return null
+}
+const narrationBegin = async (req, from, after, x, y, resumeCfi, resumeSkip) => {
     try {
         narr = null
         let startCfi = typeof from === 'string' && from ? (after ? CFI.collapse(from, true) : CFI.collapse(from)) : (visible ? CFI.collapse(visible) : null)
@@ -410,7 +441,7 @@ const narrationBegin = async (req, from, after, x, y) => {
         } else if (!from) {
             // A spot asked for with goTo wins while it is still on the page; else the page's first word.
             if (narrStart && onVisiblePage(narrStart)) startCfi = CFI.collapse(narrStart)
-            else word = firstWordOnPage()
+            else word = (resumeCfi && await resumeWord(resumeCfi, resumeSkip || 0)) || firstWordOnPage()
         }
         narrStart = null
         if (word) startCfi = CFI.collapse(view.getCFI(word.index, word.range))

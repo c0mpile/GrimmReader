@@ -138,6 +138,8 @@ class SystemSpeech
             }
         }
 
+        override fun heardChars(id: String): Int? = if (bufferBroken) null else buffer.heard(id)
+
         override fun stop() {
             stops++
             buffer.stop()

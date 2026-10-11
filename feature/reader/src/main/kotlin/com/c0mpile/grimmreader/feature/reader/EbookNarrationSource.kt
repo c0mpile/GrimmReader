@@ -1,5 +1,6 @@
 package com.c0mpile.grimmreader.feature.reader
 
+import com.c0mpile.grimmreader.core.datastore.NarrationResume
 import com.c0mpile.grimmreader.core.tts.NarrationChunk
 import com.c0mpile.grimmreader.core.tts.NarrationPoint
 import com.c0mpile.grimmreader.core.tts.NarrationSource
@@ -14,7 +15,8 @@ internal class EbookNarrationSource(
         from: String?,
         after: Boolean,
         at: NarrationPoint?,
-    ): Boolean = ebook.narration.begin(from, after, at?.x, at?.y)
+        resume: NarrationResume?,
+    ): Boolean = ebook.narration.begin(from, after, at?.x, at?.y, resume?.cfi, resume?.skip ?: 0)
 
     override suspend fun next(count: Int): List<NarrationChunk>? =
         ebook.narration.next(count)?.map { NarrationChunk(it.text, it.cfi, it.section) }

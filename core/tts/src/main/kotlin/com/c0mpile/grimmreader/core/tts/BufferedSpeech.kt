@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.core.tts
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +78,9 @@ internal class BufferedSpeech(
     }
 
     @Synchronized
+    fun heard(id: String): Int? = session?.heard(id)
+
+    @Synchronized
     fun stop() {
         session?.close()
         session = null
@@ -94,6 +98,9 @@ internal class BufferedSpeech(
     ) {
         @Volatile var end = Long.MAX_VALUE
         var started = false
+
+        /** The pieces of the passage that reached the track: their characters and their length in frames. */
+        val pieces = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Long>>()
     }
 
     /** A rendered piece of a passage; the passage is heard once its [last] piece has been played. */
@@ -102,6 +109,7 @@ internal class BufferedSpeech(
         val file: File,
         val wav: Wav,
         val last: Boolean,
+        val chars: Int,
     )
 
     private inner class Session {
@@ -120,9 +128,27 @@ internal class BufferedSpeech(
         init {
             dir.mkdirs()
             dir.listFiles()?.forEach { it.delete() }
-            work.launch { renderLoop() }
-            work.launch { playLoop() }
+            work.launch { guarded { renderLoop() } }
+            work.launch { guarded { playLoop() } }
             work.launch { watchLoop() }
+        }
+
+        /** Characters of the passage [id] heard so far, from how much of its audio the track has played. */
+        fun heard(id: String): Int? {
+            val t = track ?: return null
+            val m = marks.firstOrNull { it.id == id && it.started && it.trackNo == trackNo } ?: return null
+            var rel = (t.playbackHeadPosition.toLong() and UINT) - m.start
+            var chars = 0.0
+            for ((n, frames) in m.pieces) {
+                if (rel >= frames) {
+                    chars += n
+                    rel -= frames
+                } else {
+                    chars += n * rel.coerceAtLeast(0) / frames.coerceAtLeast(1).toDouble()
+                    break
+                }
+            }
+            return chars.toInt()
         }
 
         fun add(item: Pending) {
@@ -147,8 +173,20 @@ internal class BufferedSpeech(
             dir.listFiles()?.forEach { it.delete() }
         }
 
-        /** The engine cannot do this: end the session and hand what is left to the fallback. */
+        /** Runs a loop; an error that is not a stop (the files are gone, the track broke) ends the session like any other failure. */
+        private suspend fun guarded(loop: suspend () -> Unit) {
+            try {
+                loop()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                fail()
+            }
+        }
+
+        /** The engine cannot do this: end the session and hand what is left to the fallback (nothing when it was closed on purpose). */
         private fun fail() {
+            if (closed.get()) return
             val rest = unfinished.toList()
             close()
             ended(this)
@@ -192,7 +230,7 @@ internal class BufferedSpeech(
                 return false
             }
             aheadMs.addAndGet(wav.durationMs)
-            clips.trySend(Clip(item, file, wav, last))
+            clips.trySend(Clip(item, file, wav, last, text.length))
             return true
         }
 
@@ -226,6 +264,7 @@ internal class BufferedSpeech(
             var written = 0L
             var mark: Mark? = null
             for (clip in clips) {
+                if (closed.get()) return
                 aheadMs.addAndGet(-clip.wav.durationMs)
                 val now = clip.wav.sampleRate to clip.wav.channels
                 var t = track
@@ -248,6 +287,7 @@ internal class BufferedSpeech(
                 // A passage rendered in pieces has one mark: it starts with the first piece and ends with the last.
                 val m = mark?.takeIf { it.id == clip.item.id } ?: Mark(clip.item.id, written, trackNo).also { marks.add(it) }
                 mark = m
+                m.pieces.add(clip.chars to clip.wav.dataLength / clip.wav.frameSize)
                 val bytes = writeClip(t, clip)
                 if (bytes < 0) {
                     fail()

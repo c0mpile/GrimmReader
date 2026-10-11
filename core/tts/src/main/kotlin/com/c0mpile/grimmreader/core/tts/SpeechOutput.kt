@@ -35,6 +35,9 @@ interface SpeechOutput {
         id: String,
     )
 
+    /** How many characters of the passage [id], which is being heard now, have been heard; null when the output cannot tell. */
+    fun heardChars(id: String): Int? = null
+
     /** Drops everything queued and silences the engine. */
     fun stop()
 

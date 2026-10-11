@@ -1,5 +1,7 @@
 package com.c0mpile.grimmreader.core.tts
 
+import com.c0mpile.grimmreader.core.datastore.NarrationResume
+
 /** A passage to speak (a sentence or two), with where it is in the book. */
 data class NarrationChunk(
     val text: String,
@@ -19,13 +21,15 @@ data class NarrationPoint(
 interface NarrationSource {
     /**
      * Positions the source: at the first word of the visible page when [from] is null, at [from] otherwise, or
-     * just after [from] when [after]; the word at [at] wins over all of these. Returns false when the book has no
-     * text to read.
+     * just after [from] when [after]; the word at [at] wins over all of these.
+     * With nothing else asked, [resume] (where the last narration of the book stopped) beats the page's first word.
+     * Returns false when the book has no text to read.
      */
     suspend fun begin(
         from: String?,
         after: Boolean,
         at: NarrationPoint? = null,
+        resume: NarrationResume? = null,
     ): Boolean
 
     /** The next passages in reading order; an empty list means the end of the book, null that the page failed to answer. */

@@ -22,6 +22,12 @@ import kotlinx.coroutines.flow.map
 /** Whether a server is connected; the app starts as a local reader. */
 enum class SetupState { LOCAL_ONLY, SERVER }
 
+/** Where narration of a book stopped: the CFI of the passage and how many of its non-space characters had been heard. */
+data class NarrationResume(
+    val cfi: String,
+    val skip: Int,
+)
+
 /** Which text-to-speech backs pronunciation, Read aloud and narration; at most one is on. */
 enum class SpeechProvider { ELEVENLABS, SYSTEM, NONE }
 
@@ -102,6 +108,20 @@ class AppPreferences(
 
     suspend fun setSpeechVoice(voice: String?) {
         store.edit { if (voice == null) it.remove(SPEECH_VOICE) else it[SPEECH_VOICE] = voice }
+    }
+
+    suspend fun narrationResume(bookId: Long): NarrationResume? {
+        val raw = store.data.first()[stringPreferencesKey("narration_resume_$bookId")] ?: return null
+        val skip = raw.substringBefore('|').toIntOrNull() ?: return null
+        return NarrationResume(raw.substringAfter('|'), skip)
+    }
+
+    suspend fun setNarrationResume(
+        bookId: Long,
+        resume: NarrationResume?,
+    ) {
+        val key = stringPreferencesKey("narration_resume_$bookId")
+        store.edit { if (resume == null) it.remove(key) else it[key] = "${resume.skip}|${resume.cfi}" }
     }
 
     suspend fun setSpeechRate(rate: Float) {

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
+import com.c0mpile.grimmreader.core.datastore.NarrationResume
 import com.c0mpile.grimmreader.core.datastore.SpeechProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,6 +33,9 @@ private class FakeSpeech : SpeechOutput {
     override val events: Flow<SpeechEvent> = shared.asSharedFlow()
     val queued = mutableListOf<Pair<String, String>>()
     var stops = 0
+    var heard: Int? = null
+
+    override fun heardChars(id: String): Int? = heard
 
     override suspend fun enqueue(
         text: String,
@@ -58,12 +62,15 @@ private class FakeSource(
     var failures = 0
     val begun = mutableListOf<Pair<String?, Boolean>>()
     val points = mutableListOf<NarrationPoint?>()
+    val resumes = mutableListOf<NarrationResume?>()
 
     override suspend fun begin(
         from: String?,
         after: Boolean,
         at: NarrationPoint?,
+        resume: NarrationResume?,
     ): Boolean {
+        resumes += resume
         begun += from to after
         points += at
         if (from != null) cursor = book.indexOfFirst { it.locator == from } + if (after) 1 else 0
@@ -140,6 +147,55 @@ class NarrationControllerTest {
             runCurrent()
             assertEquals(NarrationStatus.PLAYING, r.controller.state.value.status)
             assertTrue(r.speech.queued.size >= 8)
+            r.controller.stop()
+        }
+
+    @Test fun pausingKeepsTheWordAndResumingSpeaksFromIt() =
+        runTest {
+            val r = rig()
+            r.systemOn()
+            val source = FakeSource(listOf(NarrationChunk("One two three four.", "cfi1", 0), passage(2)))
+            r.controller.attach(7L, source, NarrationMeta("Book"))
+            r.controller.start()
+            runCurrent()
+            r.speech.shared.tryEmit(
+                SpeechEvent.Started(
+                    r.speech.queued
+                        .first()
+                        .second,
+                ),
+            )
+            runCurrent()
+            r.speech.heard = 9
+            r.controller.pause()
+            runCurrent()
+            assertEquals(NarrationResume("cfi1", 6), r.prefs.narrationResume(7L))
+            r.speech.queued.clear()
+            r.controller.resume()
+            runCurrent()
+            assertEquals(
+                "three four.",
+                r.speech.queued
+                    .first()
+                    .first,
+            )
+            r.controller.stop()
+        }
+
+    @Test fun aLaterNarrationStartsWhereTheLastOneStopped() =
+        runTest {
+            val r = rig()
+            r.systemOn()
+            r.prefs.setNarrationResume(7L, NarrationResume("cfi3", 4))
+            val source = FakeSource((1..5).map { passage(it) })
+            r.controller.attach(7L, source, NarrationMeta("Book"))
+            r.controller.start()
+            runCurrent()
+            assertEquals(NarrationResume("cfi3", 4), source.resumes.single())
+            // A pointed word wins over it.
+            r.controller.start(NarrationPoint(1f, 2f))
+            runCurrent()
+            assertNull(source.resumes.last())
             r.controller.stop()
         }
 

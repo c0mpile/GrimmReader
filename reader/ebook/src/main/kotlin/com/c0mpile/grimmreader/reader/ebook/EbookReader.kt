@@ -256,14 +256,21 @@ class EbookNarration internal constructor(
 
     /**
      * Positions narration at the first word of the visible page, at [from], or just after it; the word at
-     * [x], [y] (CSS px of the reader view) wins. False when the book has no text.
+     * [x], [y] (CSS px of the reader view) wins;
+     * with nothing else asked, the word after [resumeSkip] non-space characters of the passage [resumeCfi] is used
+     * instead of the page's first word. False when the book has no text.
      */
     suspend fun begin(
         from: String?,
         after: Boolean,
         x: Float? = null,
         y: Float? = null,
-    ): Boolean = request { req -> "grimm_api.narrationBegin($req, ${Json.encodeToString(from)}, $after, $x, $y)" }?.ok == true
+        resumeCfi: String? = null,
+        resumeSkip: Int = 0,
+    ): Boolean =
+        request { req ->
+            "grimm_api.narrationBegin($req, ${Json.encodeToString(from)}, $after, $x, $y, ${Json.encodeToString(resumeCfi)}, $resumeSkip)"
+        }?.ok == true
 
     /** The next [count] passages in reading order; empty at the end of the book, null when the page did not answer. */
     suspend fun next(count: Int): List<NarrationText>? =

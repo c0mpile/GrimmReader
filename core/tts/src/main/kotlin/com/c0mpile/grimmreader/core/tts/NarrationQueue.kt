@@ -9,7 +9,12 @@ internal class NarrationQueue {
     class Item(
         val seq: Long,
         val chunk: NarrationChunk,
-    )
+    ) {
+        /** Characters of the passage already heard (before a pause); speaking goes on after them. */
+        var skip = 0
+
+        val text: String get() = chunk.text.substring(skip)
+    }
 
     private val ahead = ArrayDeque<Item>()
     private val spoken = ArrayDeque<Item>()
@@ -79,6 +84,7 @@ internal class NarrationQueue {
     }
 
     private fun remember(item: Item) {
+        item.skip = 0
         spoken.addLast(item)
         while (spoken.size > HISTORY) spoken.removeFirst()
     }
