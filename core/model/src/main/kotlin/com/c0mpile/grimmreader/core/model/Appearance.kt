@@ -12,6 +12,9 @@ enum class PageTheme { EINK, LIGHT, SEPIA, DARK, NIGHT, AMOLED }
 
 enum class EinkTint { WARM, COOL }
 
+/** How a page turn looks: the page slides over, turns like a paper page (ebooks; comics and PDFs slide), or just changes. */
+enum class PageAnimation { SLIDE, TURN, NONE }
+
 data class Appearance(
     val mode: ThemeMode = ThemeMode.DARK,
 )
@@ -40,4 +43,6 @@ data class ReaderPrefs(
     val tapToTurn: Boolean = true,
     val swipeToTurn: Boolean = true,
     val turnZone: Int = 25,
+    /** Null until chosen: slide, or none when the system animations are off or the page theme is [PageTheme.EINK]. */
+    val pageAnimation: PageAnimation? = null,
 )

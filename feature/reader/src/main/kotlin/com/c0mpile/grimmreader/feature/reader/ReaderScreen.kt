@@ -90,6 +90,7 @@ import com.c0mpile.grimmreader.core.designsystem.theme.colorFilter
 import com.c0mpile.grimmreader.core.designsystem.theme.palette
 import com.c0mpile.grimmreader.core.designsystem.theme.paperGrain
 import com.c0mpile.grimmreader.core.model.Bookmark
+import com.c0mpile.grimmreader.core.model.PageAnimation
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.tts.NarrationMeta
@@ -486,6 +487,13 @@ private val SELECTION_BAR_TOP = 64.dp
 /** A selection below this share of the screen height puts its bar at the top, clear of the handles. */
 private const val LOW_SELECTION = 0.4f
 
+/**
+ * How page turns look: the chosen animation, else a slide, unless the system animations are off or the page theme
+ * turns instantly (E-ink). Comics and PDFs have no paper turn and slide instead.
+ */
+internal fun ReaderPrefs.animation(systemAnimations: Boolean): PageAnimation =
+    pageAnimation ?: if (systemAnimations && !pageTheme.palette(einkTint).instantTurns) PageAnimation.SLIDE else PageAnimation.NONE
+
 private fun ReaderPrefs.pageTurns() = PageTurns(edge = turnZone / PERCENT_F, taps = tapToTurn, swipes = swipeToTurn)
 
 private const val PERCENT_F = 100f
@@ -580,7 +588,7 @@ private fun Content(
                     initialCfi = content.cfi,
                     css = css,
                     layout = layout,
-                    animated = LocalMotionEnabled.current && !page.instantTurns,
+                    animation = prefs.animation(LocalMotionEnabled.current),
                     turns = turns,
                     controller = controller,
                     selecting = selecting,
@@ -600,7 +608,7 @@ private fun Content(
                                 viewModel.selection.select(TextSelection(event.text, event.cfi, event.over))
                             }
                             EbookEvent.SelectionCleared -> viewModel.selection.clear()
-                            is EbookEvent.Failed, is EbookEvent.Narration, is EbookEvent.Handles -> Unit
+                            is EbookEvent.Failed, is EbookEvent.Narration, is EbookEvent.Handles, is EbookEvent.Turn -> Unit
                         }
                     },
                     onToggleChrome = onToggleChrome,
@@ -620,7 +628,7 @@ private fun Content(
                     modifier = Modifier.background(page.background),
                     turns = turns,
                     imageFilter = page.images.colorFilter,
-                    instantTurns = page.instantTurns,
+                    instantTurns = prefs.animation(LocalMotionEnabled.current) == PageAnimation.NONE,
                 )
             }
         }

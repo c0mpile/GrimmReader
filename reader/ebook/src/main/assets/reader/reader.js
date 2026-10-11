@@ -459,10 +459,41 @@ const narrationDraw = async chunk => {
         c.overlayer.add(NARR_KEY, r.anchor(c.doc), Overlayer.highlight, { color: NARR_COLOR })
     } catch { /* section not shown */ }
 }
+const afterVisiblePage = cfi => {
+    if (!visible) return false
+    try { return CFI.compare(CFI.collapse(cfi), CFI.collapse(visible, true)) >= 0 } catch { return false }
+}
+// How pages turn: 'slide' (foliate animates the scroll), 'turn' (the app shows a paper page turn over the page) or 'none'.
+let animMode = 'none'
+const setAnimation = mode => {
+    animMode = mode === 'slide' || mode === 'turn' ? mode : 'none'
+    if (animMode === 'slide') view.renderer.setAttribute('animated', '')
+    else view.renderer.removeAttribute('animated')
+}
+// For narration in 'turn' mode: ask the app to show the turn (it takes a picture of the page), which then calls turnNext.
+let turnId = 0
+const turnWaiters = new Map()
+const askTurn = () => new Promise(resolve => {
+    const id = ++turnId
+    turnWaiters.set(id, resolve)
+    post({ t: 'turn', id })
+    setTimeout(() => { if (turnWaiters.delete(id)) resolve(false) }, 2000)
+})
+const turnNext = async id => {
+    const done = turnWaiters.get(id)
+    if (!done) return
+    try { await view.next() } finally { turnWaiters.delete(id); done(true) }
+}
 const narrationFollow = async (chunk, run) => {
     try {
         if (!onVisiblePage(chunk.cfi)) {
-            await view.goTo(chunk.cfi)
+            // A passage on the page after this one turns the page the way the reader turns it; anything else jumps there.
+            if (afterVisiblePage(chunk.cfi)) {
+                if (animMode === 'turn') await askTurn()
+                else await view.next()
+                if (run !== narrRun) return
+            }
+            if (!onVisiblePage(chunk.cfi)) await view.goTo(chunk.cfi)
             if (run !== narrRun) return
         }
         await narrationDraw(chunk)
@@ -497,7 +528,8 @@ window.grimm_api = {
     setStyle: css => view.renderer.setStyles?.(css),
     // Bookmark CFIs of this book; answers with the one on the visible page.
     setBookmarks: list => { bookmarks = Array.isArray(list) ? list.filter(c => typeof c === 'string') : []; post({ t: 'bookmark', cfi: bookmarkHere() }) },
-    setAnimated: on => on ? view.renderer.setAttribute('animated', '') : view.renderer.removeAttribute('animated'),
+    setAnimation,
+    turnNext,
     setLayout: applyLayout,
     search: (query, id) => { search(query, id) },
     clearSearch: () => { searchId++; view.clearSearch() },
@@ -522,7 +554,7 @@ try {
     applyLayout(parseJson(params.get('layout')))
     await view.init({ lastLocation: params.get('cfi') || null })
     // No page-turn animation for the initial positioning; styles apply once the first section is shown.
-    window.grimm_api.setAnimated(params.get('animated') === '1')
+    window.grimm_api.setAnimation(params.get('anim') || 'none')
     if (params.get('css')) window.grimm_api.setStyle(params.get('css'))
     ready = true
     // Where each section starts (0..1), for the marks on the position slider.

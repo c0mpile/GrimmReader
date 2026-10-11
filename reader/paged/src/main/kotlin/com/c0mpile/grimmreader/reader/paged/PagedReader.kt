@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.c0mpile.grimmreader.core.designsystem.component.PageTurns
 import com.c0mpile.grimmreader.core.designsystem.component.PageZone
-import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.model.ReadingDirection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -50,9 +49,9 @@ private const val ZOOM_HEADROOM = 2
 /**
  * Page-by-page reader for comics and PDF: one page per screen, pinch/double-tap zoom, taps in the edge zones
  * of [turns] (mirrored for right-to-left). A drag that starts in an edge zone moves the page with the finger
- * (see [edgeDrag]); one in the middle turns nothing, and a zoomed page pans everywhere. [imageFilter] and
- * [instantTurns] come from the page theme; turns are also instant when system animations are off. [onPage]
- * gets 0-based indices.
+ * (see [edgeDrag]); one in the middle turns nothing, and a zoomed page pans everywhere. [imageFilter] comes
+ * from the page theme; turns are instant when [instantTurns] (the reader's page animation is off). [onPage] gets
+ * 0-based indices.
  */
 @Composable
 fun PagedReader(
@@ -68,7 +67,7 @@ fun PagedReader(
     val rtl = source.readingDirection == ReadingDirection.RTL
     val pager = rememberPagerState(initialPage.coerceIn(0, (source.pageCount - 1).coerceAtLeast(0))) { source.pageCount }
     val scope = rememberCoroutineScope()
-    val motion by rememberUpdatedState(LocalMotionEnabled.current && !instantTurns)
+    val motion by rememberUpdatedState(!instantTurns)
     val toggle by rememberUpdatedState(onToggleChrome)
     // Forward is towards the right edge, or the left one for right-to-left books.
     val step = { by: Int -> scope.turn(pager, pager.currentPage + by, motion) }

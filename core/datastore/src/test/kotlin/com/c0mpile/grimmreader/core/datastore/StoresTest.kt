@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.EinkTint
+import com.c0mpile.grimmreader.core.model.PageAnimation
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ThemeMode
@@ -66,6 +67,13 @@ class StoresTest {
             val eink = ReaderPrefs(pageTheme = PageTheme.EINK, einkTint = EinkTint.WARM, einkGrain = true, einkFlashEvery = 10)
             prefs.setReaderPrefs(eink)
             assertEquals(eink, prefs.readerPrefs.first())
+            // The page animation is unset until chosen, and can be set back to unset.
+            assertNull(eink.pageAnimation)
+            val turned = eink.copy(pageAnimation = PageAnimation.TURN)
+            prefs.setReaderPrefs(turned)
+            assertEquals(PageAnimation.TURN, prefs.readerPrefs.first().pageAnimation)
+            prefs.setReaderPrefs(eink)
+            assertNull(prefs.readerPrefs.first().pageAnimation)
         }
 
     @Test fun secretsAreStoredEncryptedAndCleared() =

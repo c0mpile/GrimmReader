@@ -44,8 +44,10 @@ import androidx.compose.ui.unit.min
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
+import com.c0mpile.grimmreader.core.designsystem.theme.LocalMotionEnabled
 import com.c0mpile.grimmreader.core.designsystem.theme.palette
 import com.c0mpile.grimmreader.core.model.EinkTint
+import com.c0mpile.grimmreader.core.model.PageAnimation
 import com.c0mpile.grimmreader.core.model.PageTheme
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import kotlin.math.roundToInt
@@ -386,6 +388,7 @@ private fun ControlsTab(
     onChange: (ReaderPrefs) -> Unit,
 ) {
     SectionHeader("Page turning")
+    AnimationChoice(prefs, onChange)
     SettingSwitch("Tap to turn", prefs.tapToTurn) { onChange(prefs.copy(tapToTurn = it)) }
     SettingSwitch("Swipe to turn", prefs.swipeToTurn) { onChange(prefs.copy(swipeToTurn = it)) }
     Text("Turn zone width", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
@@ -403,6 +406,35 @@ private fun ControlsTab(
         style = MaterialTheme.typography.bodyMedium,
         color = mutedText(),
         modifier = Modifier.padding(top = 4.dp),
+    )
+}
+
+/** Slide, paper page turn or none; until one is chosen the effective one (see [animation]) is marked. */
+@Composable
+private fun AnimationChoice(
+    prefs: ReaderPrefs,
+    onChange: (ReaderPrefs) -> Unit,
+) {
+    val current = prefs.animation(LocalMotionEnabled.current)
+    Text("Page animation", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+    CardGrid(PageAnimation.entries, columns = PageAnimation.entries.size) { mode, modifier ->
+        OptionCard(current == mode, { onChange(prefs.copy(pageAnimation = mode)) }, modifier) {
+            Text(
+                when (mode) {
+                    PageAnimation.SLIDE -> "Slide"
+                    PageAnimation.TURN -> "Page turn"
+                    PageAnimation.NONE -> "Off"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+    Text(
+        "Page turn is for ebooks; comics and PDFs slide. It also applies when narration moves to the next page. " +
+            "Until you choose, pages slide unless the phone's animations are off.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = mutedText(),
+        modifier = Modifier.padding(bottom = 8.dp),
     )
 }
 

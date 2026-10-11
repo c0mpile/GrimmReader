@@ -28,6 +28,7 @@ import com.c0mpile.grimmreader.core.designsystem.component.TapHistory
 import com.c0mpile.grimmreader.core.designsystem.component.pageGestures
 import com.c0mpile.grimmreader.core.files.BookHandle
 import com.c0mpile.grimmreader.core.model.Locator
+import com.c0mpile.grimmreader.core.model.PageAnimation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
@@ -126,6 +127,11 @@ sealed interface EbookEvent {
         val handles: HandlePoints? = null,
     ) : EbookEvent
 
+    /** The page script is about to turn the page for narration (request [id]) and wants the paper page turn shown. */
+    data class Turn(
+        val id: Int,
+    ) : EbookEvent
+
     /** The selection's handles moved ([EbookHandles.move]). */
     data class Handles(
         val points: HandlePoints,
@@ -161,9 +167,20 @@ class EbookController {
     /** The selection's drag handles. */
     val handles = EbookHandles { webView }
 
-    fun next() = call("grimm_api.next()")
+    /** The paper page turn (see [PageAnimation.TURN]): a picture of the old page turns while the real page moves. */
+    val turns = EbookTurns { webView }
 
-    fun prev() = call("grimm_api.prev()")
+    /** How page turns look; set by [EbookReader]. */
+    var animation = PageAnimation.SLIDE
+
+    fun next() = turn(forward = true)
+
+    fun prev() = turn(forward = false)
+
+    private fun turn(forward: Boolean) {
+        if (animation == PageAnimation.TURN) turns.begin(forward)
+        call(if (forward) "grimm_api.next()" else "grimm_api.prev()")
+    }
 
     /**
      * Arguments are JSON-encoded, so book data can never break out of the string literal. With [readFromHere],
@@ -179,7 +196,10 @@ class EbookController {
 
     fun setStyle(css: String) = call("grimm_api.setStyle(${Json.encodeToString(css)})")
 
-    fun setAnimated(on: Boolean) = call("grimm_api.setAnimated($on)")
+    fun applyAnimation(mode: PageAnimation) {
+        animation = mode
+        call("grimm_api.setAnimation('${mode.name.lowercase()}')")
+    }
 
     fun setLayout(layout: EbookLayout) = call("grimm_api.setLayout(${Json.encodeToString(layout)})")
 
@@ -290,7 +310,7 @@ fun EbookReader(
     initialCfi: String?,
     css: String,
     layout: EbookLayout,
-    animated: Boolean,
+    animation: PageAnimation,
     turns: PageTurns,
     controller: EbookController,
     selecting: Boolean,
@@ -309,12 +329,18 @@ fun EbookReader(
             drag = { at -> controller.extendTo(at.x / density, at.y / density) },
             end = controller::endSelection,
         )
-    val startUrl = remember(book) { startUrl(fileName, initialCfi, css, layout, animated) }
+    val startUrl = remember(book) { startUrl(fileName, initialCfi, css, layout, animation) }
+    val progress = rememberTurnProgress(controller.turns)
+    val turn = controller.turns.current
     Box(modifier) {
+        // Going back, the old page lies under the page that swings in.
+        if (turn != null && !turn.forward) PageTurnPicture(turn, progress)
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().liveTurn(turn, progress, density),
             factory = { context -> readerWebView(context, book, controller) { events(it) }.apply { loadUrl(startUrl) } },
         )
+        // Going forward, the old page swings away over the new one.
+        if (turn != null && turn.forward) PageTurnPicture(turn, progress)
         TapZones(
             turns,
             controller,
@@ -335,7 +361,7 @@ fun EbookReader(
         SelectionHandles(controller.handles)
     }
     LaunchedEffect(css) { controller.setStyle(css) }
-    LaunchedEffect(animated) { controller.setAnimated(animated) }
+    LaunchedEffect(animation) { controller.applyAnimation(animation) }
     LaunchedEffect(layout) { controller.setLayout(layout) }
     DisposableEffect(Unit) {
         onDispose {
@@ -350,13 +376,13 @@ private fun startUrl(
     initialCfi: String?,
     css: String,
     layout: EbookLayout,
-    animated: Boolean,
+    animation: PageAnimation,
 ): String =
     Uri
         .parse("$ORIGIN/assets/reader/reader.html")
         .buildUpon()
         .appendQueryParameter("name", fileName)
-        .appendQueryParameter("animated", if (animated) "1" else "0")
+        .appendQueryParameter("anim", animation.name.lowercase())
         .apply { if (initialCfi != null) appendQueryParameter("cfi", initialCfi) }
         .appendQueryParameter("css", css)
         .appendQueryParameter("layout", Json.encodeToString(layout))
@@ -393,6 +419,7 @@ private fun readerWebView(
                         null -> Unit
                         is EbookEvent.Narration -> controller.narration.onReply(event)
                         is EbookEvent.Handles -> controller.handles.points = event.points
+                        is EbookEvent.Turn -> controller.turns.forNarration(event.id)
                         else -> {
                             if (event is EbookEvent.Selection) controller.handles.points = event.handles
                             if (event is EbookEvent.SelectionCleared) controller.handles.points = null
@@ -577,6 +604,7 @@ internal fun parse(data: String): EbookEvent? {
         "bookmark" -> EbookEvent.BookmarkHere(o.str("cfi"))
         "selection" -> parseSelection(o)
         "handles" -> parseHandles(o)?.let { EbookEvent.Handles(it) }
+        "turn" -> o["id"]?.jsonPrimitive?.intOrNull?.let { EbookEvent.Turn(it) }
         "search" -> parseSearch(o)
         "narration" -> parseNarration(o)
         "error" -> EbookEvent.Failed(o.str("message") ?: "error")

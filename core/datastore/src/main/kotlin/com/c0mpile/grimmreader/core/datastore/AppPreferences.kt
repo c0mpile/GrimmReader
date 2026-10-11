@@ -12,6 +12,7 @@ import com.c0mpile.grimmreader.core.model.Appearance
 import com.c0mpile.grimmreader.core.model.BookLayout
 import com.c0mpile.grimmreader.core.model.BookSort
 import com.c0mpile.grimmreader.core.model.LibraryView
+import com.c0mpile.grimmreader.core.model.PageAnimation
 import com.c0mpile.grimmreader.core.model.ReaderPrefs
 import com.c0mpile.grimmreader.core.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -72,6 +73,7 @@ class AppPreferences(
                 tapToTurn = p[TAP_TO_TURN] ?: defaults.tapToTurn,
                 swipeToTurn = p[SWIPE_TO_TURN] ?: defaults.swipeToTurn,
                 turnZone = p[TURN_ZONE] ?: defaults.turnZone,
+                pageAnimation = PageAnimation.entries.firstOrNull { it.name == p[PAGE_ANIMATION] },
             )
         }
 
@@ -179,6 +181,7 @@ class AppPreferences(
             it[TAP_TO_TURN] = prefs.tapToTurn
             it[SWIPE_TO_TURN] = prefs.swipeToTurn
             it[TURN_ZONE] = prefs.turnZone
+            prefs.pageAnimation?.let { a -> it[PAGE_ANIMATION] = a.name } ?: it.remove(PAGE_ANIMATION)
         }
     }
 
@@ -212,6 +215,7 @@ class AppPreferences(
         val TAP_TO_TURN = booleanPreferencesKey("reader_tap_to_turn")
         val SWIPE_TO_TURN = booleanPreferencesKey("reader_swipe_to_turn")
         val TURN_ZONE = intPreferencesKey("reader_turn_zone")
+        val PAGE_ANIMATION = stringPreferencesKey("reader_page_animation")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
