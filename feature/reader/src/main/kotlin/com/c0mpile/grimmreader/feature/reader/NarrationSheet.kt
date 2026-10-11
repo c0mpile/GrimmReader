@@ -97,7 +97,7 @@ private fun Transport(
     }
     Text(
         when (state.status) {
-            NarrationStatus.IDLE -> "Starts at the top of the page you are on."
+            NarrationStatus.IDLE -> "Continues where you stopped, or at the top of the page. Double-tap a word to start there."
             NarrationStatus.LOADING -> "Starting…"
             NarrationStatus.PLAYING -> "Reading aloud. It continues with the screen off."
             NarrationStatus.PAUSED -> "Paused."
