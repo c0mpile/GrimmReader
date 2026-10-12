@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -162,7 +163,14 @@ fun ReaderScreen(
     val panelOpen = overlay is Overlay.Left || overlay is Overlay.Right
     val close = { overlay = Overlay.None }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Box(Modifier.fillMaxSize().then(if (panelOpen) Modifier.blur(PANEL_BLUR) else Modifier)) {
+        // The page stops below the system bars (dark, with light icons) so a light page never sits behind
+        // them; only fullscreen, with the bars hidden, lets it fill the screen.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .belowSystemBars(!fullscreen)
+                .then(if (panelOpen) Modifier.blur(PANEL_BLUR) else Modifier),
+        ) {
             // While the bars are shown, a tap on the page only hides them; nothing turns.
             val turns = if (chrome) PageTurns.Off else prefs.pageTurns()
             Content(state.content, prefs, turns, selection != null, highlighting, viewModel, controller, onPageReady = {
@@ -539,6 +547,9 @@ private fun openBookmark(
         viewModel.goToPage(page)
     }
 }
+
+@Composable
+private fun Modifier.belowSystemBars(on: Boolean): Modifier = if (on) windowInsetsPadding(WindowInsets.systemBars) else this
 
 /** Fullscreen hides the system bars (a swipe from the edge shows them briefly); restored on leaving. */
 @Composable
