@@ -229,7 +229,11 @@ class LibraryRepository
                 )
                 seen += dto.id
             }
-            bookDao.deleteServerBooksNotIn(serverRowId, seen)
+            // One NOT IN (...) with a variable per book fails past SQLite's 32766 variables (a 40,000-book library).
+            val kept = seen.toHashSet()
+            bookDao.serverBookIds(serverRowId).filterNot { it in kept }.chunked(DELETE_CHUNK).forEach {
+                bookDao.deleteServerBooksIn(serverRowId, it)
+            }
             return seen.size
         }
 
@@ -325,6 +329,7 @@ class LibraryRepository
         companion object {
             private const val PAGE_SIZE = 100
             private const val BYTES_PER_KB = 1024L
+            private const val DELETE_CHUNK = 500
             private const val SERVER_WAIT_MS = 5_000L
 
             /** The automatic refresh skips a library mirrored less than 30 minutes ago; pull-to-refresh never does. */

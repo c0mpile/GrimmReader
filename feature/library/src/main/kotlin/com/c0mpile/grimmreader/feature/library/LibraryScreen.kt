@@ -35,6 +35,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -124,18 +125,22 @@ fun LibraryScreen(
                 Spacer(Modifier.height(2.dp))
             }
             if (state.filterShown) FilterRow(state.filter, viewModel::setFilter)
-            PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {
+            PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.weight(1f)) {
                 val empty = if (state.mode == BrowseMode.BOOKS) state.books.isEmpty() else state.groups.isEmpty()
-                when {
-                    empty && !state.syncing -> EmptyMessage(state)
-                    state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onRead, selection)
-                    state.mode == BrowseMode.AUTHORS -> AuthorList(state.groups) { onOpenGroup(GroupKind.AUTHOR, it) }
-                    else -> {
-                        val kind = if (state.mode == BrowseMode.COMIC_SERIES) GroupKind.COMIC_SERIES else GroupKind.SERIES
-                        SeriesCollection(state.groups, state.view.layout) { onOpenGroup(kind, it) }
+                // A new page starts at the top: keyed on the page so the list's scroll position is not carried over.
+                key(state.page) {
+                    when {
+                        empty && !state.syncing -> EmptyMessage(state)
+                        state.mode == BrowseMode.BOOKS -> BookCollection(state.books, state.view.layout, onRead, selection)
+                        state.mode == BrowseMode.AUTHORS -> AuthorList(state.groups) { onOpenGroup(GroupKind.AUTHOR, it) }
+                        else -> {
+                            val kind = if (state.mode == BrowseMode.COMIC_SERIES) GroupKind.COMIC_SERIES else GroupKind.SERIES
+                            SeriesCollection(state.groups, state.view.layout) { onOpenGroup(kind, it) }
+                        }
                     }
                 }
             }
+            PaginationBar(state, viewModel::setPage, viewModel::setPageSize)
         }
     }
 }

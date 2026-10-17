@@ -54,6 +54,17 @@ data class LibraryUiState(
     /** Any refresh in progress, including the automatic one: a thin bar that never blocks the list. */
     val syncing: Boolean = false,
     val message: String? = null,
+    /** Zero-based page of [books] or [groups] shown; both hold that page only, [total] counts all matches. */
+    val page: Int = 0,
+    val pageCount: Int = 1,
+    val total: Int = 0,
+)
+
+private data class Picks(
+    val query: String,
+    val sync: SyncFlags,
+    val filter: LibraryFilter,
+    val page: Int,
 )
 
 /** One library screen: [scope] (all, a library, a shelf, on this device…) shown as books, authors or series. */
@@ -72,6 +83,7 @@ class LibraryViewModel
     ) : ViewModel() {
         private val query = MutableStateFlow("")
         private val filter = MutableStateFlow(LibraryFilter.ALL)
+        private val page = MutableStateFlow(0)
         private val sync = LibrarySync(viewModelScope, library, session, folders)
 
         val state: StateFlow<LibraryUiState> =
@@ -80,8 +92,9 @@ class LibraryViewModel
                 combine(library.observeLibraries(), shelves.observe(), localLibraries.libraries, ::Triple),
                 prefs.libraryView,
                 combine(session.server, session.status) { server, status -> (server != null) to status },
-                combine(query, sync.flags, filter) { q, flags, f -> Triple(q, flags, f) },
-            ) { all, (libraries, shelfList, local), view, (hasServer, status), (q, ui, picked) ->
+                combine(query, sync.flags, filter, page, ::Picks),
+            ) { all, (libraries, shelfList, local), view, (hasServer, status), picks ->
+                val (q, ui, picked) = picks
                 val library = (scope as? LibraryScope.Local)?.let { s -> local.firstOrNull { it.id == s.libraryId } }
                 val linked = hasServer && library?.serverLibraryId != null
                 val inScope =
@@ -91,6 +104,16 @@ class LibraryViewModel
                         all.inScope(scope)
                     }
                 val comics = local.filter { it.isComics }.map { it.id }.toSet()
+                val matching = if (mode == BrowseMode.BOOKS) inScope.matching(q).sortedFor(view.sort) else emptyList()
+                val grouped =
+                    when (mode) {
+                        BrowseMode.BOOKS -> emptyList()
+                        BrowseMode.AUTHORS -> groupByAuthor(inScope).matchingName(q)
+                        BrowseMode.SERIES -> groupBySeries(inScope, comics).matchingName(q)
+                        BrowseMode.COMIC_SERIES -> groupByComicSeries(inScope, comics).matchingName(q)
+                    }
+                val books = matching.pageOf(picks.page, view.pageSize)
+                val groups = grouped.pageOf(picks.page, view.pageSize)
                 LibraryUiState(
                     scope = scope,
                     mode = mode,
@@ -98,14 +121,11 @@ class LibraryViewModel
                     libraries = libraries,
                     localLibraries = local,
                     shelves = shelfList,
-                    books = if (mode == BrowseMode.BOOKS) inScope.matching(q).sortedFor(view.sort) else emptyList(),
-                    groups =
-                        when (mode) {
-                            BrowseMode.BOOKS -> emptyList()
-                            BrowseMode.AUTHORS -> groupByAuthor(inScope).matchingName(q)
-                            BrowseMode.SERIES -> groupBySeries(inScope, comics).matchingName(q)
-                            BrowseMode.COMIC_SERIES -> groupByComicSeries(inScope, comics).matchingName(q)
-                        },
+                    books = books.items,
+                    groups = groups.items,
+                    page = if (mode == BrowseMode.BOOKS) books.page else groups.page,
+                    pageCount = if (mode == BrowseMode.BOOKS) books.pageCount else groups.pageCount,
+                    total = if (mode == BrowseMode.BOOKS) books.total else groups.total,
                     query = q,
                     filter = picked,
                     filterShown = linked,
@@ -118,15 +138,30 @@ class LibraryViewModel
             }.flowOn(Dispatchers.Default) // Mapping, sorting and grouping the whole library stays off the main thread.
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LibraryUiState(scope = scope, mode = mode))
 
-        fun setSort(sort: BookSort) = updateView { it.copy(sort = sort) }
+        fun setSort(sort: BookSort) {
+            page.value = 0
+            updateView { it.copy(sort = sort) }
+        }
 
         fun setLayout(layout: BookLayout) = updateView { it.copy(layout = layout) }
 
+        /** Books per page; the page is kept at the first one, the old index means something else now. */
+        fun setPageSize(size: Int) {
+            page.value = 0
+            updateView { it.copy(pageSize = size) }
+        }
+
+        fun setPage(value: Int) {
+            page.value = value.coerceAtLeast(0)
+        }
+
         fun setFilter(value: LibraryFilter) {
+            page.value = 0
             filter.value = value
         }
 
         fun setQuery(text: String) {
+            page.value = 0
             query.value = text
         }
 

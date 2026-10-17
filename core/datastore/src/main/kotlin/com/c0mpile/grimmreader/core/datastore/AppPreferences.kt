@@ -137,6 +137,7 @@ class AppPreferences(
             LibraryView(
                 sort = enumOr(p[LIBRARY_SORT], BookSort.TITLE),
                 layout = enumOr(p[LIBRARY_LAYOUT], BookLayout.GRID),
+                pageSize = p[LIBRARY_PAGE_SIZE]?.takeIf { it in LibraryView.PAGE_SIZES } ?: LibraryView.DEFAULT_PAGE_SIZE,
             )
         }
 
@@ -144,6 +145,7 @@ class AppPreferences(
         store.edit {
             it[LIBRARY_SORT] = view.sort.name
             it[LIBRARY_LAYOUT] = view.layout.name
+            it[LIBRARY_PAGE_SIZE] = view.pageSize
         }
     }
 
@@ -238,6 +240,7 @@ class AppPreferences(
         val PAGE_ANIMATION = stringPreferencesKey("reader_page_animation")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
+        val LIBRARY_PAGE_SIZE = intPreferencesKey("library_page_size")
         val LIBRARY_REFRESHED = stringPreferencesKey("library_refreshed_at")
         val BOOK_FOLDERS = stringSetPreferencesKey("book_folders")
         val DOWNLOAD_FOLDER = stringPreferencesKey("download_folder")

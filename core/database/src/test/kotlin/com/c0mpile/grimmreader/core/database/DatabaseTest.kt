@@ -65,6 +65,21 @@ class DatabaseTest {
             assertEquals(kept, db.bookDao().byServerId(server, 1)?.id)
         }
 
+    @Test fun aHugeServerLibraryIsDiffedInChunksNotWithOneVariablePerBook() =
+        runTest {
+            val server = db.serverDao().upsert(ServerEntity(baseUrl = "https://grimmory.example.com"))
+            val total = 33_000L // Past SQLite's 32766 variables per statement.
+            for (id in 1..total) serverBook(server, id, "Sample $id")
+            val downloaded = db.bookDao().byServerId(server, 7)!!.id
+            db.bookFileDao().upsert(BookFileEntity(bookId = downloaded, format = BookFormat.EPUB, localUri = "books/7/1.epub"))
+
+            val gone = db.bookDao().serverBookIds(server).filter { it > 5 }
+            assertEquals(total - 5, gone.size.toLong())
+            gone.chunked(500).forEach { db.bookDao().deleteServerBooksIn(server, it) }
+
+            assertEquals(listOf(1L, 2L, 3L, 4L, 5L, 7L), db.bookDao().serverBookIds(server).sorted())
+        }
+
     @Test fun localBooksWithoutAFileAreSetAside() =
         runTest {
             val shown = db.bookDao().insert(BookEntity(source = BookSource.LOCAL, title = "Shown"))

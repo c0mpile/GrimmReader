@@ -113,6 +113,20 @@ interface BookDao {
         keep: List<Long>,
     )
 
+    /** Server ids of the rows mirrored for this server (a refresh diffs against them in memory, see [deleteServerBooksIn]). */
+    @Query("SELECT serverBookId FROM book WHERE serverRowId = :serverRowId AND serverBookId IS NOT NULL")
+    suspend fun serverBookIds(serverRowId: Long): List<Long>
+
+    /** Like [deleteServerBooksNotIn] for a short list of ids to drop; callers keep it under SQLite's variable limit. */
+    @Query(
+        """DELETE FROM book WHERE serverRowId = :serverRowId AND serverBookId IN (:gone)
+           AND id NOT IN (SELECT bookId FROM book_file WHERE localUri IS NOT NULL)""",
+    )
+    suspend fun deleteServerBooksIn(
+        serverRowId: Long,
+        gone: List<Long>,
+    )
+
     @Query("DELETE FROM book WHERE serverRowId = :serverRowId")
     suspend fun deleteAllForServer(serverRowId: Long)
 

@@ -73,4 +73,11 @@ enum class BookLayout { GRID, LIST }
 data class LibraryView(
     val sort: BookSort = BookSort.TITLE,
     val layout: BookLayout = BookLayout.GRID,
-)
+    /** Books (or authors, series) shown per page in a library screen. */
+    val pageSize: Int = DEFAULT_PAGE_SIZE,
+) {
+    companion object {
+        const val DEFAULT_PAGE_SIZE = 100
+        val PAGE_SIZES = listOf(25, 50, 100, 200, 500, 1000)
+    }
+}
