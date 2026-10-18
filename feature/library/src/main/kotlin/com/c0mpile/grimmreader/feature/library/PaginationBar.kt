@@ -1,15 +1,12 @@
 package com.c0mpile.grimmreader.feature.library
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,11 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.c0mpile.grimmreader.core.designsystem.icon.LucideIcons
+import com.c0mpile.grimmreader.core.model.BrowseMode
 import com.c0mpile.grimmreader.core.model.LibraryView
 
 /**
- * Previous / next, the page number (tap to type one) and how many books to show per page. Hidden while
- * everything fits on the smallest page size.
+ * Left: previous, "page / pages" (tap to type a page) and next. Right: "shown / total" (tap to type how many to
+ * show per page). Hidden while everything fits on one default-sized page.
  */
 @Composable
 internal fun PaginationBar(
@@ -39,7 +37,8 @@ internal fun PaginationBar(
     onPage: (Int) -> Unit,
     onPageSize: (Int) -> Unit,
 ) {
-    if (state.total <= LibraryView.PAGE_SIZES.first()) return
+    if (state.pageCount <= 1 && state.total <= LibraryView.DEFAULT_PAGE_SIZE) return
+    val shown = if (state.mode == BrowseMode.BOOKS) state.books.size else state.groups.size
     Column {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = DIVIDER_ALPHA))
         Row(
@@ -56,7 +55,7 @@ internal fun PaginationBar(
                     Icon(LucideIcons.ChevronRight, contentDescription = "Next page")
                 }
             }
-            PageSizeMenu(state.view.pageSize, onPageSize)
+            PageSizeButton(shown, state.total, state.view.pageSize, onPageSize)
         }
     }
 }
@@ -67,57 +66,75 @@ private fun PageNumber(
     onPage: (Int) -> Unit,
 ) {
     var asking by remember { mutableStateOf(false) }
-    TextButton(onClick = { asking = true }) { Text("${state.page + 1} / ${state.pageCount}") }
+    TextButton(onClick = { asking = true }) { Text("${state.page + 1}/${state.pageCount}") }
     if (asking) {
-        var text by remember { mutableStateOf((state.page + 1).toString()) }
-        val target = text.toIntOrNull()?.takeIf { it in 1..state.pageCount }
-        AlertDialog(
-            onDismissRequest = { asking = false },
-            title = { Text("Go to page") },
-            text = {
-                TextField(
-                    value = text,
-                    onValueChange = { text = it.filter(Char::isDigit).take(MAX_DIGITS) },
-                    label = { Text("1 to ${state.pageCount}") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = target != null,
-                    onClick = {
-                        asking = false
-                        target?.let { onPage(it - 1) }
-                    },
-                ) { Text("Go") }
-            },
-            dismissButton = { TextButton(onClick = { asking = false }) { Text("Cancel") } },
+        NumberDialog(
+            title = "Go to page",
+            label = "1 to ${state.pageCount}",
+            initial = state.page + 1,
+            range = 1..state.pageCount,
+            onDismiss = { asking = false },
+            onDone = { onPage(it - 1) },
         )
     }
 }
 
 @Composable
-private fun PageSizeMenu(
+private fun PageSizeButton(
+    shown: Int,
+    total: Int,
     size: Int,
     onSize: (Int) -> Unit,
 ) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { open = true }) { Text("$size per page") }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            LibraryView.PAGE_SIZES.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text("$option per page") },
-                    trailingIcon = { if (option == size) Icon(LucideIcons.Check, contentDescription = null) },
-                    onClick = {
-                        onSize(option)
-                        open = false
-                    },
-                )
-            }
-        }
+    var asking by remember { mutableStateOf(false) }
+    TextButton(onClick = { asking = true }) { Text("$shown/$total") }
+    if (asking) {
+        NumberDialog(
+            title = "Books per page",
+            label = "1 to ${LibraryView.MAX_PAGE_SIZE}",
+            initial = size,
+            range = 1..LibraryView.MAX_PAGE_SIZE,
+            onDismiss = { asking = false },
+            onDone = onSize,
+        )
     }
+}
+
+/** A box to type a whole number in [range]; Go stays off until the text is one. */
+@Composable
+private fun NumberDialog(
+    title: String,
+    label: String,
+    initial: Int,
+    range: IntRange,
+    onDismiss: () -> Unit,
+    onDone: (Int) -> Unit,
+) {
+    var text by remember { mutableStateOf(initial.toString()) }
+    val value = text.toIntOrNull()?.takeIf { it in range }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            TextField(
+                value = text,
+                onValueChange = { text = it.filter(Char::isDigit).take(MAX_DIGITS) },
+                label = { Text(label) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = value != null,
+                onClick = {
+                    onDismiss()
+                    value?.let(onDone)
+                },
+            ) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 private const val MAX_DIGITS = 6

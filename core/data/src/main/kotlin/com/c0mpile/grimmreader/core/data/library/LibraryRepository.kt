@@ -2,6 +2,8 @@ package com.c0mpile.grimmreader.core.data.library
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
+import android.util.Log
 import androidx.room.withTransaction
 import com.c0mpile.grimmreader.api.grimmory.BookSummaryDto
 import com.c0mpile.grimmreader.api.grimmory.GrimmoryUrls
@@ -26,8 +28,14 @@ import com.c0mpile.grimmreader.core.model.BookSource
 import com.c0mpile.grimmreader.core.model.Library
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -42,6 +50,12 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** [loaded] of [total] books fetched by a running refresh (the total as the server reports it). */
+data class RefreshProgress(
+    val loaded: Long,
+    val total: Long,
+)
 
 /** The unified library: server books cached in Room plus local books. Room is the source of truth. */
 @Singleton
@@ -61,6 +75,12 @@ class LibraryRepository
         private val libraryDao get() = db.libraryDao()
         private val fileDao get() = db.bookFileDao()
         private val refreshLock = Mutex()
+        private val mirror get() = LibraryMirror(bookDao, fileDao)
+        private val work = CoroutineScope(SupervisorJob() + io)
+        private val _progress = MutableStateFlow<RefreshProgress?>(null)
+
+        /** How far a running refresh has got; null when none runs. */
+        val progress: StateFlow<RefreshProgress?> = _progress.asStateFlow()
         private val coversChecked = AtomicBoolean(false)
 
         /** Once per process: shrinks covers saved at full size by earlier builds ([LocalFileStore.shrinkLargeCovers]). */
@@ -146,37 +166,60 @@ class LibraryRepository
         }
 
         /**
-         * Pulls every page of `/api/v1/app/books` (sequential, [PAGE_SIZE] per request), then mirrors it into Room
-         * in one transaction, so the library updates once instead of once per page. Books that disappeared are
-         * removed unless downloaded. Audiobook-only items are skipped. One refresh at a time; a second caller waits
-         * for the first and then runs its own.
+         * Pulls every page of `/api/v1/app/books` (sequential, [PAGE_SIZE] per request) and mirrors them into Room
+         * in batches of [BATCH_BOOKS], so a big library fills in while it loads and a failure halfway keeps what
+         * arrived. Books that disappeared are removed at the end, only after every page came, unless downloaded.
+         * Audiobook-only items are skipped. One refresh at a time; a second caller waits for the first and then
+         * runs its own. It runs in the repository's own scope: leaving the screen does not stop it.
          */
-        suspend fun refresh(): Result<Int> =
-            refreshLock.withLock {
-                withContext(io) {
-                    val server = session.server.value ?: return@withContext Result.success(0)
-                    val api = session.api() ?: return@withContext Result.success(0)
-                    runCatching {
-                        val libraries = api.libraries()
-                        val books = mutableListOf<BookSummaryDto>()
-                        var page = 0
-                        do {
-                            val result = api.books(page = page, size = PAGE_SIZE, sort = "title", dir = "asc")
-                            books += result.content
-                            page++
-                        } while (result.hasNext)
-                        val shelves = ShelfSnapshot.fetch(api)
-                        val seen =
-                            db.withTransaction {
-                                mirror(server.id, libraries, books).also { shelfMirror.apply(server.id, shelves) }
-                            }
-                        session.reportOffline(false)
-                        prefs.setLibraryRefreshedAt(server.id, System.currentTimeMillis())
-                        CoverPrefetchWorker.enqueue(context)
-                        seen
-                    }.onFailure { if (it is IOException) session.reportOffline(true) }
+        suspend fun refresh(): Result<Int> = work.async { refreshLock.withLock { fetchAndMirror() } }.await()
+
+        private suspend fun fetchAndMirror(): Result<Int> {
+            val server = session.server.value ?: return Result.success(0)
+            val api = session.api() ?: return Result.success(0)
+            return runCatching {
+                val started = SystemClock.elapsedRealtime()
+                val rows = api.libraries().toEntities(server.id)
+                val localIds =
+                    db.withTransaction {
+                        libraryDao.replaceAll(server.id, rows)
+                        localLibraries.syncWithServer(server.id, rows)
+                    }
+                // A reset not sent yet: the server still reports the old progress.
+                val resetting = db.outboxDao().ofKind(ProgressRepository.KIND_RESET).mapTo(HashSet()) { it.entityId }
+                val seen = HashSet<Long>()
+                val batch = mutableListOf<BookSummaryDto>()
+                var page = 0
+                var fetched = 0L
+                do {
+                    val result = api.books(page = page, size = PAGE_SIZE, sort = "title", dir = "asc")
+                    batch += result.content
+                    fetched += result.content.size
+                    page++
+                    if (batch.size >= BATCH_BOOKS || !result.hasNext) {
+                        db.withTransaction { mirror.books(server.id, localIds, resetting, batch, seen) }
+                        batch.clear()
+                    }
+                    _progress.value = RefreshProgress(fetched, result.totalElements)
+                    if (page % LOG_EVERY_PAGES == 0) {
+                        Log.d(TAG, "refresh: page $page of ${result.totalPages}, ${SystemClock.elapsedRealtime() - started} ms")
+                    }
+                } while (result.hasNext)
+                val shelves = ShelfSnapshot.fetch(api)
+                db.withTransaction {
+                    mirror.removeGone(server.id, seen)
+                    shelfMirror.apply(server.id, shelves)
                 }
-            }
+                session.reportOffline(false)
+                prefs.setLibraryRefreshedAt(server.id, System.currentTimeMillis())
+                CoverPrefetchWorker.enqueue(context)
+                Log.d(TAG, "refresh: ${seen.size} books in ${SystemClock.elapsedRealtime() - started} ms")
+                seen.size
+            }.onFailure {
+                Log.w(TAG, "refresh failed: ${it.javaClass.simpleName}")
+                if (it is IOException) session.reportOffline(true)
+            }.also { _progress.value = null }
+        }
 
         /**
          * Only the server's library list (the first run lists them right after sign-in, before any book is
@@ -198,44 +241,6 @@ class LibraryRepository
                     rows.map { it.toDomain() }
                 }
             }
-
-        private suspend fun mirror(
-            serverRowId: Long,
-            libraries: List<LibraryDto>,
-            books: List<BookSummaryDto>,
-        ): Int {
-            val rows = libraries.toEntities(serverRowId)
-            libraryDao.replaceAll(serverRowId, rows)
-            val localIds = localLibraries.syncWithServer(serverRowId, rows)
-            val seen = mutableListOf<Long>()
-            // A reset not sent yet: the server still reports the old progress.
-            val resetting = db.outboxDao().ofKind(ProgressRepository.KIND_RESET).mapTo(HashSet()) { it.entityId }
-            for (dto in books) {
-                val format = formatOf(dto.primaryFileType, dto.primaryFileName) ?: continue
-                val existing = bookDao.byServerId(serverRowId, dto.id)
-                val entity = dto.toEntity(serverRowId, existing, localIds[dto.libraryId])
-                val bookId =
-                    bookDao
-                        .upsert(if (existing?.id in resetting) entity.withoutProgress() else entity)
-                        .takeIf { it > 0 } ?: existing!!.id
-                val file = fileDao.forBook(bookId).firstOrNull { it.isPrimary }
-                fileDao.upsert(
-                    (file ?: BookFileEntity(bookId = bookId, format = format)).copy(
-                        serverFileId = dto.primaryFileId,
-                        // The server's size (in KB) until the file is here; then the exact size of the copy.
-                        sizeBytes = if (file?.localUri != null) file.sizeBytes else dto.fileSizeKb?.let { it * BYTES_PER_KB },
-                        format = if (file?.localUri != null) file.format else format,
-                    ),
-                )
-                seen += dto.id
-            }
-            // One NOT IN (...) with a variable per book fails past SQLite's 32766 variables (a 40,000-book library).
-            val kept = seen.toHashSet()
-            bookDao.serverBookIds(serverRowId).filterNot { it in kept }.chunked(DELETE_CHUNK).forEach {
-                bookDao.deleteServerBooksIn(serverRowId, it)
-            }
-            return seen.size
-        }
 
         /** The server is gone: its libraries stay on the device, no longer mirroring a server library. */
         suspend fun serverRemoved() = localLibraries.unlinkServer()
@@ -328,8 +333,9 @@ class LibraryRepository
 
         companion object {
             private const val PAGE_SIZE = 100
-            private const val BYTES_PER_KB = 1024L
-            private const val DELETE_CHUNK = 500
+            private const val BATCH_BOOKS = 1000
+            private const val LOG_EVERY_PAGES = 20
+            private const val TAG = "GrimmLibrary"
             private const val SERVER_WAIT_MS = 5_000L
 
             /** The automatic refresh skips a library mirrored less than 30 minutes ago; pull-to-refresh never does. */

@@ -77,7 +77,7 @@ data class LibraryView(
     val pageSize: Int = DEFAULT_PAGE_SIZE,
 ) {
     companion object {
-        const val DEFAULT_PAGE_SIZE = 100
-        val PAGE_SIZES = listOf(25, 50, 100, 200, 500, 1000)
+        const val DEFAULT_PAGE_SIZE = 30
+        const val MAX_PAGE_SIZE = 5000
     }
 }

@@ -106,7 +106,13 @@ fun LibraryScreen(
                 LibraryTopBar(state, searching, { searching = it }, viewModel)
             }
         },
-        bottomBar = { SelectionActionBar(selection, state.books, snackbar) },
+        // The page bar is part of the bottom bar, so the open-file button floats above it instead of covering it.
+        bottomBar = {
+            Column {
+                PaginationBar(state, viewModel::setPage, viewModel::setPageSize)
+                SelectionActionBar(selection, state.books, snackbar)
+            }
+        },
         floatingActionButton = {
             if (!selection.active) {
                 FloatingActionButton(
@@ -120,7 +126,21 @@ fun LibraryScreen(
             StatusRow(state.hasServer, state.status)
             // Background refresh: a thin bar, the list stays usable. The pull indicator is only for a user pull.
             if (state.syncing && !state.refreshing) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+                val progress = state.progress
+                if (progress != null && progress.total > 0) {
+                    LinearProgressIndicator(
+                        progress = { (progress.loaded.toFloat() / progress.total).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(2.dp),
+                    )
+                    Text(
+                        "Loading library: ${progress.loaded} of ${progress.total}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                } else {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+                }
             } else {
                 Spacer(Modifier.height(2.dp))
             }
@@ -140,7 +160,6 @@ fun LibraryScreen(
                     }
                 }
             }
-            PaginationBar(state, viewModel::setPage, viewModel::setPageSize)
         }
     }
 }

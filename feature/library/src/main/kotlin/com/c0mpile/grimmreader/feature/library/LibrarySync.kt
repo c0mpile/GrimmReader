@@ -3,6 +3,7 @@ package com.c0mpile.grimmreader.feature.library
 import android.net.Uri
 import com.c0mpile.grimmreader.core.data.library.FolderLibrary
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
+import com.c0mpile.grimmreader.core.data.library.RefreshProgress
 import com.c0mpile.grimmreader.core.data.library.ScanResult
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.files.UnsupportedFormatException
@@ -23,6 +24,8 @@ data class SyncFlags(
     /** Any refresh in progress, including the automatic one: a thin bar that never blocks the screen. */
     val syncing: Boolean = false,
     val message: String? = null,
+    /** How far a running server refresh has got. */
+    val progress: RefreshProgress? = null,
 )
 
 /**
@@ -42,6 +45,7 @@ class LibrarySync(
     init {
         scope.launch { scanFolders(folders.scanIfStale()) }
         scope.launch { library.shrinkLargeCovers() }
+        scope.launch { library.progress.collect { p -> _flags.update { it.copy(progress = p) } } }
         // The server row loads from Room asynchronously; check once it is there (never in local mode).
         scope.launch {
             session.server.filterNotNull().first()

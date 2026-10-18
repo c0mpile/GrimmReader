@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.c0mpile.grimmreader.core.data.library.FolderLibrary
 import com.c0mpile.grimmreader.core.data.library.LibraryRepository
 import com.c0mpile.grimmreader.core.data.library.LocalLibraryRepository
+import com.c0mpile.grimmreader.core.data.library.RefreshProgress
 import com.c0mpile.grimmreader.core.data.server.ServerSession
 import com.c0mpile.grimmreader.core.data.shelf.ShelfRepository
 import com.c0mpile.grimmreader.core.datastore.AppPreferences
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
@@ -53,6 +55,7 @@ data class LibraryUiState(
     val refreshing: Boolean = false,
     /** Any refresh in progress, including the automatic one: a thin bar that never blocks the list. */
     val syncing: Boolean = false,
+    val progress: RefreshProgress? = null,
     val message: String? = null,
     /** Zero-based page of [books] or [groups] shown; both hold that page only, [total] counts all matches. */
     val page: Int = 0,
@@ -88,7 +91,7 @@ class LibraryViewModel
 
         val state: StateFlow<LibraryUiState> =
             combine(
-                library.observeLibrary(),
+                library.observeLibrary().conflate(),
                 combine(library.observeLibraries(), shelves.observe(), localLibraries.libraries, ::Triple),
                 prefs.libraryView,
                 combine(session.server, session.status) { server, status -> (server != null) to status },
@@ -133,6 +136,7 @@ class LibraryViewModel
                     status = status,
                     refreshing = ui.refreshing,
                     syncing = ui.syncing,
+                    progress = ui.progress,
                     message = ui.message,
                 )
             }.flowOn(Dispatchers.Default) // Mapping, sorting and grouping the whole library stays off the main thread.
