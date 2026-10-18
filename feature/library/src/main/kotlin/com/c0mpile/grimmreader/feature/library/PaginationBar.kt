@@ -36,10 +36,11 @@ internal fun PaginationBar(
     state: LibraryUiState,
     onPage: (Int) -> Unit,
     onPageSize: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (state.pageCount <= 1 && state.total <= LibraryView.DEFAULT_PAGE_SIZE) return
     val shown = if (state.mode == BrowseMode.BOOKS) state.books.size else state.groups.size
-    Column {
+    Column(modifier) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = DIVIDER_ALPHA))
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp),

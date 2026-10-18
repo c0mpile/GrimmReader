@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -109,7 +110,13 @@ fun LibraryScreen(
         // The page bar is part of the bottom bar, so the open-file button floats above it instead of covering it.
         bottomBar = {
             Column {
-                PaginationBar(state, viewModel::setPage, viewModel::setPageSize)
+                // The selection bar clears the navigation bar itself; without it this bar must.
+                PaginationBar(
+                    state,
+                    viewModel::setPage,
+                    viewModel::setPageSize,
+                    if (selection.active) Modifier else Modifier.navigationBarsPadding(),
+                )
                 SelectionActionBar(selection, state.books, snackbar)
             }
         },
